@@ -1902,6 +1902,7 @@ class GatewayRunner:
         # Key: session_key, Value: AIAgent instance
         self._running_agents: Dict[str, Any] = {}
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
+        self._session_live_view: Dict[str, Dict[str, Any]] = {}  # latest per-session run-progress snapshot
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
         # Last successfully-resolved (non-empty) model, keyed by session. Used
         # as a fallback when a fresh config read transiently returns an empty
@@ -7715,9 +7716,6 @@ class GatewayRunner:
                 self._release_running_agent_state(_quick_key)
 
         if _quick_key in self._running_agents:
-            if event.get_command() == "status":
-                return await self._handle_status_command(event)
-
             # Resolve the command once for all early-intercept checks below.
             from hermes_cli.commands import (
                 ACTIVE_SESSION_BYPASS_COMMANDS as _DEDICATED_HANDLERS,
@@ -7725,6 +7723,13 @@ class GatewayRunner:
             )
             _evt_cmd = event.get_command()
             _cmd_def_inner = _resolve_cmd_inner(_evt_cmd) if _evt_cmd else None
+
+            # Query-only inspection commands should stay available while the
+            # agent is working so chat users can confirm the run is still alive.
+            if _cmd_def_inner and _cmd_def_inner.name == "status":
+                return await self._handle_status_command(event)
+            if _cmd_def_inner and _cmd_def_inner.name == "view":
+                return await self._handle_view_command(event)
 
             # Slash command access control on the running-agent fast-path.
             # Mirrors the cold-path gate further below so non-admin users
@@ -7769,17 +7774,19 @@ class GatewayRunner:
             # clear the adapter's pending queue so the stale "/reset" text
             # doesn't get re-processed as a user message after the
             # interrupt completes.
-            if _cmd_def_inner and _cmd_def_inner.name == "new":
+            if _cmd_def_inner and _cmd_def_inner.name in {"new", "reset"}:
                 # Clear any pending messages so the old text doesn't replay
                 await self._interrupt_and_clear_session(
                     _quick_key,
                     source,
                     interrupt_reason=_INTERRUPT_REASON_RESET,
-                    invalidation_reason="new_command",
+                    invalidation_reason=f"{_cmd_def_inner.name}_command",
                 )
                 # Clean up the running agent entry so the reset handler
                 # doesn't think an agent is still active.
-                return await self._handle_reset_command(event)
+                if _cmd_def_inner.name == "reset":
+                    return await self._handle_reset_command(event)
+                return await self._handle_new_command(event)
 
             # /queue <prompt> — queue without interrupting.
             # Semantics: each /queue invocation produces its own full agent
@@ -8158,15 +8165,29 @@ class GatewayRunner:
         if canonical == "new":
             if self._is_telegram_topic_root_lobby(source):
                 return self._telegram_topic_root_new_message()
-            async def _do_reset():
-                return await self._handle_reset_command(event)
+            async def _do_new():
+                return await self._handle_new_command(event)
             return await self._maybe_confirm_destructive_slash(
                 event=event,
                 command="new",
                 title="/new",
                 detail=(
-                    "This starts a fresh session and discards the current "
-                    "conversation history."
+                    "This starts a fresh session, returns model settings to "
+                    "global defaults, and deletes the previous session."
+                ),
+                execute=_do_new,
+            )
+
+        if canonical == "reset":
+            async def _do_reset():
+                return await self._handle_reset_command(event)
+            return await self._maybe_confirm_destructive_slash(
+                event=event,
+                command="reset",
+                title="/reset",
+                detail=(
+                    "This starts a fresh session but keeps this session's "
+                    "current model configuration."
                 ),
                 execute=_do_reset,
             )
@@ -8192,6 +8213,9 @@ class GatewayRunner:
 
         if canonical == "status":
             return await self._handle_status_command(event)
+
+        if canonical == "view":
+            return await self._handle_view_command(event)
 
         if canonical == "agents":
             return await self._handle_agents_command(event)
@@ -8222,6 +8246,9 @@ class GatewayRunner:
 
         if canonical == "model":
             return await self._handle_model_command(event)
+
+        if canonical == "auxmodel":
+            return await self._handle_auxmodel_command(event)
 
         if canonical == "codex-runtime":
             return await self._handle_codex_runtime_command(event)
@@ -8514,6 +8541,11 @@ class GatewayRunner:
         # same session — corrupting the transcript.
         self._running_agents[_quick_key] = _AGENT_PENDING_SENTINEL
         self._running_agents_ts[_quick_key] = time.time()
+        self._session_live_view[_quick_key] = {
+            "started_at": self._running_agents_ts[_quick_key],
+            "last_progress_at": None,
+            "last_progress_text": None,
+        }
         _run_generation = self._begin_session_run_generation(_quick_key)
 
         try:
@@ -10045,8 +10077,14 @@ class GatewayRunner:
 
         return "\n".join(lines)
 
-    async def _handle_reset_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
-        """Handle /new or /reset command."""
+    async def _handle_session_boundary_command(
+        self,
+        event: MessageEvent,
+        *,
+        preserve_session_overrides: bool,
+        delete_old_session: bool,
+    ) -> Union[str, EphemeralReply]:
+        """Handle manual session boundary commands like /new and /reset."""
         source = event.source
         
         # Get existing session key
@@ -10097,10 +10135,12 @@ class GatewayRunner:
         # Reset the session
         new_entry = self.session_store.reset_session(session_key)
 
-        # Clear any session-scoped model/reasoning overrides so the next agent
-        # picks up configured defaults instead of previous session switches.
-        self._session_model_overrides.pop(session_key, None)
-        self._set_session_reasoning_override(session_key, None)
+        # /reset preserves session-scoped model / reasoning overrides so the
+        # user can start fresh without losing a deliberate mid-session switch.
+        # /new returns to global defaults.
+        if not preserve_session_overrides:
+            self._session_model_overrides.pop(session_key, None)
+            self._set_session_reasoning_override(session_key, None)
         if hasattr(self, "_pending_model_notes"):
             self._pending_model_notes.pop(session_key, None)
 
@@ -10201,7 +10241,22 @@ class GatewayRunner:
         except Exception:
             pass
 
-        # Append a random tip to the reset message
+        # /new additionally discards the just-finished session transcript and
+        # its DB row so the previous conversation does not remain resumable.
+        if delete_old_session and old_entry and self._session_db:
+            try:
+                self._session_db.delete_session(
+                    old_entry.session_id,
+                    sessions_dir=self.config.sessions_dir,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to delete previous session %s after /new: %s",
+                    old_entry.session_id,
+                    exc,
+                )
+
+        # Append a random tip to the reset/new message
         try:
             from hermes_cli.tips import get_random_tip
             _tip_line = t("gateway.reset.tip", tip=get_random_tip())
@@ -10211,6 +10266,22 @@ class GatewayRunner:
         if session_info:
             return EphemeralReply(f"{header}\n\n{session_info}{_tip_line}")
         return EphemeralReply(f"{header}{_tip_line}")
+
+    async def _handle_reset_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
+        """Handle /reset command."""
+        return await self._handle_session_boundary_command(
+            event,
+            preserve_session_overrides=True,
+            delete_old_session=False,
+        )
+
+    async def _handle_new_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
+        """Handle /new command."""
+        return await self._handle_session_boundary_command(
+            event,
+            preserve_session_overrides=False,
+            delete_old_session=True,
+        )
 
     async def _handle_profile_command(self, event: MessageEvent) -> str:
         """Handle /profile — show active profile name and home directory."""
@@ -10481,6 +10552,130 @@ class GatewayRunner:
             "",
             t("gateway.status.platforms", platforms=', '.join(connected_platforms)),
         ])
+
+        return "\n".join(lines)
+
+    async def _handle_view_command(self, event: MessageEvent) -> str:
+        """Handle /view command - show live run state for the current session."""
+        from tools.process_registry import format_uptime_short, process_registry
+
+        source = event.source
+        session_entry = self.session_store.get_or_create_session(source)
+        session_key = session_entry.session_key
+        now = time.time()
+
+        adapter = self.adapters.get(source.platform) if source else None
+        queue_depth = self._queue_depth(session_key, adapter=adapter)
+        running_agent = self._running_agents.get(session_key)
+        is_running = session_key in self._running_agents
+        is_starting = running_agent is _AGENT_PENDING_SENTINEL
+        running_started = float(getattr(self, "_running_agents_ts", {}).get(session_key, now))
+        elapsed = max(0, int(now - running_started)) if is_running else 0
+
+        live_view = getattr(self, "_session_live_view", {}) or {}
+        live_slot = live_view.get(session_key) if isinstance(live_view, dict) else None
+        last_progress_text = None
+        last_progress_age = None
+        if isinstance(live_slot, dict):
+            last_progress_text = live_slot.get("last_progress_text")
+            last_progress_at = live_slot.get("last_progress_at")
+            if isinstance(last_progress_at, (int, float)):
+                last_progress_age = max(0, int(now - float(last_progress_at)))
+
+        pending_approval = None
+        pending_approvals = getattr(self, "_pending_approvals", {}) or {}
+        if isinstance(pending_approvals, dict):
+            pending_approval = pending_approvals.get(session_key)
+
+        update_prompt_pending = bool(
+            (getattr(self, "_update_prompt_pending", {}) or {}).get(session_key)
+        )
+
+        running_processes: list[dict] = []
+        try:
+            running_processes = [
+                p for p in process_registry.list_sessions()
+                if p.get("status") == "running"
+                and str(p.get("session_id", "") or "") == session_entry.session_id
+            ]
+        except Exception:
+            running_processes = []
+
+        background_tasks = [
+            t for t in (getattr(self, "_background_tasks", set()) or set())
+            if hasattr(t, "done") and not t.done()
+        ]
+
+        if pending_approval:
+            state = "等待批准"
+        elif update_prompt_pending:
+            state = "等待更新确认"
+        elif is_starting:
+            state = "正在启动"
+        elif is_running:
+            state = "执行中"
+        elif queue_depth:
+            state = "等待排队执行"
+        else:
+            state = "当前空闲"
+
+        lines = [
+            "👀 Hermes Live View",
+            "",
+            f"Session ID: `{session_entry.session_id}`",
+            f"当前状态: {state}",
+        ]
+
+        if is_running:
+            lines.append(f"已运行: {format_uptime_short(elapsed)}")
+            if running_agent is not None and running_agent is not _AGENT_PENDING_SENTINEL:
+                _model = str(getattr(running_agent, 'model', '') or '').strip()
+                if _model:
+                    lines.append(f"当前模型: `{_model}`")
+
+        if queue_depth:
+            lines.append(f"排队消息: {queue_depth}")
+
+        if pending_approval:
+            _cmd = str(pending_approval.get("command", "") or "").strip()
+            if _cmd:
+                _cmd_preview = _cmd if len(_cmd) <= 120 else _cmd[:117] + "..."
+                lines.append(f"等待批准命令: `{_cmd_preview}`")
+
+        if update_prompt_pending:
+            lines.append("更新确认: 正在等待你回复是否继续更新")
+
+        if running_processes:
+            lines.append(f"运行中子进程: {len(running_processes)}")
+            for proc in running_processes[:3]:
+                uptime = format_uptime_short(int(proc.get("uptime_seconds", 0) or 0))
+                cmd = " ".join(str(proc.get("command", "")).split())
+                if len(cmd) > 90:
+                    cmd = cmd[:87] + "..."
+                lines.append(f"- {uptime} · `{cmd}`")
+
+        if background_tasks:
+            lines.append(f"后台异步任务: {len(background_tasks)}")
+
+        if last_progress_text:
+            if last_progress_age is not None:
+                lines.append(f"最近进展: {last_progress_text} · {format_uptime_short(last_progress_age)} 前")
+            else:
+                lines.append(f"最近进展: {last_progress_text}")
+        elif is_running:
+            lines.append("最近进展: 尚未收到工具进展回调")
+
+        if is_running:
+            if pending_approval or update_prompt_pending:
+                lines.append("判定: 当前不是卡住，而是在等你或网关侧确认。")
+            elif last_progress_age is None and elapsed >= 45:
+                lines.append("判定: 仍在执行，但暂时没有新的可见进展。")
+            elif last_progress_age is not None and last_progress_age >= 180 and not running_processes:
+                lines.append("判定: 最近较久没有新进展，可能在等待外部接口，若持续不变可考虑 /stop。")
+            else:
+                lines.append("判定: 当前看起来仍在正常执行。")
+        else:
+            lines.append("判定: 当前没有正在运行的 agent。")
 
         return "\n".join(lines)
 
@@ -11225,7 +11420,7 @@ class GatewayRunner:
                     current_model=current_model,
                     user_providers=user_provs,
                     custom_providers=custom_provs,
-                    max_models=5,
+                    max_models=10000,
                 )
                 for p in providers:
                     tag = t("gateway.model.current_tag") if p["is_current"] else ""
@@ -11404,6 +11599,224 @@ class GatewayRunner:
             lines.append(t("gateway.model.session_only_hint"))
 
         return "\n".join(lines)
+
+    async def _handle_auxmodel_command(self, event: MessageEvent) -> Optional[str]:
+        """Show or switch auxiliary vision / image / TTS model names only."""
+        import os
+        import shlex
+        import yaml
+        from hermes_cli.config import get_hermes_home, load_config
+
+        config_path = get_hermes_home() / "config.yaml"
+
+        def _usage() -> str:
+            return (
+                "用法：\n"
+                "`/auxmodel` - 查看当前辅助模型\n"
+                "`/auxmodel vision <model>` - 切换视觉辅助模型名\n"
+                "`/auxmodel image <model>` - 切换生图模型名\n"
+                "`/auxmodel tts <model>` - 切换 TTS 模型名\n\n"
+                "只会改模型名，不会改 provider、URL 或 API key。"
+            )
+
+        def _split_keys(raw_value: str | None) -> list[str]:
+            if not raw_value:
+                return []
+            raw = str(raw_value).replace("\r", "")
+            parts: list[str] = []
+            for chunk in raw.replace("\n", ",").split(","):
+                item = chunk.strip()
+                if item:
+                    parts.append(item)
+            return parts
+
+        try:
+            cfg = load_config() or {}
+            if not isinstance(cfg, dict):
+                cfg = {}
+            if not cfg and config_path.exists():
+                with open(config_path, encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+        except Exception as exc:
+            return f"读取 config.yaml 失败：{exc}"
+
+        raw_args = event.get_command_args().strip()
+        try:
+            parts = shlex.split(raw_args)
+        except ValueError as exc:
+            return f"{_usage()}\n解析参数失败：{exc}"
+
+        providers_cfg = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+        aux_cfg = cfg.get("auxiliary") if isinstance(cfg.get("auxiliary"), dict) else {}
+        vision_cfg = aux_cfg.get("vision") if isinstance(aux_cfg.get("vision"), dict) else {}
+        image_cfg = cfg.get("image_gen") if isinstance(cfg.get("image_gen"), dict) else {}
+        tts_cfg = cfg.get("tts") if isinstance(cfg.get("tts"), dict) else {}
+
+        def _provider_slug(provider_name: str) -> str:
+            raw = str(provider_name or "").strip()
+            if raw.startswith("custom:"):
+                return raw.split(":", 1)[1].strip()
+            return raw
+
+        def _provider_entry(provider_name: str, section_cfg: dict | None = None) -> tuple[str, dict]:
+            slug = _provider_slug(provider_name)
+            entry = providers_cfg.get(slug)
+            if isinstance(entry, dict):
+                return slug, entry
+            if isinstance(section_cfg, dict):
+                section_entry = section_cfg.get(slug)
+                if isinstance(section_entry, dict):
+                    return slug, section_entry
+            return slug, {}
+
+        def _auth_summary(provider_name: str, provider_cfg: dict, section_cfg: dict | None, target: str) -> str:
+            key_env = str(
+                provider_cfg.get("key_env")
+                or provider_cfg.get("api_key_env")
+                or ""
+            ).strip()
+            if not key_env and target == "image" and _provider_slug(provider_name) == "hybgzs":
+                key_env = "HYBGZS_IMAGE_API_KEY"
+            if not key_env:
+                return "无"
+            keys = _split_keys(os.getenv(key_env, ""))
+            if len(keys) > 1:
+                return f"{key_env}（轮询 {len(keys)} 个 key）"
+            if len(keys) == 1:
+                return f"{key_env}（已设置）"
+            return f"{key_env}（未设置）"
+
+        def _endpoint_summary(provider_name: str, provider_cfg: dict, section_cfg: dict, target: str) -> str:
+            if target == "vision":
+                return str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
+            if target == "image":
+                return str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
+            if target == "tts":
+                if _provider_slug(provider_name) == "nvidia":
+                    return str(provider_cfg.get("server") or "unset")
+                base = str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
+                endpoint = str(provider_cfg.get("tts_endpoint") or "").strip()
+                if base != "unset" and endpoint:
+                    return f"{base.rstrip('/')}{endpoint}"
+                return base
+            return "unset"
+
+        def _current_lines() -> list[str]:
+            image_provider = image_cfg.get("provider", "unset")
+            image_slug, image_provider_cfg = _provider_entry(str(image_provider), image_cfg)
+            tts_provider = tts_cfg.get("provider", "unset")
+            tts_slug, tts_provider_cfg = _provider_entry(str(tts_provider), tts_cfg)
+            vision_provider = vision_cfg.get("provider", "unset")
+            vision_slug, vision_provider_cfg = _provider_entry(str(vision_provider), vision_cfg)
+            return [
+                "当前辅助模型配置：",
+                f"vision: {vision_cfg.get('model', 'unset')}",
+                f"  provider: {vision_provider}",
+                f"  endpoint: {_endpoint_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
+                f"  auth: {_auth_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
+                f"image: {image_provider_cfg.get('model') or image_cfg.get('model', 'unset')}",
+                f"  provider: {image_provider}",
+                f"  endpoint: {_endpoint_summary(str(image_provider), image_provider_cfg, image_cfg, 'image')}",
+                f"  auth: {_auth_summary(str(image_provider), image_provider_cfg, image_cfg, 'image')}",
+                f"tts: {tts_provider_cfg.get('model') or tts_cfg.get('model', 'unset')}",
+                f"  provider: {tts_provider}",
+                f"  endpoint: {_endpoint_summary(str(tts_provider), tts_provider_cfg, tts_cfg, 'tts')}",
+                f"  auth: {_auth_summary(str(tts_provider), tts_provider_cfg, tts_cfg, 'tts')}",
+                "",
+                "使用 `/auxmodel vision|image|tts <model>` 只切模型名。",
+            ]
+
+        if not parts:
+            return "\n".join(_current_lines())
+
+        if parts[0].lower() in {"help", "-h", "--help"} or len(parts) < 2:
+            return _usage()
+
+        target_raw = parts[0].lower()
+        model = " ".join(parts[1:]).strip()
+        if not model:
+            return _usage()
+
+        aliases = {
+            "vision": "vision",
+            "vision_analysis": "vision",
+            "image_analysis": "vision",
+            "image": "image",
+            "image_gen": "image",
+            "imagegen": "image",
+            "tts": "tts",
+            "voice": "tts",
+            "speech": "tts",
+        }
+        target = aliases.get(target_raw)
+        if target is None:
+            return f"未知辅助模型目标：{target_raw}\n\n{_usage()}"
+
+        warning = ""
+        auth = "无"
+        if target == "vision":
+            aux_section = cfg.setdefault("auxiliary", {})
+            if not isinstance(aux_section, dict):
+                return "config.yaml 无效：auxiliary 必须是对象"
+            vision_section = aux_section.setdefault("vision", {})
+            if not isinstance(vision_section, dict):
+                return "config.yaml 无效：auxiliary.vision 必须是对象"
+            old_model = vision_section.get("model", "unset")
+            provider = vision_section.get("provider", "unset")
+            slug, provider_cfg = _provider_entry(str(provider), vision_section)
+            vision_section["model"] = model
+            endpoint = _endpoint_summary(str(provider), provider_cfg, vision_section, "vision")
+            auth = _auth_summary(str(provider), provider_cfg, vision_section, "vision")
+        elif target == "image":
+            image_section = cfg.setdefault("image_gen", {})
+            if not isinstance(image_section, dict):
+                return "config.yaml 无效：image_gen 必须是对象"
+            provider = image_section.get("provider", "hybgzs")
+            slug, provider_cfg = _provider_entry(str(provider), image_section)
+            if not isinstance(provider_cfg, dict):
+                provider_cfg = {}
+            if slug not in image_section or not isinstance(image_section.get(slug), dict):
+                image_section[slug] = provider_cfg
+            old_model = image_section[slug].get("model") or image_section.get("model", "unset")
+            image_section[slug]["model"] = model
+            image_section["model"] = model
+            endpoint = _endpoint_summary(str(provider), image_section[slug], image_section, "image")
+            auth = _auth_summary(str(provider), image_section[slug], image_section, "image")
+        else:
+            tts_section = cfg.setdefault("tts", {})
+            if not isinstance(tts_section, dict):
+                return "config.yaml 无效：tts 必须是对象"
+            provider = tts_section.get("provider", "nvidia")
+            slug, provider_cfg = _provider_entry(str(provider), tts_section)
+            if not isinstance(provider_cfg, dict):
+                provider_cfg = {}
+            if slug not in tts_section or not isinstance(tts_section.get(slug), dict):
+                tts_section[slug] = provider_cfg
+            old_model = tts_section[slug].get("model") or tts_section.get("model", "unset")
+            tts_section[slug]["model"] = model
+            endpoint = _endpoint_summary(str(provider), tts_section[slug], tts_section, "tts")
+            auth = _auth_summary(str(provider), tts_section[slug], tts_section, "tts")
+            if _provider_slug(str(provider)) == "nvidia" and model != "nvidia/magpie-tts-multilingual":
+                warning = (
+                    "\n提醒：NVIDIA TTS 仍依赖 `tts.nvidia.function_id`，"
+                    "切到别的 NVIDIA 模型前要同步核对 function_id。"
+                )
+
+        try:
+            atomic_yaml_write(config_path, cfg)
+        except Exception as exc:
+            return f"保存 config.yaml 失败：{exc}"
+
+        return (
+            f"辅助模型已切换：{target}\n"
+            f"Provider: {provider}\n"
+            f"Endpoint: {endpoint}\n"
+            f"Auth: {auth}\n"
+            f"旧模型: {old_model}\n"
+            f"新模型: {model}\n"
+            "Provider、URL 和 API key 未改动。"
+            f"{warning}"
+        )
 
     async def _handle_codex_runtime_command(self, event: MessageEvent) -> str:
         """Handle /codex-runtime command in the gateway.
@@ -16333,6 +16746,9 @@ class GatewayRunner:
             return False
         self._running_agents.pop(session_key, None)
         self._running_agents_ts.pop(session_key, None)
+        live_view = getattr(self, "_session_live_view", None)
+        if isinstance(live_view, dict):
+            live_view.pop(session_key, None)
         if hasattr(self, "_busy_ack_ts"):
             self._busy_ack_ts.pop(session_key, None)
         return True
@@ -17122,9 +17538,26 @@ class GatewayRunner:
         long_tool_hint_fired = [False]
         _LONG_TOOL_THRESHOLD_S = 30.0
 
+        def _record_live_view(progress_text: str | None, *, tool_name: str | None = None) -> None:
+            live_view = getattr(self, "_session_live_view", None)
+            if not isinstance(live_view, dict):
+                return
+            slot = live_view.setdefault(
+                session_key,
+                {
+                    "started_at": self._running_agents_ts.get(session_key, time.time()),
+                    "last_progress_at": None,
+                    "last_progress_text": None,
+                },
+            )
+            slot["last_progress_at"] = time.time()
+            slot["last_progress_text"] = progress_text
+            if tool_name:
+                slot["last_tool_name"] = tool_name
+
         def progress_callback(event_type: str, tool_name: str = None, preview: str = None, args: dict = None, **kwargs):
             """Callback invoked by agent on tool lifecycle events."""
-            if not progress_queue or not _run_still_current():
+            if not _run_still_current():
                 return
 
             # First-touch onboarding: the first time a tool takes longer than
@@ -17202,6 +17635,9 @@ class GatewayRunner:
                     msg = f"{emoji} {tool_name}: \"{preview}\""
                 else:
                     msg = f"{emoji} {tool_name}..."
+                _record_live_view(msg, tool_name=tool_name)
+                if not progress_queue:
+                    return
                 progress_queue.put(msg)
                 return
             
@@ -17217,6 +17653,10 @@ class GatewayRunner:
                 msg = f"{emoji} {tool_name}: \"{preview}\""
             else:
                 msg = f"{emoji} {tool_name}..."
+
+            _record_live_view(msg, tool_name=tool_name)
+            if not progress_queue:
+                return
             
             # Dedup: collapse consecutive identical progress messages.
             # Common with execute_code where models iterate with the same

@@ -25,11 +25,36 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import threading
 from typing import Any, Dict, List
 
 from agent.web_search_provider import WebSearchProvider
 
 logger = logging.getLogger(__name__)
+
+_TAVILY_KEY_LOCK = threading.Lock()
+_TAVILY_KEY_INDEX = 0
+
+
+def _split_tavily_api_keys(raw_value: str | None) -> List[str]:
+    """Return configured Tavily keys from a comma/newline separated env value."""
+    if not raw_value:
+        return []
+    return [part.strip() for part in re.split(r"[,\n]+", raw_value) if part.strip()]
+
+
+def _ordered_tavily_api_keys(keys: List[str]) -> List[str]:
+    """Pick a rotating first key, then append the remaining keys as failover."""
+    global _TAVILY_KEY_INDEX
+
+    if len(keys) <= 1:
+        return keys
+
+    with _TAVILY_KEY_LOCK:
+        start = _TAVILY_KEY_INDEX % len(keys)
+        _TAVILY_KEY_INDEX += 1
+    return keys[start:] + keys[:start]
 
 
 def _tavily_request(endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -41,22 +66,75 @@ def _tavily_request(endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     import httpx
 
-    api_key = os.getenv("TAVILY_API_KEY")
-    if not api_key:
+    api_keys = _ordered_tavily_api_keys(
+        _split_tavily_api_keys(os.getenv("TAVILY_API_KEY"))
+    )
+    if not api_keys:
         raise ValueError(
             "TAVILY_API_KEY environment variable not set. "
             "Get your API key at https://app.tavily.com/home"
         )
 
     base_url = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com")
-    payload = dict(payload)  # don't mutate caller's dict
-    payload["api_key"] = api_key
     url = f"{base_url}/{endpoint.lstrip('/')}"
-    logger.info("Tavily %s request to %s", endpoint, url)
+    last_error: Exception | None = None
 
-    response = httpx.post(url, json=payload, timeout=60)
-    response.raise_for_status()
-    return response.json()
+    for index, api_key in enumerate(api_keys):
+        request_payload = dict(payload)  # don't mutate caller's dict
+        request_payload["api_key"] = api_key
+        logger.info(
+            "Tavily %s request to %s (key %d/%d)",
+            endpoint,
+            url,
+            index + 1,
+            len(api_keys),
+        )
+
+        try:
+            if endpoint.strip("/") == "crawl":
+                response = httpx.post(
+                    url,
+                    json=request_payload,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=60,
+                )
+            else:
+                response = httpx.post(url, json=request_payload, timeout=60)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            last_error = exc
+            status_code = exc.response.status_code if exc.response is not None else None
+            should_retry = (
+                status_code in (401, 403, 429)
+                or (status_code is not None and status_code >= 500)
+            )
+            if should_retry and index + 1 < len(api_keys):
+                logger.warning(
+                    "Tavily %s request failed with HTTP %s on key %d/%d; trying next key",
+                    endpoint,
+                    status_code,
+                    index + 1,
+                    len(api_keys),
+                )
+                continue
+            raise
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if index + 1 < len(api_keys):
+                logger.warning(
+                    "Tavily %s request failed with %s on key %d/%d; trying next key",
+                    endpoint,
+                    exc.__class__.__name__,
+                    index + 1,
+                    len(api_keys),
+                )
+                continue
+            raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Tavily request failed without an explicit error")
 
 
 def _normalize_tavily_search_results(response: Dict[str, Any]) -> Dict[str, Any]:

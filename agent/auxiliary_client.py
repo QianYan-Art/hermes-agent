@@ -43,6 +43,7 @@ Payment / credit exhaustion fallback:
 import json
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path  # noqa: F401 — used by test mocks
@@ -127,6 +128,28 @@ def _extract_url_query_params(url: str):
 
 # Module-level flag: only warn once per process about stale OPENAI_BASE_URL.
 _stale_base_url_warned = False
+_ROTATING_API_KEY_LOCK = threading.Lock()
+_ROTATING_API_KEY_INDEXES: Dict[str, int] = {}
+
+
+def _split_rotating_api_keys(raw_value: Optional[str]) -> List[str]:
+    """Return API keys from a comma/newline separated config or env value."""
+    if not raw_value:
+        return []
+    return [part.strip() for part in re.split(r"[,\n]+", raw_value) if part.strip()]
+
+
+def _select_rotating_api_key(scope: str, raw_value: Optional[str]) -> str:
+    """Pick one API key for this call while preserving single-key behavior."""
+    keys = _split_rotating_api_keys(raw_value)
+    if not keys:
+        return ""
+    if len(keys) == 1:
+        return keys[0]
+    with _ROTATING_API_KEY_LOCK:
+        index = _ROTATING_API_KEY_INDEXES.get(scope, 0)
+        _ROTATING_API_KEY_INDEXES[scope] = index + 1
+    return keys[index % len(keys)]
 
 _PROVIDER_ALIASES = {
     "google": "gemini",
@@ -168,7 +191,7 @@ def _normalize_aux_provider(provider: Optional[str]) -> str:
         suffix = normalized.split(":", 1)[1].strip()
         if not suffix:
             return "custom"
-        normalized = suffix
+        return f"custom:{suffix}"
     if normalized == "codex":
         return "openai-codex"
     if normalized == "main":
@@ -176,7 +199,7 @@ def _normalize_aux_provider(provider: Optional[str]) -> str:
         # and non-aggregator providers (DeepSeek, Alibaba, etc.) work correctly.
         main_prov = (_read_main_provider() or "").strip().lower()
         if main_prov and main_prov not in {"auto", "main", ""}:
-            normalized = main_prov
+            return _normalize_aux_provider(main_prov)
         else:
             return "custom"
     return _PROVIDER_ALIASES.get(normalized, normalized)
@@ -3575,10 +3598,16 @@ def resolve_provider_client(
             custom_entry = _get_named_custom_provider(provider)
         if custom_entry:
             custom_base = custom_entry.get("base_url", "").strip()
-            custom_key = custom_entry.get("api_key", "").strip()
+            custom_key = _select_rotating_api_key(
+                f"custom_provider:{provider}:api_key",
+                custom_entry.get("api_key", "").strip(),
+            )
             custom_key_env = (custom_entry.get("key_env") or custom_entry.get("api_key_env") or "").strip()
             if not custom_key and custom_key_env:
-                custom_key = os.getenv(custom_key_env, "").strip()
+                custom_key = _select_rotating_api_key(
+                    f"env:{custom_key_env}",
+                    os.getenv(custom_key_env, "").strip(),
+                )
             custom_key = custom_key or "no-key-required"
             if custom_key == "no-key-required":
                 logger.warning(
