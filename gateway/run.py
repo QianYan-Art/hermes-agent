@@ -11254,6 +11254,35 @@ class GatewayRunner:
             current_base_url = override.get("base_url", current_base_url)
             current_api_key = override.get("api_key", current_api_key)
 
+        def _filter_dialog_model_providers(providers: list[dict]) -> list[dict]:
+            allowed = {"openrouter", "siliconflow", "xiaomi-token-plan-cn"}
+
+            def _slug(value: str) -> str:
+                raw = str(value or "").strip()
+                if raw.startswith("custom:"):
+                    raw = raw.split(":", 1)[1].strip()
+                return raw
+
+            current_slug = _slug(current_provider)
+            filtered: list[dict] = []
+            seen: set[str] = set()
+            for provider in providers or []:
+                slug = _slug(provider.get("slug", ""))
+                if slug not in allowed or slug in seen:
+                    continue
+                row = dict(provider)
+                models = [
+                    model for model in row.get("models", [])
+                    if "deepseek" not in str(model).lower()
+                    and "nvidia" not in str(model).lower()
+                ]
+                row["models"] = models
+                row["total_models"] = len(models)
+                row["is_current"] = bool(row.get("is_current")) or slug == current_slug
+                filtered.append(row)
+                seen.add(slug)
+            return filtered
+
         # No args: show interactive picker (Telegram/Discord) or text list
         if not model_input and not explicit_provider:
             # Try interactive picker if the platform supports it
@@ -11273,6 +11302,7 @@ class GatewayRunner:
                         custom_providers=custom_provs,
                         max_models=50,
                     )
+                    providers = _filter_dialog_model_providers(providers)
                 except Exception:
                     providers = []
 
@@ -11422,6 +11452,7 @@ class GatewayRunner:
                     custom_providers=custom_provs,
                     max_models=10000,
                 )
+                providers = _filter_dialog_model_providers(providers)
                 for p in providers:
                     tag = t("gateway.model.current_tag") if p["is_current"] else ""
                     lines.append(f"**{p['name']}** `--provider {p['slug']}`{tag}:")
