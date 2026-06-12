@@ -83,6 +83,15 @@ from agent.skill_utils import EXCLUDED_SKILL_DIRS as _EXCLUDED_SKILL_DIRS
 
 logger = logging.getLogger(__name__)
 
+TANGYUGE_RETAINED_SKILLS = frozenset({
+    "grill-me",
+    "grok-search",
+    "hermes-md-locator",
+    "mail-vps-ops",
+    "paper-translation-to-docx",
+    "tangyuge-roleplay",
+})
+
 
 # All skills live in ~/.hermes/skills/ (seeded from bundled skills/ on install).
 # This is the single source of truth -- agent edits, hub installs, and bundled
@@ -608,6 +617,8 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
                     continue
 
                 name = frontmatter.get("name", skill_dir.name)[:MAX_NAME_LENGTH]
+                if name not in TANGYUGE_RETAINED_SKILLS:
+                    continue
                 if name in seen_names:
                     continue
                 if name in disabled:

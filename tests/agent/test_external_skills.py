@@ -11,10 +11,10 @@ import pytest
 def external_skills_dir(tmp_path):
     """Create a temp dir with a sample external skill."""
     ext_dir = tmp_path / "external-skills"
-    skill_dir = ext_dir / "my-external-skill"
+    skill_dir = ext_dir / "grok-search"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: my-external-skill\ndescription: A skill from an external directory\n---\n\n# My External Skill\n\nDo external things.\n"
+        "---\nname: grok-search\ndescription: A skill from an external directory\n---\n\n# External Grok Search\n\nDo external things.\n"
     )
     return ext_dir
 
@@ -117,15 +117,15 @@ class TestExternalSkillsInFindAll:
             from tools.skills_tool import _find_all_skills
             skills = _find_all_skills()
         names = [s["name"] for s in skills]
-        assert "my-external-skill" in names
+        assert "grok-search" in names
 
     def test_local_takes_precedence(self, hermes_home, external_skills_dir):
         """If the same skill name exists locally and externally, local wins."""
         local_skills = hermes_home / "skills"
-        local_skill = local_skills / "my-external-skill"
+        local_skill = local_skills / "grok-search"
         local_skill.mkdir(parents=True)
         (local_skill / "SKILL.md").write_text(
-            "---\nname: my-external-skill\ndescription: Local version\n---\n\nLocal.\n"
+            "---\nname: grok-search\ndescription: Local version\n---\n\nLocal.\n"
         )
         (hermes_home / "config.yaml").write_text(
             f"skills:\n  external_dirs:\n    - {external_skills_dir}\n"
@@ -136,7 +136,7 @@ class TestExternalSkillsInFindAll:
         ):
             from tools.skills_tool import _find_all_skills
             skills = _find_all_skills()
-        matching = [s for s in skills if s["name"] == "my-external-skill"]
+        matching = [s for s in skills if s["name"] == "grok-search"]
         assert len(matching) == 1
         assert matching[0]["description"] == "Local version"
 
@@ -152,6 +152,6 @@ class TestExternalSkillView:
             patch("tools.skills_tool.SKILLS_DIR", local_skills),
         ):
             from tools.skills_tool import skill_view
-            result = json.loads(skill_view("my-external-skill"))
+            result = json.loads(skill_view("grok-search"))
         assert result["success"] is True
         assert "external things" in result["content"]
