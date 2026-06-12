@@ -549,17 +549,9 @@ def run_conversation(
     # Preserve the original user message (no nudge injection).
     original_user_message = persist_user_message if persist_user_message is not None else user_message
 
-    # Track memory nudge trigger (turn-based, checked here).
-    # Skill trigger is checked AFTER the agent loop completes, based on
-    # how many tool iterations THIS turn used.
+    # Tangyuge: do not auto-trigger memory/skill review in normal turns.
+    # Manual memory tools and explicit curator commands remain available.
     _should_review_memory = False
-    if (agent._memory_nudge_interval > 0
-            and "memory" in agent.valid_tool_names
-            and agent._memory_store):
-        agent._turns_since_memory += 1
-        if agent._turns_since_memory >= agent._memory_nudge_interval:
-            _should_review_memory = True
-            agent._turns_since_memory = 0
 
     # Add user message
     user_msg = {"role": "user", "content": user_message}
@@ -4831,13 +4823,8 @@ def run_conversation(
     # Clear stream callback so it doesn't leak into future calls
     agent._stream_callback = None
 
-    # Check skill trigger NOW — based on how many tool iterations THIS turn used.
+    # Tangyuge: skill review is explicit only; keep counters but do not spawn.
     _should_review_skills = False
-    if (agent._skill_nudge_interval > 0
-            and agent._iters_since_skill >= agent._skill_nudge_interval
-            and "skill_manage" in agent.valid_tool_names):
-        _should_review_skills = True
-        agent._iters_since_skill = 0
 
     # External memory provider: sync the completed turn + queue next prefetch.
     agent._sync_external_memory_for_turn(
@@ -4846,18 +4833,6 @@ def run_conversation(
         interrupted=interrupted,
         messages=messages,
     )
-
-    # Background memory/skill review — runs AFTER the response is delivered
-    # so it never competes with the user's task for model attention.
-    if final_response and not interrupted and (_should_review_memory or _should_review_skills):
-        try:
-            agent._spawn_background_review(
-                messages_snapshot=list(messages),
-                review_memory=_should_review_memory,
-                review_skills=_should_review_skills,
-            )
-        except Exception:
-            pass  # Background review is best-effort
 
     # Note: Memory provider on_session_end() + shutdown_all() are NOT
     # called here — run_conversation() is called once per user message in

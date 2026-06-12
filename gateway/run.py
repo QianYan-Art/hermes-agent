@@ -19933,21 +19933,6 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
             except Exception as e:
                 logger.debug("Paste sweep error: %s", e)
 
-        # Curator — piggy-back on the existing cron ticker so long-running
-        # gateways get weekly skill maintenance without needing restarts.
-        # maybe_run_curator() is internally gated by config.interval_hours
-        # (7 days by default), so CURATOR_EVERY is just the poll rate — the
-        # real work only fires once per config interval.
-        if tick_count % CURATOR_EVERY == 0:
-            try:
-                from agent.curator import maybe_run_curator
-                maybe_run_curator(
-                    idle_for_seconds=float("inf"),
-                    on_summary=lambda msg: logger.info("curator: %s", msg),
-                )
-            except Exception as e:
-                logger.debug("Curator tick error: %s", e)
-
         stop_event.wait(timeout=interval)
     logger.info("Cron ticker stopped")
 

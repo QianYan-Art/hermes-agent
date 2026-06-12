@@ -121,16 +121,9 @@ def run_codex_app_server_turn(
         getattr(agent, "_iters_since_skill", 0) + turn.tool_iterations
     )
 
-    # Now check the skill nudge AFTER iters were incremented — same
-    # pattern the chat_completions path uses (line ~15432).
+    # Tangyuge: do not auto-trigger memory/skill review in Codex runtime.
+    should_review_memory = False
     should_review_skills = False
-    if (
-        agent._skill_nudge_interval > 0
-        and agent._iters_since_skill >= agent._skill_nudge_interval
-        and "skill_manage" in agent.valid_tool_names
-    ):
-        should_review_skills = True
-        agent._iters_since_skill = 0
 
     # External memory provider sync (mirrors line ~15439). Skipped on
     # interrupt/error to avoid feeding partial transcripts to memory.
@@ -143,23 +136,6 @@ def run_codex_app_server_turn(
             )
         except Exception:
             logger.debug("external memory sync raised", exc_info=True)
-
-    # Background review fork — same cadence + signature as the default
-    # path (line ~15449). Only fires when a trigger actually tripped AND
-    # we have a real final response.
-    if (
-        turn.final_text
-        and not turn.interrupted
-        and (should_review_memory or should_review_skills)
-    ):
-        try:
-            agent._spawn_background_review(
-                messages_snapshot=list(messages),
-                review_memory=should_review_memory,
-                review_skills=should_review_skills,
-            )
-        except Exception:
-            logger.debug("background review spawn raised", exc_info=True)
 
     return {
         "final_response": turn.final_text,
