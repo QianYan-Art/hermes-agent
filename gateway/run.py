@@ -6798,6 +6798,10 @@ class GatewayRunner:
                 getattr(self.config, "thread_sessions_per_user", False),
             )
 
+        if platform not in {Platform.QQBOT, Platform.API_SERVER}:
+            logger.warning("Platform '%s' is not retained in tangyuge-hermes", platform.value)
+            return None
+
         # ── Plugin-registered platforms (checked first) ───────────────────
         try:
             from gateway.platform_registry import platform_registry
