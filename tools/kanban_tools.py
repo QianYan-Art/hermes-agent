@@ -21,7 +21,7 @@ Why tools instead of just shelling out to ``hermes kanban``?
    model can reason about, not stderr strings it has to parse.
 
 Humans continue to use the CLI (``hermes kanban …``), the dashboard
-(``hermes dashboard``), and the slash command (``/kanban …``) — all
+and the slash command (``/kanban …``) — all
 three bypass the agent entirely. The tools are for dispatcher-spawned
 worker handoffs and for configured orchestrator profiles that route work
 through the board.

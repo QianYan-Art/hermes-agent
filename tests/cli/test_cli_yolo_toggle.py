@@ -196,7 +196,7 @@ class TestSessionRotationTransfersYolo:
     compression continuation), YOLO state keyed under the old id must move
     to the new id. Otherwise the user's ``/yolo ON`` silently reverts on
     the next turn — the same UX failure mode this PR set out to fix.
-    Mirrors ``tui_gateway/server.py`` ~line 1297-1305."""
+    Mirrors the runtime toolset parser."""
 
     def test_transfer_moves_yolo_to_new_session(self):
         stand_in = _make_stand_in(session_id="old-id")

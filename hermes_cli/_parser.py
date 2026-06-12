@@ -41,8 +41,6 @@ _EPILOGUE = """
 Examples:
     hermes                        Start interactive chat
     hermes chat -q "Hello"        Single query mode
-    hermes --tui                  Launch the modern TUI (or set display.interface: tui)
-    hermes --cli                  Force the classic REPL (overrides display.interface: tui)
     hermes -c                     Resume the most recent session
     hermes -c "my project"        Resume a session by name (latest in lineage)
     hermes --resume <session_id>  Resume a specific session by ID
@@ -72,9 +70,6 @@ Examples:
     hermes logs --since 1h        Lines from the last hour
     hermes debug share             Upload debug report for support
     hermes update                 Update to latest version
-    hermes dashboard              Start web UI dashboard (port 9119)
-    hermes dashboard --stop       Stop running dashboard processes
-    hermes dashboard --status     List running dashboard processes
 
 For more help on a command:
     hermes <command> --help
@@ -122,7 +117,7 @@ def build_top_level_parser():
         default=None,
         help=(
             "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). "
-            "Applies to -z/--oneshot and --tui. Also settable via HERMES_INFERENCE_MODEL env var."
+            "Applies to -z/--oneshot. Also settable via HERMES_INFERENCE_MODEL env var."
         ),
     )
     _inherited_flag(
@@ -131,7 +126,7 @@ def build_top_level_parser():
         default=None,
         help=(
             "Provider override for this invocation (e.g. openrouter, anthropic). "
-            "Applies to -z/--oneshot and --tui. The persistent provider lives in config.yaml "
+            "Applies to -z/--oneshot. The persistent provider lives in config.yaml "
             "under model.provider — use `hermes setup` or edit the file to change it."
         ),
     )
@@ -139,7 +134,7 @@ def build_top_level_parser():
         "-t",
         "--toolsets",
         default=None,
-        help="Comma-separated toolsets to enable for this invocation. Applies to -z/--oneshot and --tui.",
+        help="Comma-separated toolsets to enable for this invocation. Applies to -z/--oneshot.",
     )
     parser.add_argument(
         "--resume",
@@ -213,29 +208,6 @@ def build_top_level_parser():
         default=False,
         help="Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills",
     )
-    _inherited_flag(
-        parser,
-        "--tui",
-        action="store_true",
-        default=False,
-        help="Launch the modern TUI instead of the classic REPL",
-    )
-    _inherited_flag(
-        parser,
-        "--cli",
-        action="store_true",
-        default=False,
-        help="Force the classic prompt_toolkit REPL (overrides display.interface=tui)",
-    )
-    _inherited_flag(
-        parser,
-        "--dev",
-        dest="tui_dev",
-        action="store_true",
-        default=False,
-        help="With --tui: run TypeScript sources via tsx (skip dist build)",
-    )
-
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # =========================================================================
@@ -371,27 +343,4 @@ def build_top_level_parser():
         default=None,
         help="Session source tag for filtering (default: cli). Use 'tool' for third-party integrations that should not appear in user session lists.",
     )
-    _inherited_flag(
-        chat_parser,
-        "--tui",
-        action="store_true",
-        default=False,
-        help="Launch the modern TUI instead of the classic REPL",
-    )
-    _inherited_flag(
-        chat_parser,
-        "--cli",
-        action="store_true",
-        default=False,
-        help="Force the classic prompt_toolkit REPL (overrides display.interface=tui)",
-    )
-    _inherited_flag(
-        chat_parser,
-        "--dev",
-        dest="tui_dev",
-        action="store_true",
-        default=False,
-        help="With --tui: run TypeScript sources via tsx (skip dist build)",
-    )
-
     return parser, subparsers, chat_parser

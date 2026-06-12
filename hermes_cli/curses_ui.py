@@ -59,8 +59,8 @@ def _is_boundary(target: str, index: int) -> bool:
 def _token_score(orig: str, lower: str, token: str) -> float | None:
     """Score one token against a target. None if the token isn't a subsequence.
 
-    A faithful port of ``fuzzyScore`` in ui-tui/src/lib/fuzzy.ts and
-    web/src/lib/fuzzy.ts so all three surfaces rank model ids identically:
+    A faithful port of the historical terminal UI fuzzy scorer so CLI
+    pickers rank model ids consistently:
     contiguous runs, word-boundary / first-char starts, prefix matches, and
     exact matches all score higher than scattered subsequence hits.
 

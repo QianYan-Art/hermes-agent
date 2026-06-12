@@ -1164,7 +1164,7 @@ _PROVIDER_ALIASES = {
 # This is deliberately a fixed, side-effect-free default for the hot resolution
 # path. The *interactive* default (GUI onboarding / ``hermes model``) uses the
 # richer free/paid-tier-aware resolver — see ``get_recommended_default_model``
-# in hermes_cli/web_server.py and ``partition_nous_models_by_tier`` — which can
+# in removed web UI code and ``partition_nous_models_by_tier`` — which can
 # hit the Portal; this fallback must stay cheap and network-free.
 _PROVIDER_SILENT_DEFAULT_OVERRIDES: dict[str, str] = {
     "nous": "deepseek/deepseek-v4-flash",

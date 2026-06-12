@@ -233,7 +233,7 @@ def check_for_updates() -> Optional[int]:
     # "1 commit behind" — even though no git repo or commit math is involved,
     # and `hermes update` correctly refuses to run in-place inside the
     # container anyway. The dashboard's REST `/api/hermes/update/check`
-    # endpoint already short-circuits docker the same way (web_server.py);
+    # endpoint used to short-circuit docker the same way;
     # mirror that here so the banner/TUI surfaces agree. Returning None makes
     # both the Rich banner (build_welcome_banner) and the Ink badge
     # (branding.tsx, guarded on `typeof === 'number' && > 0`) show nothing.

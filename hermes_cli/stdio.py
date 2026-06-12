@@ -221,7 +221,7 @@ def _augment_path_with_known_tools() -> None:
     if not local_appdata:
         return
 
-    # Known tool dirs installed by scripts/install.ps1.  Kept in sync with
+    # Known tool dirs installed by old Windows setup. Kept in sync with
     # the PATH entries that installer adds to User scope — the two lists
     # should match so this prefill fully mirrors what a fresh shell would
     # see on next launch.

@@ -357,7 +357,7 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
     The two supported install paths both self-identify via the
     ``.install_method`` stamp (caught by step 1), so neither relies on
     container detection here:
-      - the curl installer (scripts/install.sh, the README/website install
+      - legacy curl installers and docs
         command) git-clones the repo and stamps ``git``;
       - the published ``nousresearch/hermes-agent`` image stamps ``docker``
         at boot via ``docker/stage2-hook.sh``.
@@ -1347,22 +1347,9 @@ DEFAULT_CONFIG = {
         # behavior of showing tool-call summaries inline.
         "resume_skip_tool_only": True,
         "busy_input_mode": "interrupt",  # interrupt | queue | steer
-        # Which interface bare `hermes` (and `hermes chat`) launches by default:
-        #   "cli" — the classic prompt_toolkit REPL (default, preserves prior behavior)
-        #   "tui" — the modern Ink TUI (same as passing `--tui`)
-        # Explicit flags always win over this setting: `--cli` forces the classic
-        # REPL and `--tui` (or HERMES_TUI=1) forces the TUI regardless of config.
+        # Which interface bare `hermes` (and `hermes chat`) launches by default.
+        # Tangyuge keeps only the classic prompt_toolkit REPL.
         "interface": "cli",
-        # When true, `hermes --tui` auto-resumes the most recent human-
-        # facing session on launch instead of forging a fresh one.
-        # Mirrors `hermes -c` muscle memory.  Default off so existing
-        # users aren't surprised.  HERMES_TUI_RESUME=<id> always wins.
-        "tui_auto_resume_recent": False,
-        # When true (default), `hermes --tui` drops a one-time hint
-        # ("subagents working · /agents to watch live") the first time a turn
-        # starts delegating, nudging the user toward the live spawn-tree
-        # dashboard. Set false to suppress the hint.
-        "tui_agents_nudge": True,
         "bell_on_complete": False,
         "show_reasoning": False,
         "streaming": False,
@@ -1481,34 +1468,6 @@ DEFAULT_CONFIG = {
         "oauth": {
             "client_id": "",  # agent:{instance_id} — Portal provisions this
             "portal_url": "",  # blank → use plugin default (production Portal)
-        },
-        # Username/password gate configuration — read by the bundled
-        # ``dashboard_auth/basic`` plugin (a self-hosted "just put a
-        # password on my dashboard" provider that needs no OAuth IDP).
-        # The plugin registers a password provider when ``username`` plus
-        # either ``password_hash`` (preferred — no plaintext at rest) or
-        # ``password`` (plaintext, hashed in-memory at load) are set. Each
-        # key is overridable by an env var
-        # (``HERMES_DASHBOARD_BASIC_AUTH_USERNAME`` /
-        # ``_PASSWORD_HASH`` / ``_PASSWORD`` / ``_SECRET`` /
-        # ``_TTL_SECONDS``), env winning when non-empty. Leave ``username``
-        # empty (the default) to keep the plugin a no-op — loopback /
-        # ``--insecure`` operators and OAuth users are unaffected.
-        #
-        # ``secret`` is the HMAC key used to sign the stateless session
-        # tokens this provider mints. When empty, a random per-process key
-        # is generated — fine for a single process, but sessions then
-        # don't survive a restart or span multiple workers. Set an
-        # explicit ``secret`` (32+ random bytes, base64/hex/raw) for
-        # stable multi-worker / restart-surviving sessions. Compute a
-        # ``password_hash`` with
-        # ``python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('PW'))"``.
-        "basic_auth": {
-            "username": "",  # blank → plugin no-op (no password provider)
-            "password_hash": "",  # scrypt$... (preferred — no plaintext at rest)
-            "password": "",  # plaintext fallback (hashed in-memory at load)
-            "secret": "",  # token-signing key; blank → random per-process
-            "session_ttl_seconds": 0,  # 0 → plugin default (12h)
         },
         # Public URL override (env: ``HERMES_DASHBOARD_PUBLIC_URL``).
         # When set, this is the complete authority — scheme + host +

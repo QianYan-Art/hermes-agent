@@ -1359,7 +1359,7 @@ AUTHOR_MAP = {
     "209694554+soynchux@users.noreply.github.com": "soynchux",
     # batch salvage (May 2026 LHF run, group 6 — final)
     "6666242+bird@users.noreply.github.com": "bird",  # PR #25219 (gateway docker exit-75 restart)
-    "david@loadmagic.ai": "davidcampbelldc",  # PR #26834 (web_server proxy_headers=False)
+    "david@loadmagic.ai": "davidcampbelldc",
     "165905879+davidcampbelldc@users.noreply.github.com": "davidcampbelldc",
     "hoangv.pham0803@gmail.com": "hehehe0803",  # PR #26212 salvage (codex kanban writable root)
     "26063003+hehehe0803@users.noreply.github.com": "hehehe0803",
