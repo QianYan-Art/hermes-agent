@@ -76,8 +76,8 @@ def test_get_platform_tools_uses_default_when_platform_not_configured():
 
     enabled = _get_platform_tools(config, "cli")
 
-    assert enabled
     assert enabled.isdisjoint(_DEFAULT_OFF_TOOLSETS)
+    assert enabled <= {ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS}
 
 
 def test_gui_toolset_label_strips_leading_emoji():
@@ -91,8 +91,25 @@ def test_configurable_toolsets_include_messaging():
     assert any(ts_key == "messaging" for ts_key, _, _ in CONFIGURABLE_TOOLSETS)
 
 
-def test_configurable_toolsets_include_context_engine():
-    assert any(ts_key == "context_engine" for ts_key, _, _ in CONFIGURABLE_TOOLSETS)
+def test_configurable_toolsets_match_tangyuge_retained_scope():
+    retained = {
+        "browser",
+        "clarify",
+        "cronjob",
+        "delegation",
+        "file",
+        "image_gen",
+        "memory",
+        "messaging",
+        "skills",
+        "terminal",
+        "todo",
+        "tts",
+        "vision",
+        "web",
+    }
+
+    assert {ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS} == retained
 
 
 def test_get_platform_tools_active_context_engine_is_enabled_for_explicit_config():
