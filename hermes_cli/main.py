@@ -147,17 +147,9 @@ def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
     return False
 
 
-# Mouse-tracking residue suppression — runs BEFORE every other import on the
-# TUI hot path so the terminal stops emitting SGR/X10 mouse reports while the
-# Python launcher is still doing imports (≈100–300ms in cooked + echo mode,
-# before the Node TUI takes stdin into raw mode). During that window any
-# incoming bytes are echoed straight back to the user's shell scrollback as
-# ``^[[<…M`` text. The TUI itself runs `resetTerminalModes()` again in
-# `entry.tsx`; this is just the earlier cousin. ``HERMES_TUI_NO_EARLY_DISABLE``
-# escapes the behaviour for diagnostics.
+# Legacy mouse-tracking residue suppression. Tangyuge disables the TUI launch
+# path, so this normally returns before touching the terminal.
 def _suppress_mouse_residue_early() -> None:
-    if os.environ.get("HERMES_TUI_NO_EARLY_DISABLE") == "1":
-        return
     if not _wants_tui_early():
         return
     try:
@@ -10548,7 +10540,7 @@ _AGENT_SUBCOMMANDS = {
 
 
 def _is_tui_chat_launch(args) -> bool:
-    return bool(getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1")
+    return False
 
 
 def _command_has_dedicated_mcp_startup(args) -> bool:

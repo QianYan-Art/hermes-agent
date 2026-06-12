@@ -8,7 +8,7 @@ Log files produced:
     agent.log   — INFO+, all agent/tool/session activity (the main log)
     errors.log  — WARNING+, errors and warnings only (quick triage)
     gateway.log — INFO+, gateway-only events (created when mode="gateway")
-    gui.log     — INFO+, dashboard/websocket/TUI-gateway events
+    gui.log     — INFO+, dashboard/websocket events
                   (created when mode="gui")
 
 All files use ``RotatingFileHandler`` with ``RedactingFormatter`` so
@@ -18,7 +18,7 @@ Component separation:
     gateway.log only receives records from ``gateway.*`` loggers —
     platform adapters, session management, slash commands, delivery.
     gui.log receives dashboard-side records from ``hermes_cli.web_server``,
-    ``hermes_cli.pty_bridge``, ``tui_gateway.*``, and ``uvicorn.*``.
+    ``hermes_cli.pty_bridge`` and ``uvicorn.*``.
     agent.log remains the catch-all (everything goes there).
 
 Session context:
@@ -153,7 +153,6 @@ COMPONENT_PREFIXES = {
     "gui": (
         "hermes_cli.web_server",
         "hermes_cli.pty_bridge",
-        "tui_gateway",
         "uvicorn",
     ),
 }
@@ -197,7 +196,7 @@ def setup_logging(
         When ``"gateway"``, an additional ``gateway.log`` file is created
         that receives only gateway-component records.
         When ``"gui"``, an additional ``gui.log`` file is created that
-        receives dashboard and TUI-gateway component records.
+        receives dashboard component records.
     force
         Re-run setup even if it has already been called.
 
@@ -256,7 +255,7 @@ def setup_logging(
             log_filter=_ComponentFilter(COMPONENT_PREFIXES["gateway"]),
         )
 
-    # --- gui.log (INFO+, dashboard/tui-gateway components) -----------------
+    # --- gui.log (INFO+, dashboard components) -----------------------------
     if mode == "gui":
         _add_rotating_handler(
             root,

@@ -185,9 +185,6 @@ authorization model, but the rules below apply uniformly.
 - **Editor / IDE adapters.** The ACP adapter (`acp_adapter/`) and
   equivalent integrations that accept requests from a local client
   process.
-- **The TUI gateway (`tui_gateway/`).** JSON-RPC backend for the
-  Ink terminal UI, reached over local IPC.
-
 **Uniform rules:**
 
 1. **Authorization is required at every surface that crosses a

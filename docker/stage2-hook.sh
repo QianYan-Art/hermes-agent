@@ -31,7 +31,7 @@ as_hermes() { [ "$(id -u)" = 0 ] || { "$@"; return; }; s6-setuidgid hermes "$@";
 # Under s6-overlay this no longer works: the bootstrap (UID remap, volume +
 # build-tree chown, config seeding) all require root, and they're skipped when
 # the container starts non-root. The baked image trees (/opt/data, /opt/hermes/
-# .venv, ui-tui, node_modules) stay owned by the hermes build UID (10000), so an
+# .venv and node_modules) stay owned by the hermes build UID (10000), so an
 # arbitrary `--user` UID can't write them — the runtime then fails with EACCES
 # on a bind mount, or hard-crashes on a named volume (Docker initialises the
 # volume from the image as UID 10000, and the non-root start can't even `cd`
@@ -212,10 +212,6 @@ fi
 # runtime hermes UID no longer owns them — otherwise:
 #   - .venv: lazy_deps.py cannot install platform packages (discord.py,
 #     telegram, slack, etc.) with EACCES (#15012, #21100)
-#   - ui-tui: esbuild rebuilds dist/entry.js on every TUI launch (when
-#     the source mtime is newer than dist/ or when HERMES_TUI_FORCE_BUILD
-#     is set) and writes to ui-tui/dist/. Without this chown the new
-#     hermes UID can't write the build output (#28851).
 #   - gateway: Python writes __pycache__ and runtime artifacts beneath the
 #     gateway package on first import. After a UID remap those source-owned
 #     paths still belong to the build-time UID (10000) unless repaired here,
@@ -235,7 +231,7 @@ fi
 # are NOT touched by usermod and remain owned by the build-time UID
 # (10000). Gating them on $HERMES_HOME ownership (as #35027 did) silently
 # skipped this chown on the common PUID/NAS path, regressing lazy installs
-# and TUI rebuilds. Probe the build trees directly instead: chown only
+# and lazy installs. Probe the build trees directly instead: chown only
 # when the venv is not already owned by the runtime hermes UID. Idempotent
 # and skips the expensive recursive chown on every restart once ownership
 # is settled.
@@ -244,7 +240,6 @@ if [ -n "$venv_owner" ] && [ "$venv_owner" != "$actual_hermes_uid" ]; then
     echo "[stage2] Fixing ownership of build trees under $INSTALL_DIR to hermes ($actual_hermes_uid)"
     chown -R hermes:hermes \
         "$INSTALL_DIR/.venv" \
-        "$INSTALL_DIR/ui-tui" \
         "$INSTALL_DIR/gateway" \
         "$INSTALL_DIR/node_modules" \
         2>/dev/null || \
