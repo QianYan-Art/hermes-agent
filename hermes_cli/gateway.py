@@ -4518,12 +4518,7 @@ def _setup_standard_platform(platform: dict):
     print_success(f"{emoji} {label} configured!")
 
 
-def _setup_whatsapp():
-    """Delegate to the existing WhatsApp setup flow."""
-    from hermes_cli.main import cmd_whatsapp
-    import argparse
 
-    cmd_whatsapp(argparse.Namespace())
 
 
 def _setup_dingtalk():
@@ -5410,23 +5405,6 @@ def _builtin_setup_fn(key: str):
     from hermes_cli import setup as _s
 
     return {
-        "telegram": _s._setup_telegram,
-        # discord moved into the plugin: setup_fn is registered by
-        # plugins/platforms/discord/adapter.py::register() and dispatched
-        # via the plugin path in _configure_platform().
-        "slack": _s._setup_slack,
-        "matrix": _s._setup_matrix,
-        # mattermost moved into the plugin: setup_fn is registered by
-        # plugins/platforms/mattermost/adapter.py::register() and dispatched
-        # via the plugin path in _configure_platform().
-        "bluebubbles": _s._setup_bluebubbles,
-        "webhooks": _s._setup_webhooks,
-        "signal": _setup_signal,
-        "whatsapp": _setup_whatsapp,
-        "weixin": _setup_weixin,
-        "dingtalk": _setup_dingtalk,
-        "feishu": _setup_feishu,
-        "wecom": _setup_wecom,
         "qqbot": _setup_qqbot,
     }.get(key)
 
