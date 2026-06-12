@@ -53,6 +53,8 @@ def _character_book_section(character: dict[str, Any]) -> str:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
+        if entry.get("constant") is not True:
+            continue
         content = str(entry.get("content", "")).strip()
         if not content:
             continue
@@ -70,7 +72,6 @@ def build_tangyuge_identity_prompt(path: Path | None = None) -> str:
         _section("Name", character.get("name")),
         _section("Core Description", character.get("description")),
         _section("Personality", character.get("personality")),
-        _section("Scenario", character.get("scenario")),
         _section("System Prompt", character.get("system_prompt")),
         _section("Example Dialogue", character.get("mes_example")),
         _character_book_section(character),

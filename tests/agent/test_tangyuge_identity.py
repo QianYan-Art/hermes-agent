@@ -18,8 +18,11 @@ def test_runtime_character_json_excludes_chat_openers_and_html_panel():
     assert data["name"] == "唐语歌"
     assert "first_mes" not in data
     assert "alternate_greetings" not in data
+    assert "scenario" not in data
     assert "post_history_instructions" not in data
-    assert "details open" not in json.dumps(data, ensure_ascii=False)
+    serialized = json.dumps(data, ensure_ascii=False)
+    assert "details open" not in serialized
+    assert "烟火大会" not in serialized
     assert data["provenance"]["source_filename"] == "唐语歌-恋人卡-v1.png"
 
 
@@ -31,6 +34,8 @@ def test_build_tangyuge_identity_prompt_is_deterministic_and_high_priority():
     assert prompt1.startswith("# Tangyuge Identity")
     assert "highest-priority identity block" in prompt1
     assert "唐语歌" in prompt1
+    assert "## Scenario" not in prompt1
+    assert "烟火大会" not in prompt1
     assert "{{original}}" not in prompt1
 
 
