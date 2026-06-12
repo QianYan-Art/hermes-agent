@@ -550,6 +550,29 @@ TOOLSETS = {
     }
 }
 
+RETAINED_TANGYUGE_TOOLSETS = {
+    "web",
+    "browser",
+    "terminal",
+    "file",
+    "vision",
+    "image_gen",
+    "tts",
+    "skills",
+    "todo",
+    "memory",
+    "clarify",
+    "cronjob",
+    "messaging",
+    "delegation",
+}
+
+TOOLSETS = {
+    name: toolset
+    for name, toolset in TOOLSETS.items()
+    if name in RETAINED_TANGYUGE_TOOLSETS
+}
+
 
 
 def get_toolset(name: str) -> Optional[Dict[str, Any]]:

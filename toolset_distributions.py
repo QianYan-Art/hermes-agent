@@ -26,6 +26,24 @@ from toolsets import validate_toolset
 
 # Distribution definitions
 # Each key is a distribution name, and the value is a dict of toolset_name: probability_percentage
+RETAINED_TANGYUGE_TOOLSETS = {
+    "web",
+    "browser",
+    "terminal",
+    "file",
+    "vision",
+    "image_gen",
+    "tts",
+    "skills",
+    "todo",
+    "memory",
+    "clarify",
+    "cronjob",
+    "messaging",
+    "delegation",
+}
+
+
 DISTRIBUTIONS = {
     # Default: All tools available 100% of the time
     "default": {
@@ -218,6 +236,13 @@ DISTRIBUTIONS = {
         }
     }
 }
+
+for _distribution in DISTRIBUTIONS.values():
+    _distribution["toolsets"] = {
+        name: weight
+        for name, weight in _distribution["toolsets"].items()
+        if name in RETAINED_TANGYUGE_TOOLSETS
+    }
 
 
 def get_distribution(name: str) -> Optional[Dict[str, any]]:
