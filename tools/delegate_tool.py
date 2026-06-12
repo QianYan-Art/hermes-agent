@@ -678,6 +678,7 @@ def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
         "delegation",
         "clarify",
         "memory",
+        "skills",
         "code_execution",
     }
     return [t for t in toolsets if t not in blocked_toolset_names]

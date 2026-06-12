@@ -46,13 +46,22 @@ class TestToolsetIntersection:
         assert "file" in child
         assert "web" in child
 
-    def test_strip_blocked_removes_delegation(self):
-        """Blocked toolsets (delegation, clarify, etc.) are always removed."""
-        child = _strip_blocked_tools(["terminal", "delegation", "clarify", "memory"])
+    def test_strip_blocked_removes_mutating_agent_toolsets(self):
+        """Blocked toolsets are always removed from default sub-agents."""
+        child = _strip_blocked_tools(
+            ["terminal", "delegation", "clarify", "memory", "skills"]
+        )
         assert "delegation" not in child
         assert "clarify" not in child
         assert "memory" not in child
+        assert "skills" not in child
         assert "terminal" in child
+
+    def test_requested_skills_toolset_is_stripped(self):
+        """A child cannot regain skill mutation by explicitly requesting skills."""
+        child = _strip_blocked_tools(["skills"])
+
+        assert child == []
 
     def test_empty_intersection_yields_empty_toolsets(self):
         """If parent has no overlap with requested, child gets nothing extra."""
