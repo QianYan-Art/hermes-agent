@@ -55,3 +55,37 @@ class TestContextFileCwd:
     def test_configured_dir_when_terminal_cwd_set(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         assert _captured_context_cwd(_make_agent()) == tmp_path
+
+
+class TestTangyugeIdentityOrdering:
+    def test_tangyuge_identity_is_first_stable_block(self):
+        parts = build_system_prompt_parts(_make_agent(skip_context_files=True))
+
+        assert parts["stable"].startswith("# Tangyuge Identity")
+        assert "唐语歌" in parts["stable"]
+
+    def test_soul_md_is_overlay_after_tangyuge_identity(self):
+        agent = _make_agent(load_soul_identity=True, skip_context_files=True)
+        with patch("run_agent.load_soul_md", return_value="SOUL OVERLAY"):
+            parts = build_system_prompt_parts(agent)
+
+        assert parts["stable"].index("# Tangyuge Identity") < parts["stable"].index("SOUL OVERLAY")
+
+    def test_memory_and_user_profile_remain_volatile_below_identity(self):
+        class Store:
+            def format_for_system_prompt(self, kind):
+                return f"{kind.upper()} BLOCK"
+
+        parts = build_system_prompt_parts(
+            _make_agent(
+                skip_context_files=True,
+                _memory_store=Store(),
+                _memory_enabled=True,
+                _user_profile_enabled=True,
+            )
+        )
+
+        assert "MEMORY BLOCK" not in parts["stable"]
+        assert "USER BLOCK" not in parts["stable"]
+        assert "MEMORY BLOCK" in parts["volatile"]
+        assert "USER BLOCK" in parts["volatile"]
