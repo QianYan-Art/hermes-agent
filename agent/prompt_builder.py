@@ -1068,8 +1068,9 @@ def build_skills_system_prompt(
     are read-only — they appear in the index but new skills are always created
     in the local dir.  Local skills take precedence when names collide.
     """
-    skills_dir = get_skills_dir()
-    external_dirs = get_all_skills_dirs()[1:]  # skip local (index 0)
+    all_skills_dirs = get_all_skills_dirs()
+    skills_dir = all_skills_dirs[0]
+    external_dirs = all_skills_dirs[1:]  # local ~/.hermes/skills, then configured external dirs
 
     if not skills_dir.exists() and not external_dirs:
         return ""

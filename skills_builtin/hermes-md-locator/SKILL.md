@@ -1,0 +1,60 @@
+---
+name: hermes-md-locator
+description: 当用户说“维护手册”“看维护手册”“查维护手册”“唐语歌维护手册”“Hermes维护手册”“全局状态”“当前状态”“服务器全局状态”“全局状态文档”“邮件VPS文档”“邮件集成文档”“邮箱文档”“看邮箱文档”等，需要读取或定位 Hermes 唐语歌维护手册、当前服务器全局状态文档、邮件 VPS 集成文档、更新补丁记录、部署状态、配置路径时，必须使用本技能。
+---
+
+# Hermes 唐语歌维护文档入口
+
+## 目标
+
+本技能是顶层文档入口，负责把用户的自然说法映射到服务器上的固定维护文档。
+
+## 固定文档路径
+
+- 维护手册：`/home/hermes/HERMES_TANGYUGE_MAINTENANCE.md`
+- 当前服务器全局状态：`/home/hermes/HERMES_CURRENT_GLOBAL_STATUS.md`
+- 邮件 VPS 集成文档：`/home/hermes/HERMES_MAIL_VPS_INTEGRATION.md`
+
+本地同步副本：
+
+- 维护手册：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-05-22_Hermes_唐语歌人格维护说明.md`
+- 当前服务器全局状态：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-05-22_Hermes_当前服务器全局状态.md`
+- 邮件 VPS 集成文档：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-05-21_Hermes_邮件VPS集成说明.md`
+
+tangyuge-hermes 二开文档：
+
+- 总方案：`D:\MCP_Server\my-hermes\TANGYUGE_HERMES_DEVELOPMENT_PLAN.md`
+- 执行提示词：`D:\MCP_Server\my-hermes\TANGYUGE_HERMES_IMPLEMENTATION_PROMPT.md`
+- 服务器审查报告：`D:\MCP_Server\my-hermes\reviewer\hermes-server-review.md`
+- 仓库 overview：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\00-overview.md`
+
+## 触发语义
+
+用户说以下内容时，优先使用本技能：
+
+- “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
+- “维护手册”“看维护手册”“查维护手册”“打开维护手册”
+- “唐语歌维护手册”“唐语歌人格维护手册”“Hermes维护手册”
+- “全局状态”“当前状态”“服务器状态”“服务器全局状态”
+- “全局状态文档”“当前服务器全局状态文档”
+- “邮件VPS文档”“邮件集成文档”“邮件读取文档”“邮件技能文档”
+- “邮箱文档”“看邮箱文档”“查邮箱文档”
+- “按维护手册处理”“按全局状态文档核对”
+- “之前做了什么 patch”“当前有哪些补丁”“更新时要保留什么”
+- “tangyuge-hermes 二开”“二开方案”“部署方案”“当前 mission 方案”
+
+## 使用规则
+
+1. 用户问“维护手册”类问题时，读取 `/home/hermes/HERMES_TANGYUGE_MAINTENANCE.md`。
+2. 用户问“全局状态”类问题时，读取 `/home/hermes/HERMES_CURRENT_GLOBAL_STATUS.md`。
+3. 用户问“邮件 VPS、读邮件、附件、发信、回复、转发、Trash、删除、邮件 skill”时，优先读取 `/home/hermes/HERMES_MAIL_VPS_INTEGRATION.md`。
+4. 用户问“更新、diff、patch、当前真实配置、启用工具集、provider、模型、memory、skills、网关状态”时，优先读取全局状态文档。
+5. 用户问“如何维护、如何重启、如何删除 skill、如何改配置、日常操作步骤”时，优先读取维护手册。
+6. 如果多个文档都相关，先读全局状态确认真实状态，再按主题读维护手册或邮件专题文档。
+7. 用户问 tangyuge-hermes 二开、部署方案、当前实现边界时，优先读取本技能列出的二开文档。
+
+## 注意事项
+
+- 不要凭记忆猜路径；先使用上面的固定路径。
+- 不要把 API key、bot token、私钥内容输出给用户。
+- 本技能只定位和读取文档；真正修改服务器、重启网关、清理文件前，仍要按维护手册和当前全局状态逐项核对。

@@ -424,13 +424,19 @@ def get_external_skills_dirs() -> List[Path]:
     return result
 
 
-def get_all_skills_dirs() -> List[Path]:
-    """Return all skill directories: local ``~/.hermes/skills/`` first, then external.
+def get_builtin_skills_dir() -> Path:
+    """Return the repository-bundled skills directory."""
+    return Path(__file__).resolve().parents[1] / "skills_builtin"
 
-    The local dir is always first (and always included even if it doesn't exist
-    yet — callers handle that).  External dirs follow in config order.
+
+def get_all_skills_dirs() -> List[Path]:
+    """Return all skill directories: bundled, local, then external.
+
+    Bundled skills are first so this fork's baseline skills cannot be shadowed
+    by user or external skills with the same name. The local dir is still always
+    included even if it does not exist yet; callers handle missing dirs.
     """
-    dirs = [get_skills_dir()]
+    dirs = [get_builtin_skills_dir(), get_skills_dir()]
     dirs.extend(get_external_skills_dirs())
     return dirs
 

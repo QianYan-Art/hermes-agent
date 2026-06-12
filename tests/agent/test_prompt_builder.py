@@ -251,7 +251,8 @@ class TestBuildSkillsSystemPrompt:
     def test_empty_when_no_skills_dir(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         result = build_skills_system_prompt()
-        assert result == ""
+        assert "tangyuge-roleplay" in result
+        assert "grok-search" in result
 
     def test_builds_index_with_skills(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
