@@ -27,12 +27,20 @@ tangyuge-hermes 二开文档：
 - 执行提示词：`D:\MCP_Server\my-hermes\TANGYUGE_HERMES_IMPLEMENTATION_PROMPT.md`
 - 服务器审查报告：`D:\MCP_Server\my-hermes\reviewer\hermes-server-review.md`
 - 仓库 overview：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\00-overview.md`
+- 81 部署文档：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\01-deployment-81.md`
+- 项目精简方案：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\02-trim-plan.md`
+- 唐语歌内核提示词方案：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\03-identity-prompt.md`
+- 内置 skills 方案：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\04-built-in-skills.md`
+- Patch 与 RTK 文档：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\05-patches-and-rtk.md`
+- 升级冻结策略：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\06-upgrade-freeze.md`
 
 ## 触发语义
 
 用户说以下内容时，优先使用本技能：
 
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
+- “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”
+- “语歌，看部署方案”“语歌，看二开总方案”“语歌，看内置 skills 方案”
 - “维护手册”“看维护手册”“查维护手册”“打开维护手册”
 - “唐语歌维护手册”“唐语歌人格维护手册”“Hermes维护手册”
 - “全局状态”“当前状态”“服务器状态”“服务器全局状态”
