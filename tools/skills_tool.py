@@ -478,14 +478,13 @@ def _get_category_from_path(skill_path: Path) -> Optional[str]:
     For paths like: ~/.hermes/skills/mlops/axolotl/SKILL.md -> "mlops"
     Also works for external skill dirs configured via skills.external_dirs.
     """
-    # Try the module-level SKILLS_DIR first (respects monkeypatching in tests),
-    # then fall back to external dirs from config.
-    dirs_to_check = [SKILLS_DIR]
+    # Try the full skill search path so bundled skills get stable categories
+    # and local/external skills keep the legacy behavior.
     try:
-        from agent.skill_utils import get_external_skills_dirs
-        dirs_to_check.extend(get_external_skills_dirs())
+        from agent.skill_utils import get_all_skills_dirs
+        dirs_to_check = get_all_skills_dirs()
     except Exception:
-        pass
+        dirs_to_check = [SKILLS_DIR]
     for skills_dir in dirs_to_check:
         try:
             rel_path = skill_path.relative_to(skills_dir)
@@ -585,7 +584,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     Returns:
         List of skill metadata dicts (name, description, category).
     """
-    from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
+    from agent.skill_utils import get_all_skills_dirs, iter_skill_index_files
 
     skills = []
     seen_names: set = set()
@@ -593,11 +592,9 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     # Load disabled set once (not per-skill)
     disabled = set() if skip_disabled else _get_disabled_skill_names()
 
-    # Scan local dir first, then external dirs (local takes precedence)
-    dirs_to_scan = []
-    if SKILLS_DIR.exists():
-        dirs_to_scan.append(SKILLS_DIR)
-    dirs_to_scan.extend(get_external_skills_dirs())
+    # Bundled skills scan first so the retained Tangyuge baseline is available
+    # on clean installs and cannot be shadowed by local/external same-name skills.
+    dirs_to_scan = [p for p in get_all_skills_dirs() if p.exists()]
 
     for scan_dir in dirs_to_scan:
         for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
@@ -926,13 +923,10 @@ def skill_view(
             if bare:
                 local_category_name = f"{namespace}/{bare}"
 
-        from agent.skill_utils import get_external_skills_dirs
+        from agent.skill_utils import get_all_skills_dirs, get_builtin_skills_dir
 
         # Build list of all skill directories to search
-        all_dirs = []
-        if SKILLS_DIR.exists():
-            all_dirs.append(SKILLS_DIR)
-        all_dirs.extend(get_external_skills_dirs())
+        all_dirs = [p for p in get_all_skills_dirs() if p.exists()]
 
         if not all_dirs:
             return json.dumps(
@@ -998,6 +992,14 @@ def skill_view(
                     _record(None, found_md)
 
         if len(candidates) > 1:
+            builtin_root = get_builtin_skills_dir().resolve()
+            try:
+                candidates[0][1].resolve().relative_to(builtin_root)
+                candidates = [candidates[0]]
+            except ValueError:
+                pass
+
+        if len(candidates) > 1:
             paths = [str(smd) for _, smd in candidates]
             logging.getLogger(__name__).warning(
                 "Skill name collision for '%s': %d candidates — %s",
@@ -1051,11 +1053,10 @@ def skill_view(
         # Security: warn if skill is loaded from outside trusted directories
         # (local skills dir + configured external_dirs are all trusted)
         _outside_skills_dir = True
-        _trusted_dirs = [SKILLS_DIR.resolve()]
         try:
-            _trusted_dirs.extend(d.resolve() for d in all_dirs[1:])
+            _trusted_dirs = [d.resolve() for d in all_dirs]
         except Exception:
-            pass
+            _trusted_dirs = [SKILLS_DIR.resolve()]
         for _td in _trusted_dirs:
             try:
                 skill_md.resolve().relative_to(_td)
