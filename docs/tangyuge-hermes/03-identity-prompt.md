@@ -1,5 +1,8 @@
 # Tangyuge Identity Prompt
 
+Common user aliases for this document: "唐语歌人格", "角色卡",
+"bot内核", "内核提示词", "SOUL", "身份注入", "角色怎么插入项目".
+
 Tangyuge-Hermes injects Tangyuge identity as the first stable system-prompt
 block. Later SOUL, skill, memory, user, and platform instructions may add
 context, but must not override this identity.

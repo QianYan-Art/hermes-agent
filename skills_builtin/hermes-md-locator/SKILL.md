@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户说“维护手册”“看维护手册”“查维护手册”“去维护手册里查重启网关命令”“唐语歌维护手册”“Hermes维护手册”“全局状态”“当前状态”“服务器全局状态”“全局状态文档”“邮件文档”“邮件VPS文档”“邮件集成文档”“邮箱文档”“看邮箱文档”“tangyuge-hermes 文档”等，需要读取或定位 Tangyuge-Hermes repo 文档、部署状态、维护说明、邮件 VPS 集成、更新补丁记录、配置路径时，必须使用本技能。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“关闭自动记忆”“RTK”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -25,10 +25,43 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 本地 KBase 只保留人工记录，不作为 bot 定位源；81 服务器不再维护 `/home/hermes/HERMES_*.md` 或 `/home/hermes/TANGYUGE_HERMES_*.md` 文档副本。
 
+## 快速路由表
+
+先按用户原话匹配下表；不要凭记忆猜路径。
+
+| 用户常用说法 | 读取文档 |
+| --- | --- |
+| "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
+| "部署", "部署文档", "81部署", "81服务器部署", "服务器怎么部署", "靠什么部署", "main分支部署", "服务命令", "旧版本还保留吗" | `docs/tangyuge-hermes/01-deployment-81.md` |
+| "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪" | `docs/tangyuge-hermes/02-trim-plan.md` |
+| "唐语歌人格", "角色卡", "bot内核", "内核提示词", "SOUL", "身份注入", "角色怎么插入项目" | `docs/tangyuge-hermes/03-identity-prompt.md` |
+| "内置skills", "skills列表", "有哪些skill", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
+| "patch记录", "二开patch", "/new和/reset", "/view", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
+| "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
+| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
+| "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
+
+## 组合路由
+
+- "全局状态"、"服务器状态"、"当前状态"：先读 `07-server-operations.md`；涉及部署版本或服务来源时再读 `01-deployment-81.md`。
+- "维护手册里查重启网关命令"、"重启网关"：读 `07-server-operations.md` 的 Chat-side restart / Chinese operator phrasing。
+- "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
+- "我的patch是否内置、/new和/reset差异、/view、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
+- "bot怎么成为唐语歌、角色卡怎么进内核"：读 `03-identity-prompt.md`；涉及运行时文件边界再读 `00-overview.md`。
+- "邮件/邮箱/验证码/附件"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops` 执行实际邮箱操作。
+- "文档在哪、KBase和服务器文档关系"：读 `00-overview.md` 和 `07-server-operations.md`。
+
 ## 触发语义
 
 用户说以下内容时，优先使用本技能：
 
+- “总览”“项目总览”“整体情况”“二开项目”“文档目录”
+- “部署文档”“81部署”“81服务器部署”“服务器怎么部署”“靠什么部署”
+- “旧版本还保留吗”“main分支部署”“服务命令”
+- “精简方案”“删了什么”“保留什么”“项目裁剪”
+- “角色卡”“唐语歌人格”“bot内核”“内核提示词”“SOUL”“身份注入”
+- “内置skills”“有哪些skill”“locator技能”“技能怎么内置”
+- “patch记录”“二开patch”“/new和/reset”“/view”“关闭自动记忆”“自动总结skills”“RTK”
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
 - “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”
 - “语歌，看部署方案”“语歌，看二开总方案”“语歌，看内置 skills 方案”
@@ -39,6 +72,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “全局状态文档”“当前服务器全局状态文档”
 - “邮件文档”“邮件VPS文档”“邮件集成文档”“邮件读取文档”“邮件技能文档”
 - “邮箱文档”“看邮箱文档”“查邮箱文档”
+- “验证码”“验证链接”“邮件附件”“发邮件”“回复邮件”“转发邮件”“删邮件”
 - “按维护手册处理”“按全局状态文档核对”
 - “之前做了什么 patch”“当前有哪些补丁”“更新时要保留什么”
 - “tangyuge-hermes 二开”“二开方案”“部署方案”“当前 mission 方案”

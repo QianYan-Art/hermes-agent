@@ -1,5 +1,9 @@
 # Patches And RTK
 
+Common user aliases for this document: "patch记录", "二开patch",
+"/new和/reset", "/view", "关闭自动记忆", "自动总结skills", "RTK",
+"provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异".
+
 Tangyuge-Hermes keeps QianYan server patches from the frozen baseline and
 vendors the RTK rewrite plugin as a bundled plugin.
 

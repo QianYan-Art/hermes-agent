@@ -1,5 +1,8 @@
 # Tangyuge-Hermes Overview
 
+Common user aliases for this document: "总览", "项目总览", "整体情况",
+"二开项目", "tangyuge-hermes 是什么", "文档目录".
+
 `tangyuge-hermes` is the 81 server QQBot-focused fork of Hermes Agent. The project baseline is frozen at Hermes Agent v0.16.0 (2026-06-05) and the 2026-06-12 81-server snapshot; this fork does not track upstream feature churn after that point.
 
 The Python package name and CLI command remain `hermes` for compatibility with existing service files, scripts, imports, and local operator habits. Public-facing project documentation and release notes use the `tangyuge-hermes` name.

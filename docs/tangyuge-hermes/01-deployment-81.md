@@ -1,5 +1,9 @@
 # Tangyuge-Hermes 81 Deployment
 
+Common user aliases for this document: "部署文档", "81部署",
+"81服务器部署", "服务器怎么部署", "靠什么部署", "main分支部署",
+"服务命令", "旧版本还保留吗".
+
 This fork is deployed on the 81 server at:
 
 - Host: `81.70.168.127`
