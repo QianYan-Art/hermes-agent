@@ -1,7 +1,7 @@
 # Upgrade Freeze
 
-Common user aliases for this document: "升级冻结", "上游升级",
-"能不能合并上游", "release规则", "tag规则", "版本冻结".
+常用叫法："升级冻结"、"上游升级"、"能不能合并上游"、"release规则"、
+"tag规则"、"版本冻结"。
 
 Tangyuge-Hermes is frozen on Hermes Agent v0.16.0 (2026-06-05) and the
 the 2026-06-12 81-server snapshot baseline. It should not automatically follow

@@ -1,7 +1,7 @@
 # Built-In Skills
 
-Common user aliases for this document: "内置skills", "skills列表",
-"有哪些skill", "locator技能", "mail-vps-ops", "技能怎么内置".
+常用叫法："内置skills"、"skills列表"、"有哪些skill"、"locator技能"、
+"mail-vps-ops"、"技能怎么内置"。
 
 Tangyuge-Hermes retains exactly six built-in skills for the 81 server workflow:
 

@@ -1,7 +1,7 @@
 # Tangyuge-Hermes Trim Plan
 
-Common user aliases for this document: "精简方案", "删了什么",
-"保留什么", "保留平台", "保留toolsets", "项目裁剪".
+常用叫法："精简方案"、"删了什么"、"保留什么"、"保留平台"、
+"保留toolsets"、"项目裁剪"。
 
 Tangyuge-Hermes keeps only the 81 server QQBot/API-server operating scope and
 removes non-retained runtime surfaces physically where practical.

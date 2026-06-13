@@ -5,8 +5,8 @@ old `/home/hermes/HERMES_MAIL_VPS_INTEGRATION.md` lookup document.
 
 ## Source Of Truth
 
-Common user aliases for this document: "邮件文档", "邮箱文档",
-"邮件VPS文档", "邮件集成文档", "邮件读取文档".
+常用叫法："邮件文档"、"邮箱文档"、"邮件VPS文档"、"邮件集成文档"、
+"邮件读取文档"。
 
 - Skill: `skills_builtin/mail-vps-ops/SKILL.md`
 - Runtime helper: `/home/hermes/.hermes/bin/mail_vps_fetch.py`
