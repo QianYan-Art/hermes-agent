@@ -53,6 +53,20 @@ The bot-facing documentation source is this repository directory:
 keeps human record notes and is not a server sync source. The 81 server should
 not maintain separate home-directory lookup document copies.
 
+## Documentation And Memory Rules
+
+When project behavior changes, keep these sources aligned:
+
+- Update repo docs under `docs/tangyuge-hermes/` first. These are the bot-facing
+  source of truth and must be reachable through `hermes-md-locator`.
+- Update Windows KBase records only as local operator notes. Do not sync KBase
+  records to the server and do not make the bot depend on them for lookup.
+- Update durable NowledgeMem state by refining the existing Tangyuge-Hermes
+  current-state memory when possible. Prefer merging/superseding stale duplicate
+  memories over creating new memory entries.
+- Do not keep old bundles, temporary deployment archives, historical home-level
+  docs, or obsolete server backups after successful deployment verification.
+
 ## Baseline Verification
 
 Before release or deployment, verify the current commit and test evidence:

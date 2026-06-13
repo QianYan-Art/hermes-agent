@@ -143,3 +143,16 @@ on the server, then checkout `main`.
 For bot-readable documentation, update repo docs under
 `docs/tangyuge-hermes/` and redeploy. KBase records on the Windows machine are
 operator notes only and are not synced to the server.
+
+## Cleanup Rule
+
+After deployment or documentation changes:
+
+- Keep the local repo, WSL view, GitHub `main`, and server checkout aligned.
+- Remove local and server `.bundle` deployment archives after successful use.
+- Keep server runtime data under `/home/hermes/.hermes/` intact; never replace
+  `.env`, `config.yaml`, memories, sessions, media caches, or user documents.
+- Remove obsolete home-directory lookup docs and old code backups when they are
+  no longer referenced.
+- For NowledgeMem, update the existing Tangyuge-Hermes current-state memory and
+  merge/supersede duplicate old memories instead of creating parallel entries.
