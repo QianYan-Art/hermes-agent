@@ -18,6 +18,41 @@ Server behavior that existed at the frozen snapshot is treated as baseline unles
 it conflicts with Tangyuge-Hermes trimming or identity requirements. New changes
 should be narrow and documented by commit, test evidence, and deployment tag.
 
+## Built-In Patch Behaviors
+
+These QianYan patches are now normal Tangyuge-Hermes source behavior, not
+external patch files to replay:
+
+- `/new` and `/reset` are distinct gateway commands in `gateway/run.py`.
+  `/new` starts a fresh session and returns model settings to global defaults;
+  `/reset` starts a fresh session while preserving the current session model
+  configuration. Both commands bypass the running-agent queue path, interrupt
+  active work first, clear pending queued text, and then dispatch the reset
+  handler so stale slash-command text is not fed back to the agent.
+- Manual reset state is tracked with `SessionEntry.is_fresh_reset` in
+  `gateway/session.py`. The next turn can re-inject session/topic skills
+  without falsely showing the idle/daily auto-reset notice.
+- `/status` and `/view` remain available while an agent is running. The
+  running-agent fast path in `gateway/run.py` routes them to dedicated handlers
+  before normal queueing so users can inspect session and live-run state without
+  interrupting work.
+- `/auxmodel`, QQ `/model` provider selection, custom provider routing, and
+  model/provider filtering are retained as source behavior around gateway
+  command handling, runtime provider resolution, and auxiliary client routing.
+- Automatic memory and skill-review loops are disabled for the Tangyuge Codex
+  runtime path. `agent/codex_runtime.py` explicitly sets
+  `should_review_memory = False` and `should_review_skills = False`; memory
+  writes remain available through explicit user/tool action only.
+- Delegated child agents inherit active runtime/toolset configuration, but child
+  tool access is constrained. `tools/delegate_tool.py` documents that leaf
+  subagents cannot call `delegate_task`, `clarify`, `memory`, `send_message`,
+  or `execute_code`; orchestrator subagents can delegate within configured depth
+  but still cannot call `clarify`, `memory`, `send_message`, or `execute_code`.
+- API-key rotation, Tavily multi-key failover, HYBGZS image backend behavior,
+  mail-vps-ops, hermes-md-locator, and tangyuge-roleplay are retained as built-in
+  repo behavior or built-in skills. Secrets remain server-local and are never
+  stored in repo docs.
+
 ## Verification
 
 ```bash
