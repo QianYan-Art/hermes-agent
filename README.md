@@ -116,6 +116,8 @@ Hermes has two entry points: start the terminal UI with `hermes`, or run the gat
 | Interrupt current work         | `Ctrl+C` or send a new message                | `/stop` or send a new message                                                    |
 | Platform-specific status       | `/platforms`                                  | `/status`, `/sethome`                                                            |
 
+`/new` starts a fresh session, returns model settings to global defaults, and deletes the previous session record. `/reset` starts fresh while keeping the current session model/provider/reasoning config and preserving the old session record.
+
 For the full command lists, see the [CLI guide](https://hermes-agent.nousresearch.com/docs/user-guide/cli) and the [Messaging Gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging).
 
 ---

@@ -1,4 +1,4 @@
-"""Tests that /new (and its /reset alias) clears session-scoped overrides."""
+"""Tests for distinct /new and /reset session-boundary semantics."""
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -83,11 +83,17 @@ async def test_new_command_clears_session_model_override():
     runner._session_reasoning_overrides[session_key] = {"enabled": True, "effort": "high"}
     runner._pending_model_notes[session_key] = "[Note: switched to gpt-4o.]"
 
-    await runner._handle_reset_command(_make_event("/new"))
+    runner._session_db = MagicMock()
+
+    await runner._handle_new_command(_make_event("/new"))
 
     assert session_key not in runner._session_model_overrides
     assert session_key not in runner._session_reasoning_overrides
     assert session_key not in runner._pending_model_notes
+    runner._session_db.delete_session.assert_called_once_with(
+        "sess-1",
+        sessions_dir=runner.config.sessions_dir,
+    )
 
 
 @pytest.mark.asyncio
@@ -99,7 +105,7 @@ async def test_new_command_no_override_is_noop():
     assert session_key not in runner._session_model_overrides
     assert session_key not in runner._session_reasoning_overrides
 
-    await runner._handle_reset_command(_make_event("/new"))
+    await runner._handle_new_command(_make_event("/new"))
 
     assert session_key not in runner._session_model_overrides
     assert session_key not in runner._session_reasoning_overrides
@@ -131,7 +137,7 @@ async def test_new_command_only_clears_own_session():
     runner._pending_model_notes[session_key] = "[Note: switched to gpt-4o.]"
     runner._pending_model_notes[other_key] = "[Note: switched to claude-sonnet-4-6.]"
 
-    await runner._handle_reset_command(_make_event("/new"))
+    await runner._handle_new_command(_make_event("/new"))
 
     assert session_key not in runner._session_model_overrides
     assert other_key in runner._session_model_overrides
@@ -139,3 +145,28 @@ async def test_new_command_only_clears_own_session():
     assert other_key in runner._session_reasoning_overrides
     assert session_key not in runner._pending_model_notes
     assert other_key in runner._pending_model_notes
+
+
+@pytest.mark.asyncio
+async def test_reset_command_preserves_session_model_override_and_old_session():
+    """/reset starts fresh but keeps session model config and old session record."""
+    runner = _make_runner()
+    session_key = build_session_key(_make_source())
+    runner._session_db = MagicMock()
+
+    runner._session_model_overrides[session_key] = {
+        "model": "gpt-4o",
+        "provider": "openai",
+        "api_key": "***",
+        "base_url": "",
+        "api_mode": "openai",
+    }
+    runner._session_reasoning_overrides[session_key] = {"enabled": True, "effort": "high"}
+    runner._pending_model_notes[session_key] = "[Note: switched to gpt-4o.]"
+
+    await runner._handle_reset_command(_make_event("/reset"))
+
+    assert session_key in runner._session_model_overrides
+    assert session_key in runner._session_reasoning_overrides
+    assert session_key not in runner._pending_model_notes
+    runner._session_db.delete_session.assert_not_called()
