@@ -6,7 +6,7 @@ server. It replaces the old `/home/hermes/HERMES_*.md` lookup documents.
 ## Source Of Truth
 
 常用叫法："维护手册"、"全局状态"、"服务器全局状态"、"当前状态"、
-"重启网关命令"。
+"重启网关命令"、"自动清理session任务"、"session清理timer"。
 
 - Code: `/home/hermes/.hermes/hermes-agent`
 - Runtime home: `/home/hermes/.hermes`

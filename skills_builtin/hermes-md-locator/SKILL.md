@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“关闭自动记忆”“RTK”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“关闭自动记忆”“RTK”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -38,13 +38,14 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "内置skills", "skills列表", "有哪些skill", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "patch记录", "二开patch", "/new和/reset", "/view", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
-| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
+| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
 
 - "全局状态"、"服务器状态"、"当前状态"：先读 `07-server-operations.md`；涉及部署版本或服务来源时再读 `01-deployment-81.md`。
 - "维护手册里查重启网关命令"、"重启网关"：读 `07-server-operations.md` 的 Chat-side restart / Chinese operator phrasing。
+- "自动清理session任务"、"session清理timer"、"retention cleanup"：读 `07-server-operations.md` 的 Session Cleanup Timer。
 - "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
 - "我的patch是否内置、/new和/reset差异、/view、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
 - "bot怎么成为唐语歌、角色卡怎么进内核"：读 `03-identity-prompt.md`；涉及运行时文件边界再读 `00-overview.md`。
@@ -67,6 +68,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “语歌，看部署方案”“语歌，看二开总方案”“语歌，看内置 skills 方案”
 - “维护手册”“看维护手册”“查维护手册”“打开维护手册”
 - “去维护手册里查重启网关命令”“维护手册里查 /restart”“重启网关命令”
+- “自动清理session任务”“session清理任务”“session清理timer”“session cleanup”“retention cleanup”
 - “唐语歌维护手册”“唐语歌人格维护手册”“Hermes维护手册”
 - “全局状态”“当前状态”“服务器状态”“服务器全局状态”
 - “全局状态文档”“当前服务器全局状态文档”
