@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“关闭自动记忆”“RTK”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“/context”“上下文窗口”“关闭自动记忆”“RTK”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -36,7 +36,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪" | `docs/tangyuge-hermes/02-trim-plan.md` |
 | "唐语歌人格", "角色卡", "bot内核", "内核提示词", "SOUL", "身份注入", "角色怎么插入项目" | `docs/tangyuge-hermes/03-identity-prompt.md` |
 | "内置skills", "skills列表", "有哪些skill", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
-| "patch记录", "二开patch", "/new和/reset", "/view", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
+| "patch记录", "二开patch", "/new和/reset", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
 | "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
@@ -47,7 +47,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "维护手册里查重启网关命令"、"重启网关"：读 `07-server-operations.md` 的 Chat-side restart / Chinese operator phrasing。
 - "自动清理session任务"、"session清理timer"、"retention cleanup"：读 `07-server-operations.md` 的 Session Cleanup Timer。
 - "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
-- "我的patch是否内置、/new和/reset差异、/view、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
+- "我的patch是否内置、/new和/reset差异、/view、/context、上下文窗口、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
 - "bot怎么成为唐语歌、角色卡怎么进内核"：读 `03-identity-prompt.md`；涉及运行时文件边界再读 `00-overview.md`。
 - "邮件/邮箱/验证码/附件"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops` 执行实际邮箱操作。
 - "文档在哪、KBase和服务器文档关系"：读 `00-overview.md` 和 `07-server-operations.md`。
@@ -62,7 +62,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “精简方案”“删了什么”“保留什么”“项目裁剪”
 - “角色卡”“唐语歌人格”“bot内核”“内核提示词”“SOUL”“身份注入”
 - “内置skills”“有哪些skill”“locator技能”“技能怎么内置”
-- “patch记录”“二开patch”“/new和/reset”“/view”“关闭自动记忆”“自动总结skills”“RTK”
+- “patch记录”“二开patch”“/new和/reset”“/view”“/context”“上下文窗口”“关闭自动记忆”“自动总结skills”“RTK”
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
 - “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”
 - “语歌，看部署方案”“语歌，看二开总方案”“语歌，看内置 skills 方案”

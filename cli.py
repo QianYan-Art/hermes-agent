@@ -7856,6 +7856,113 @@ class HermesCLI:
         scroll_offset = max(0, min(scroll_offset, n - visible))
         return scroll_offset, visible
 
+    def _current_context_config(self) -> tuple[dict, list | None]:
+        try:
+            from hermes_cli.config import load_config, get_compatible_custom_providers
+            cfg = load_config()
+            custom_provs = get_compatible_custom_providers(cfg)
+            return cfg, custom_provs
+        except Exception:
+            return {}, None
+
+    def _set_runtime_context_window(self, context_length: int) -> None:
+        if self.agent is None:
+            return
+        try:
+            self.agent._config_context_length = int(context_length)
+            compressor = getattr(self.agent, "context_compressor", None)
+            if compressor:
+                compressor.update_model(
+                    model=self.agent.model,
+                    context_length=int(context_length),
+                    base_url=getattr(self.agent, "base_url", ""),
+                    api_key=getattr(self.agent, "api_key", ""),
+                    provider=getattr(self.agent, "provider", ""),
+                    api_mode=getattr(self.agent, "api_mode", ""),
+                )
+            self.agent._cached_system_prompt = None
+        except Exception:
+            pass
+
+    def _auto_persist_context_window(self, result) -> int:
+        from hermes_cli.context_window import resolve_context_window
+
+        cfg, custom_provs = self._current_context_config()
+        resolved = resolve_context_window(
+            model=result.new_model,
+            provider=result.target_provider,
+            base_url=result.base_url or self.base_url or "",
+            api_key=result.api_key or self.api_key or "",
+            model_info=result.model_info,
+            custom_providers=custom_provs,
+            config=cfg,
+            use_config_override=False,
+        )
+        if save_config_value("model.context_length", resolved.value):
+            self._set_runtime_context_window(resolved.value)
+        return resolved.value
+
+    def _handle_context_command(self, cmd_original: str) -> None:
+        """Handle /context — show or set the current model context window."""
+        from hermes_cli.context_window import (
+            DEFAULT_CONTEXT_WINDOW,
+            format_context_window,
+            parse_context_window,
+            resolve_context_window,
+        )
+
+        parts = cmd_original.split(None, 1)
+        raw_args = parts[1].strip() if len(parts) > 1 else ""
+        raw_args = raw_args.replace("—global", "--global").replace("–global", "--global")
+        persist_global = "--global" in raw_args
+        raw_args = raw_args.replace("--global", "").strip()
+
+        cfg, custom_provs = self._current_context_config()
+        if not raw_args:
+            resolved = resolve_context_window(
+                model=self.model or "",
+                provider=self.provider or "",
+                base_url=self.base_url or "",
+                api_key=self.api_key or "",
+                custom_providers=custom_provs,
+                config=cfg,
+            )
+            _cprint(f"  Context: {format_context_window(resolved.value)} ({resolved.source})")
+            _cprint("  Usage: /context <tokens|256k|1m|auto> [--global]")
+            return
+
+        if raw_args.lower() == "auto":
+            resolved = resolve_context_window(
+                model=self.model or "",
+                provider=self.provider or "",
+                base_url=self.base_url or "",
+                api_key=self.api_key or "",
+                custom_providers=custom_provs,
+                config=cfg,
+                use_config_override=False,
+            )
+            value = resolved.value
+        else:
+            try:
+                value = parse_context_window(raw_args)
+            except ValueError as exc:
+                _cprint(f"  ✗ Invalid context: {exc}")
+                _cprint("  Usage: /context <tokens|256k|1m|auto> [--global]")
+                return
+
+        self._set_runtime_context_window(value)
+        if persist_global:
+            if save_config_value("model.context_length", value):
+                _cprint(f"  ✓ Context set: {format_context_window(value)}")
+                _cprint("    Saved to config.yaml (--global)")
+            else:
+                _cprint("  ✗ Failed to save model.context_length")
+        else:
+            _cprint(f"  ✓ Context set: {format_context_window(value)}")
+            _cprint("    (session only — add --global to persist)")
+        if value == DEFAULT_CONTEXT_WINDOW and raw_args.lower() == "auto":
+            _cprint("    Auto-detect fell back to 256k")
+
     def _apply_model_switch_result(self, result, persist_global: bool) -> None:
         if not result.success:
             _cprint(f"  ✗ {result.error_message}")
@@ -7899,24 +8006,9 @@ class HermesCLI:
         _cprint(f"  ✓ Model switched: {result.new_model}")
         _cprint(f"    Provider: {provider_label}")
 
-        # Context: always resolve via the provider-aware chain so Codex OAuth,
-        # Copilot, and Nous-enforced caps win over the raw models.dev entry
-        # (e.g. gpt-5.5 is 1.05M on openai but 272K on Codex OAuth).
         mi = result.model_info
-        try:
-            from hermes_cli.model_switch import resolve_display_context_length
-            ctx = resolve_display_context_length(
-                result.new_model,
-                result.target_provider,
-                base_url=result.base_url or self.base_url or "",
-                api_key=result.api_key or self.api_key or "",
-                model_info=mi,
-                config_context_length=getattr(self.agent, "_config_context_length", None) if self.agent else None,
-            )
-            if ctx:
-                _cprint(f"    Context: {ctx:,} tokens")
-        except Exception:
-            pass
+        ctx = self._auto_persist_context_window(result)
+        _cprint(f"    Context: {ctx:,} tokens (auto-saved)")
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
@@ -8146,21 +8238,9 @@ class HermesCLI:
         _cprint(f"  ✓ Model switched: {result.new_model}")
         _cprint(f"    Provider: {provider_label}")
 
-        # Context: always resolve via the provider-aware chain so Codex OAuth,
-        # Copilot, and Nous-enforced caps win over the raw models.dev entry
-        # (e.g. gpt-5.5 is 1.05M on openai but 272K on Codex OAuth).
         mi = result.model_info
-        from hermes_cli.model_switch import resolve_display_context_length
-        ctx = resolve_display_context_length(
-            result.new_model,
-            result.target_provider,
-            base_url=result.base_url or self.base_url or "",
-            api_key=result.api_key or self.api_key or "",
-            model_info=mi,
-            config_context_length=getattr(self.agent, "_config_context_length", None) if self.agent else None,
-        )
-        if ctx:
-            _cprint(f"    Context: {ctx:,} tokens")
+        ctx = self._auto_persist_context_window(result)
+        _cprint(f"    Context: {ctx:,} tokens (auto-saved)")
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
@@ -8933,6 +9013,8 @@ class HermesCLI:
             self._handle_sessions_command(cmd_original)
         elif canonical == "model":
             self._handle_model_switch(cmd_original)
+        elif canonical == "context":
+            self._handle_context_command(cmd_original)
         elif canonical == "codex-runtime":
             self._handle_codex_runtime(cmd_original)
         elif canonical == "gquota":

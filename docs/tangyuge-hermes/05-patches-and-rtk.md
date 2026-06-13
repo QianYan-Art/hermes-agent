@@ -1,6 +1,6 @@
 # Patches And RTK
 
-常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、
+常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、"/context"、
 "关闭自动记忆"、"自动总结skills"、"RTK"、"provider"、"模型路由"、
 "Tavily"、"HYBGZS"、"新旧行为差异"。
 
@@ -45,6 +45,12 @@ external patch files to replay:
 - `/auxmodel`, QQ `/model` provider selection, custom provider routing, and
   model/provider filtering are retained as source behavior around gateway
   command handling, runtime provider resolution, and auxiliary client routing.
+- `/context` is a native CLI/gateway command for showing or setting
+  `model.context_length`. `/context <size> --global` persists the context
+  window to config; `/context auto --global` probes the active model and falls
+  back to 256k if detection cannot resolve a stronger value. `/model` switches
+  also auto-probe and persist the current model context window so providers do
+  not need static default context values.
 - Automatic memory and skill-review loops are disabled for the Tangyuge Codex
   runtime path. `agent/codex_runtime.py` explicitly sets
   `should_review_memory = False` and `should_review_skills = False`; memory

@@ -128,6 +128,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                cli_only=True),
     CommandDef("model", "Switch model for this session", "Configuration",
                args_hint="[model] [--provider name] [--global] [--refresh]"),
+    CommandDef("context", "Show or set the model context window", "Configuration",
+               args_hint="[size|auto] [--global]"),
     CommandDef("auxmodel", "Show or switch vision/image/TTS model only", "Configuration",
                args_hint="[vision|image|tts] [model]"),
     CommandDef("codex-runtime", "Toggle codex app-server runtime for OpenAI/Codex models",

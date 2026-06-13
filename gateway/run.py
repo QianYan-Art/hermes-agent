@@ -8070,6 +8070,9 @@ class GatewayRunner:
         if canonical == "model":
             return await self._handle_model_command(event)
 
+        if canonical == "context":
+            return await self._handle_context_command(event)
+
         if canonical == "auxmodel":
             return await self._handle_auxmodel_command(event)
 
@@ -11011,6 +11014,152 @@ class GatewayRunner:
             getattr(getattr(event, "source", None), "platform", None),
         )
 
+    def _save_context_length_to_config(self, context_length: int) -> None:
+        from hermes_cli.config import load_config, save_config
+        from hermes_cli.context_window import set_config_context_length
+
+        cfg = load_config()
+        set_config_context_length(cfg, int(context_length))
+        save_config(cfg)
+
+    def _apply_context_length_to_cached_agent(self, session_key: str, context_length: int) -> None:
+        cached_entry = None
+        _cache_lock = getattr(self, "_agent_cache_lock", None)
+        _cache = getattr(self, "_agent_cache", None)
+        if _cache_lock and _cache is not None:
+            with _cache_lock:
+                cached_entry = _cache.get(session_key)
+        if not cached_entry or cached_entry[0] is None:
+            return
+        agent = cached_entry[0]
+        try:
+            agent._config_context_length = int(context_length)
+            compressor = getattr(agent, "context_compressor", None)
+            if compressor:
+                compressor.update_model(
+                    model=getattr(agent, "model", ""),
+                    context_length=int(context_length),
+                    base_url=getattr(agent, "base_url", ""),
+                    api_key=getattr(agent, "api_key", ""),
+                    provider=getattr(agent, "provider", ""),
+                    api_mode=getattr(agent, "api_mode", ""),
+                )
+            agent._cached_system_prompt = None
+        except Exception:
+            logger.debug("could not apply context_length to cached agent", exc_info=True)
+
+    def _auto_save_switch_context_length(
+        self,
+        result,
+        *,
+        current_base_url: str = "",
+        current_api_key: str = "",
+        custom_providers: list | None = None,
+    ) -> int:
+        from hermes_cli.context_window import resolve_context_window
+
+        resolved = resolve_context_window(
+            model=result.new_model,
+            provider=result.target_provider,
+            base_url=result.base_url or current_base_url or "",
+            api_key=result.api_key or current_api_key or "",
+            model_info=result.model_info,
+            custom_providers=custom_providers,
+            config=None,
+            use_config_override=False,
+        )
+        try:
+            self._save_context_length_to_config(resolved.value)
+        except Exception as exc:
+            logger.warning("Failed to persist model.context_length: %s", exc)
+        return resolved.value
+
+    async def _handle_context_command(self, event: MessageEvent) -> str:
+        """Handle /context — show or set the current model context window."""
+        from hermes_cli.context_window import (
+            DEFAULT_CONTEXT_WINDOW,
+            format_context_window,
+            parse_context_window,
+            resolve_context_window,
+        )
+
+        raw_args = event.get_command_args().strip()
+        raw_args = raw_args.replace("—global", "--global").replace("–global", "--global")
+        persist_global = "--global" in raw_args
+        raw_args = raw_args.replace("--global", "").strip()
+
+        cfg = _load_gateway_config()
+        model_cfg = cfg.get("model", {}) if isinstance(cfg, dict) else {}
+        model = _resolve_gateway_model(cfg)
+        provider = model_cfg.get("provider", "") if isinstance(model_cfg, dict) else ""
+        base_url = model_cfg.get("base_url", "") if isinstance(model_cfg, dict) else ""
+        api_key = ""
+        custom_provs = None
+        try:
+            from hermes_cli.config import get_compatible_custom_providers
+            custom_provs = get_compatible_custom_providers(cfg)
+        except Exception:
+            custom_provs = cfg.get("custom_providers") if isinstance(cfg, dict) else None
+        try:
+            runtime = _resolve_runtime_agent_kwargs()
+            provider = provider or runtime.get("provider", "")
+            base_url = base_url or runtime.get("base_url", "")
+            api_key = runtime.get("api_key", "")
+        except Exception:
+            pass
+
+        session_key = self._session_key_for_source(event.source)
+        override = self._session_model_overrides.get(session_key, {})
+        if override:
+            model = override.get("model", model)
+            provider = override.get("provider", provider)
+            base_url = override.get("base_url", base_url)
+            api_key = override.get("api_key", api_key)
+
+        if not raw_args:
+            resolved = resolve_context_window(
+                model=model,
+                provider=provider,
+                base_url=base_url,
+                api_key=api_key,
+                custom_providers=custom_provs,
+                config=cfg,
+            )
+            return (
+                f"Context: {format_context_window(resolved.value)} ({resolved.source})\n"
+                "Usage: /context <tokens|256k|1m|auto> [--global]"
+            )
+
+        if raw_args.lower() == "auto":
+            resolved = resolve_context_window(
+                model=model,
+                provider=provider,
+                base_url=base_url,
+                api_key=api_key,
+                custom_providers=custom_provs,
+                config=cfg,
+                use_config_override=False,
+            )
+            value = resolved.value
+        else:
+            try:
+                value = parse_context_window(raw_args)
+            except ValueError as exc:
+                return f"✗ Invalid context: {exc}\nUsage: /context <tokens|256k|1m|auto> [--global]"
+
+        self._apply_context_length_to_cached_agent(session_key, value)
+        if persist_global:
+            try:
+                self._save_context_length_to_config(value)
+            except Exception as exc:
+                return f"✗ Failed to save model.context_length: {exc}"
+            suffix = "\nSaved to config.yaml (--global)"
+        else:
+            suffix = "\n(session only — add --global to persist)"
+        if value == DEFAULT_CONTEXT_WINDOW and raw_args.lower() == "auto":
+            suffix += "\nAuto-detect fell back to 256k"
+        return f"✓ Context set: {format_context_window(value)}{suffix}"
+
     async def _handle_model_command(self, event: MessageEvent) -> Optional[str]:
         """Handle /model command — switch model for this session.
 
@@ -11218,28 +11367,13 @@ class GatewayRunner:
                         lines = [t("gateway.model.switched", model=result.new_model)]
                         lines.append(t("gateway.model.provider_label", provider=plabel))
                         mi = result.model_info
-                        from hermes_cli.model_switch import resolve_display_context_length
-                        _sw_config_ctx = None
-                        try:
-                            _sw_cfg = _load_gateway_config()
-                            _sw_model_cfg = _sw_cfg.get("model", {})
-                            if isinstance(_sw_model_cfg, dict):
-                                _sw_raw = _sw_model_cfg.get("context_length")
-                                if _sw_raw is not None:
-                                    _sw_config_ctx = int(_sw_raw)
-                        except Exception:
-                            pass
-                        ctx = resolve_display_context_length(
-                            result.new_model,
-                            result.target_provider,
-                            base_url=result.base_url or current_base_url or "",
-                            api_key=result.api_key or current_api_key or "",
-                            model_info=mi,
+                        ctx = _self._auto_save_switch_context_length(
+                            result,
+                            current_base_url=current_base_url,
+                            current_api_key=current_api_key,
                             custom_providers=custom_provs,
-                            config_context_length=_sw_config_ctx,
                         )
-                        if ctx:
-                            lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}"))
+                        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (auto-saved)")
                         if mi:
                             if mi.max_output:
                                 lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
@@ -11404,31 +11538,14 @@ class GatewayRunner:
         lines = [t("gateway.model.switched", model=result.new_model)]
         lines.append(t("gateway.model.provider_label", provider=provider_label))
 
-        # Context: always resolve via the provider-aware chain so Codex OAuth,
-        # Copilot, and Nous-enforced caps win over the raw models.dev entry.
         mi = result.model_info
-        from hermes_cli.model_switch import resolve_display_context_length
-        _sw2_config_ctx = None
-        try:
-            _sw2_cfg = _load_gateway_config()
-            _sw2_model_cfg = _sw2_cfg.get("model", {})
-            if isinstance(_sw2_model_cfg, dict):
-                _sw2_raw = _sw2_model_cfg.get("context_length")
-                if _sw2_raw is not None:
-                    _sw2_config_ctx = int(_sw2_raw)
-        except Exception:
-            pass
-        ctx = resolve_display_context_length(
-            result.new_model,
-            result.target_provider,
-            base_url=result.base_url or current_base_url or "",
-            api_key=result.api_key or current_api_key or "",
-            model_info=mi,
+        ctx = self._auto_save_switch_context_length(
+            result,
+            current_base_url=current_base_url,
+            current_api_key=current_api_key,
             custom_providers=custom_provs,
-            config_context_length=_sw2_config_ctx,
         )
-        if ctx:
-            lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}"))
+        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (auto-saved)")
         if mi:
             if mi.max_output:
                 lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
