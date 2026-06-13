@@ -26,9 +26,11 @@ external patch files to replay:
 - `/new` and `/reset` are distinct gateway commands in `gateway/run.py`.
   `/new` starts a fresh session and returns model settings to global defaults;
   `/reset` starts a fresh session while preserving the current session model
-  configuration. Both commands bypass the running-agent queue path, interrupt
-  active work first, clear pending queued text, and then dispatch the reset
-  handler so stale slash-command text is not fed back to the agent.
+  configuration. `/new` also deletes the previous session DB row/transcript so
+  the old conversation is no longer resumable; `/reset` keeps the old session
+  record. Both commands bypass the running-agent queue path, interrupt active
+  work first, clear pending queued text, and then dispatch the reset handler so
+  stale slash-command text is not fed back to the agent.
 - Manual reset state is tracked with `SessionEntry.is_fresh_reset` in
   `gateway/session.py`. The next turn can re-inject session/topic skills
   without falsely showing the idle/daily auto-reset notice.
