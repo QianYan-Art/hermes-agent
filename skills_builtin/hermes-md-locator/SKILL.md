@@ -33,6 +33,14 @@ tangyuge-hermes 二开文档：
 - 内置 skills 方案：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\04-built-in-skills.md`
 - Patch 与 RTK 文档：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\05-patches-and-rtk.md`
 - 升级冻结策略：`D:\MCP_Server\my-hermes\hermes-agent-source\docs\tangyuge-hermes\06-upgrade-freeze.md`
+- KBase 总方案镜像：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-06-12_Tangyuge-Hermes_二开总方案.md`
+- KBase 项目精简方案镜像：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-06-12_Tangyuge-Hermes_项目精简方案.md`
+- KBase 唐语歌内核提示词方案镜像：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-06-12_Tangyuge-Hermes_唐语歌内核提示词方案.md`
+- KBase Patch 与 RTK 内置方案镜像：`D:\Answer\QianYan-KBase\public\my_server\d-腾讯云\2026-06-12_Tangyuge-Hermes_Patch与RTK内置方案.md`
+- 81 总方案副本：`/home/hermes/TANGYUGE_HERMES_DEVELOPMENT_PLAN.md`
+- 81 项目精简方案副本：`/home/hermes/TANGYUGE_HERMES_TRIM_PLAN.md`
+- 81 唐语歌内核提示词方案副本：`/home/hermes/TANGYUGE_HERMES_IDENTITY_PROMPT.md`
+- 81 Patch 与 RTK 内置方案副本：`/home/hermes/TANGYUGE_HERMES_PATCHES_RTK.md`
 
 ## 触发语义
 
