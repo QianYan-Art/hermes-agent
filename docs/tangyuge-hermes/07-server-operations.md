@@ -94,6 +94,13 @@ git checkout -f main
 systemctl restart hermes-gateway.service
 ```
 
+Chat-side restart:
+
+- `/restart` is available to allowed/admin chat users and runs the gateway's
+  built-in graceful restart handler.
+- In DM only, exact plaintext `restart gateway` is treated as `/restart`.
+- This command does not grant arbitrary shell access to the bot.
+
 If GitHub fetch fails from the 81 server, use a local git bundle and fetch it
 on the server, then checkout `main`.
 

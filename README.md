@@ -44,6 +44,9 @@ during deploys:
   session, returns model settings to global defaults, and deletes the previous
   session DB row/transcript. `/reset` starts a fresh session while preserving
   the current model/provider/reasoning config and the old session record.
+- `/restart` is exposed to allowed/admin chat operators. In DM, exact plaintext
+  such as `restart gateway` is also routed to `/restart`. It uses the gateway's
+  built-in graceful restart handler, not arbitrary shell execution.
 - `/status` and `/view` stay available while an agent is running.
 - Automatic memory and skill-review loops are disabled on the Tangyuge Codex
   runtime path. Explicit memory/tool actions remain available.
@@ -92,6 +95,10 @@ git checkout -f main
 systemctl restart hermes-gateway.service
 systemctl is-active hermes-gateway.service
 ```
+
+From QQ/DM, an allowed admin operator can also send `/restart` to restart the
+gateway through the built-in graceful restart path. The plaintext shortcut
+`restart gateway` is intentionally DM-only.
 
 If the server cannot fetch GitHub, create a local git bundle, copy it to
 `/tmp/`, fetch from that bundle, then check out `main`.

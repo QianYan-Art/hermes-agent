@@ -37,6 +37,13 @@ systemctl restart hermes-gateway.service
 systemctl is-active hermes-gateway.service
 ```
 
+Chat-side operator restart:
+
+- Send `/restart` from an allowed/admin QQ DM to trigger the built-in graceful
+  gateway restart.
+- Exact DM plaintext `restart gateway` is also routed to `/restart`.
+- This is not a general shell escape; it is the gateway restart handler.
+
 If the server cannot fetch GitHub, copy a local git bundle to `/tmp/` and fetch
 from that bundle, then check out `main`.
 
