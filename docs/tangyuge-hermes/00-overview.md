@@ -32,6 +32,25 @@ Server runtime data must stay outside the repository and must not be overwritten
 
 Deployments should use git tags and `git reset` for code updates. The recommended virtual environment path is outside the repo at `/home/hermes/.hermes/venvs/hermes-agent` so dependency installation does not mix with runtime state or tracked source files.
 
+## Documentation Layout
+
+The bot-facing documentation source is this repository directory:
+
+- `docs/tangyuge-hermes/00-overview.md`
+- `docs/tangyuge-hermes/01-deployment-81.md`
+- `docs/tangyuge-hermes/02-trim-plan.md`
+- `docs/tangyuge-hermes/03-identity-prompt.md`
+- `docs/tangyuge-hermes/04-built-in-skills.md`
+- `docs/tangyuge-hermes/05-patches-and-rtk.md`
+- `docs/tangyuge-hermes/06-upgrade-freeze.md`
+- `docs/tangyuge-hermes/07-server-operations.md`
+- `docs/tangyuge-hermes/08-mail-vps.md`
+
+`hermes-md-locator` points to these repo docs only. The local KBase directory
+keeps human record notes and is not a server sync source. The 81 server should
+not maintain separate `/home/hermes/HERMES_*.md` or
+`/home/hermes/TANGYUGE_HERMES_*.md` copies.
+
 ## Baseline Verification
 
 Before release or deployment, verify the branch and tag relationship:
