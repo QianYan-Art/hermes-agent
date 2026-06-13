@@ -85,6 +85,30 @@ HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
 Expected service state is `active`. Expected `ExecStart` uses the external venv
 path, not a repo-local `venv`.
 
+## Session Cleanup Timer
+
+The 81 server keeps a systemd timer for old session transcript cleanup:
+
+- Timer: `hermes-session-cleanup.timer`
+- Service: `hermes-session-cleanup.service`
+- Script: `/usr/local/sbin/hermes-session-cleanup`
+- Schedule: `OnBootSec=15m` and `OnUnitInactiveSec=10d`
+- Policy: `/usr/local/sbin/hermes-session-cleanup --days 10 --delete`
+- Scope: deletes old non-active files under `/home/hermes/.hermes/sessions`
+- Protection: session IDs still referenced by
+  `/home/hermes/.hermes/sessions/sessions.json` are not deleted.
+- Unit documentation: this file,
+  `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/07-server-operations.md`
+
+Check status:
+
+```bash
+systemctl is-enabled hermes-session-cleanup.timer
+systemctl is-active hermes-session-cleanup.timer
+systemctl list-timers hermes-session-cleanup.timer --no-pager
+systemctl cat hermes-session-cleanup.service
+```
+
 ## Deployment Flow
 
 Preferred flow:
