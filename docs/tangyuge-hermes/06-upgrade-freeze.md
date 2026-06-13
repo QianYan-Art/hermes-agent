@@ -1,7 +1,7 @@
 # Upgrade Freeze
 
 Tangyuge-Hermes is frozen on Hermes Agent v0.16.0 (2026-06-05) and the
-`server-snapshot-2026-06-12` baseline. It should not automatically follow
+the 2026-06-12 81-server snapshot baseline. It should not automatically follow
 upstream Hermes feature churn.
 
 ## Allowed Changes
@@ -28,6 +28,6 @@ Before accepting upstream changes:
 
 ## Release Rule
 
-Validated releases are tagged with `tangyuge-hermes-v0.16.0` until a future
-explicit versioning decision changes the tag name. The tag must point at the
-commit deployed on the 81 server.
+Validated releases are carried on `main` until a future explicit versioning
+decision changes the release process. Historical Tangyuge release tags are not
+the server deployment target.

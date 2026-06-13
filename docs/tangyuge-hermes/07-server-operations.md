@@ -63,7 +63,7 @@ Never overwrite or commit server runtime data:
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`
 
-The repo is deployed by tag. Runtime state is server-local.
+The repo is deployed from `main`. Runtime state is server-local.
 
 ## Standard Checks
 
@@ -72,7 +72,7 @@ Use these before and after deployment:
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git rev-parse --short HEAD
-git rev-parse --short 'tangyuge-hermes-v0.16.0^{}'
+git rev-parse --short main
 systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service -p ExecStart --value
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
@@ -88,14 +88,14 @@ Preferred flow:
 
 ```bash
 cd /home/hermes/.hermes/hermes-agent
-git fetch origin --tags
-git checkout -f tangyuge-hermes-v0.16.0
+git fetch origin main
+git checkout -f main
 /home/hermes/.hermes/venvs/hermes-agent/bin/python -m pip install -e .
 systemctl restart hermes-gateway.service
 ```
 
 If GitHub fetch fails from the 81 server, use a local git bundle and fetch it
-on the server, then checkout the tag.
+on the server, then checkout `main`.
 
 ## Documentation Rule
 

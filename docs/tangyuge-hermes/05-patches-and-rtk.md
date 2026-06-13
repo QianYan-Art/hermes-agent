@@ -16,7 +16,7 @@ vendors the RTK rewrite plugin as a bundled plugin.
 
 Server behavior that existed at the frozen snapshot is treated as baseline unless
 it conflicts with Tangyuge-Hermes trimming or identity requirements. New changes
-should be narrow and documented by commit, test evidence, and deployment tag.
+should be narrow and documented by commit, test evidence, and `main` deployment evidence.
 
 ## Built-In Patch Behaviors
 

@@ -7,11 +7,11 @@ This fork is deployed on the 81 server at:
 - Repository: `/home/hermes/.hermes/hermes-agent`
 - Runtime venv: `/home/hermes/.hermes/venvs/hermes-agent`
 - Systemd unit: `hermes-gateway.service`
-- Release tag: `tangyuge-hermes-v0.16.0`
+- Release branch: `main`
 
 ## Deployment Rule
 
-Deploy code by tag/reset, not by replacing the whole server directory.
+Deploy code by `main` checkout/reset, not by replacing the whole server directory.
 Runtime data under `/home/hermes/.hermes/` must not be copied into the repo or
 overwritten by deploy:
 
@@ -30,22 +30,22 @@ overwritten by deploy:
 
 ```bash
 cd /home/hermes/.hermes/hermes-agent
-git fetch origin +refs/tags/tangyuge-hermes-v0.16.0:refs/tags/tangyuge-hermes-v0.16.0
-git checkout -f tangyuge-hermes-v0.16.0
+git fetch origin main
+git checkout -f main
 /home/hermes/.hermes/venvs/hermes-agent/bin/python -m pip install -e .
 systemctl restart hermes-gateway.service
 systemctl is-active hermes-gateway.service
 ```
 
 If the server cannot fetch GitHub, copy a local git bundle to `/tmp/` and fetch
-from that bundle, then check out the same tag.
+from that bundle, then check out `main`.
 
 ## Verification
 
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git rev-parse HEAD
-git rev-parse tangyuge-hermes-v0.16.0^{commit}
+git rev-parse main
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 /home/hermes/.hermes/venvs/hermes-agent/bin/hermes --version
 ```
