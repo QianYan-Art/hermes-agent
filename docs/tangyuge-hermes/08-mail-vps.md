@@ -1,7 +1,7 @@
 # Mail VPS Integration
 
 This is the bot-facing mail VPS reference for Tangyuge-Hermes. It replaces the
-old `/home/hermes/HERMES_MAIL_VPS_INTEGRATION.md` lookup document.
+old home-directory mail lookup document.
 
 ## Source Of Truth
 

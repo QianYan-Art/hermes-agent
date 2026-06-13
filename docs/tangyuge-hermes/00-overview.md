@@ -51,8 +51,7 @@ The bot-facing documentation source is this repository directory:
 
 `hermes-md-locator` points to these repo docs only. The local KBase directory
 keeps human record notes and is not a server sync source. The 81 server should
-not maintain separate `/home/hermes/HERMES_*.md` or
-`/home/hermes/TANGYUGE_HERMES_*.md` copies.
+not maintain separate home-directory lookup document copies.
 
 ## Baseline Verification
 

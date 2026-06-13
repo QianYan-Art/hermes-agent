@@ -77,8 +77,7 @@ repo docs.
 
 The Windows KBase directory keeps human operator notes only. It is not a server
 sync source and should not be used by the bot for lookup. The 81 server should
-not keep separate `/home/hermes/HERMES_*.md` or
-`/home/hermes/TANGYUGE_HERMES_*.md` document copies.
+not keep separate home-directory lookup document copies.
 
 ## Deployment Rule
 

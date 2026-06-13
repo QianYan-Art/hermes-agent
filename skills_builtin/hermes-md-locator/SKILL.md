@@ -7,7 +7,7 @@ description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使�
 
 ## 目标
 
-本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 也应读取 repo `docs/tangyuge-hermes/`，不再依赖 `/home/hermes/*.md` 维护副本。
+本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 也应读取 repo `docs/tangyuge-hermes/`，不再依赖 home 目录文档副本。
 
 ## 固定文档路径
 
@@ -23,7 +23,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - 服务器状态与维护：`docs/tangyuge-hermes/07-server-operations.md`
 - 邮件 VPS 集成：`docs/tangyuge-hermes/08-mail-vps.md`
 
-本地 KBase 只保留人工记录，不作为 bot 定位源；81 服务器不再维护 `/home/hermes/HERMES_*.md` 或 `/home/hermes/TANGYUGE_HERMES_*.md` 文档副本。
+本地 KBase 只保留人工记录，不作为 bot 定位源；81 服务器不再维护 home 目录下的旧文档副本。
 
 ## 快速路由表
 

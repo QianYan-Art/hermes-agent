@@ -1,7 +1,7 @@
 # Server Operations
 
 This is the bot-facing operations reference for Tangyuge-Hermes on the 81
-server. It replaces the old `/home/hermes/HERMES_*.md` lookup documents.
+server. It replaces the old home-directory lookup documents.
 
 ## Source Of Truth
 
@@ -15,9 +15,9 @@ server. It replaces the old `/home/hermes/HERMES_*.md` lookup documents.
 - Service command: `/home/hermes/.hermes/venvs/hermes-agent/bin/hermes gateway run`
 - Repo docs: `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/`
 
-Do not keep separate `/home/hermes/HERMES_*.md` or
-`/home/hermes/TANGYUGE_HERMES_*.md` docs. `hermes-md-locator` should route
-project, server, maintenance, and mail-documentation questions to repo docs.
+Do not keep separate home-directory lookup docs. `hermes-md-locator` should
+route project, server, maintenance, and mail-documentation questions to repo
+docs.
 
 ## Current Runtime Shape
 
