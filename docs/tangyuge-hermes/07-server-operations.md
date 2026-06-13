@@ -5,6 +5,9 @@ server. It replaces the old `/home/hermes/HERMES_*.md` lookup documents.
 
 ## Source Of Truth
 
+Common user aliases for this document: "维护手册", "全局状态",
+"服务器全局状态", "当前状态", "重启网关命令".
+
 - Code: `/home/hermes/.hermes/hermes-agent`
 - Runtime home: `/home/hermes/.hermes`
 - Virtual environment: `/home/hermes/.hermes/venvs/hermes-agent`
@@ -100,6 +103,13 @@ Chat-side restart:
   built-in graceful restart handler.
 - In DM only, exact plaintext `restart gateway` is treated as `/restart`.
 - This command does not grant arbitrary shell access to the bot.
+
+Chinese operator phrasing:
+
+- If the user says "去维护手册里查重启网关命令", the answer is this section.
+- QQ/DM 重启网关命令：`/restart`
+- QQ/DM 英文快捷句：`restart gateway`
+- SSH 运维重启命令：`systemctl restart hermes-gateway.service`
 
 If GitHub fetch fails from the 81 server, use a local git bundle and fetch it
 on the server, then checkout `main`.
