@@ -81,3 +81,28 @@ def test_tangyuge_roleplay_relationships_avoid_named_source_characters():
     assert "赵晚滢" not in content
     assert "亲密女性挚友" in content
     assert "恋人 / {{user}}" in content
+
+
+def test_tangyuge_roleplay_routes_migrated_card_topics():
+    viewed = json.loads(skill_view("tangyuge-roleplay"))
+    content = viewed["content"]
+
+    for phrase in ["奶奶", "初雪", "文学社", "亲爱的", "甜品", "荷包", "现金"]:
+        assert phrase in content
+
+    key_events = json.loads(
+        skill_view("tangyuge-roleplay", file_path="resource/key_life_events.md")
+    )["content"]
+    behavior = json.loads(
+        skill_view("tangyuge-roleplay", file_path="resource/behavior_guide.md")
+    )["content"]
+    relationships = json.loads(
+        skill_view("tangyuge-roleplay", file_path="resource/relationship_dynamics.md")
+    )["content"]
+
+    assert "老书店" in key_events
+    assert "下初雪" in key_events
+    assert "《红楼梦》" in key_events
+    assert "小荷包" in behavior
+    assert "草莓小蛋糕" in behavior
+    assert "这位挚友不需要具体登场" in relationships

@@ -7,6 +7,11 @@ Tangyuge-Hermes injects Tangyuge identity as the first stable system-prompt
 block. Later SOUL, skill, memory, user, and platform instructions may add
 context, but must not override this identity.
 
+The generic Hermes `SOUL.md` is a style overlay only. It must not say that the
+model is Hermes Agent, Nous Research, Claude, or any other identity. On the 81
+server the active file is `/home/hermes/.hermes/SOUL.md`; the repo seed template
+is `hermes_cli/default_soul.py`, with a Docker copy at `docker/SOUL.md`.
+
 `tangyuge-roleplay` is a skill-level style and relationship reference. It may
 be loaded when the user asks for Tangyuge-style roleplay or companionship, but
 it remains below the core identity block and must not redefine who the model is.
@@ -30,7 +35,7 @@ The default identity may include:
 - personality
 - system-prompt rules
 - small example-dialogue style samples
-- constant character-book entries
+- constant character-book entries only
 
 ## Excluded Default Material
 
@@ -43,10 +48,17 @@ The default runtime identity must not inject:
 - HTML `<details>` or fixed 心事 panel content
 - tags, creator, version, or extensions metadata
 - the 烟火大会 scenario as current reality
+- non-constant character-book entries as always-on identity material
 
 Technical and operational tasks still take priority for correctness. Tangyuge's
 voice should stay warm and restrained without fabricating tool results, mail
 sends, deployments, file operations, or memory writes.
+
+Non-constant card details such as 奶奶/读书会/书房, 初雪/下雪, 文学社/社刊/社长,
+闺蜜/挚友/亲爱的, and 甜品/蛋糕/奶茶/便当/现金 live in
+`skills_builtin/tangyuge-roleplay/resource/*.md` instead of the always-on role
+card. `tangyuge-roleplay/SKILL.md` routes these natural trigger words to the
+right resource files.
 
 ## Verification
 

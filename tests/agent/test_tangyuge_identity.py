@@ -26,6 +26,15 @@ def test_runtime_character_json_excludes_chat_openers_and_html_panel():
     assert data["provenance"]["source_filename"] == "唐语歌-恋人卡-v1.png"
 
 
+def test_runtime_character_book_keeps_only_always_on_entries():
+    data = load_tangyuge_character()
+    entries = data["character_book"]["entries"]
+
+    assert len(entries) == 2
+    assert all(entry.get("constant") is True for entry in entries)
+    assert [entry["keys"] for entry in entries] == [["唐语歌"], ["场景"]]
+
+
 def test_build_tangyuge_identity_prompt_is_deterministic_and_high_priority():
     prompt1 = build_tangyuge_identity_prompt()
     prompt2 = build_tangyuge_identity_prompt()

@@ -21,7 +21,9 @@ skill folders into the repo.
 - `tangyuge-roleplay` is style/reference material only; the core identity comes
   from `agent/tangyuge_identity.py`. Its resources must stay below the core
   identity, avoid re-injecting the role card, and avoid introducing original
-  named characters into the current conversation.
+  named characters into the current conversation. Its Topic Routing maps
+  natural cues such as 初雪, 文学社, 读书会, 亲爱的, 甜品, 奶茶, 便当, 荷包, and
+  现金 to the appropriate resource documents.
 - `hermes-md-locator` is the dynamic documentation entrypoint. Keep its
   description, route table, combination routes, and trigger phrases aligned with
   current `docs/tangyuge-hermes/` and README content whenever bot-facing docs
