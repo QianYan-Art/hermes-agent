@@ -54,6 +54,10 @@ during deploys:
   multi-key failover, HYBGZS image backend behavior, mail VPS operation,
   `hermes-md-locator`, and Tangyuge roleplay references are built-in repo
   behavior, not external patch files to replay.
+- MiniMax M3 media routing is built in for QQBot: images can remain on the
+  configured auxiliary vision path, while supported QQ videos are attached to
+  the MiniMax Anthropic-compatible request as native video blocks within a
+  45 MiB per-file and per-turn inline budget.
 - Child-agent tool access is constrained: leaf subagents cannot call
   `delegate_task`, `clarify`, `memory`, `send_message`, or `execute_code`;
   orchestrator subagents may delegate within configured depth but still cannot
