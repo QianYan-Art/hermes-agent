@@ -45,6 +45,11 @@ external patch files to replay:
 - `/auxmodel`, QQ `/model` provider selection, custom provider routing, and
   model/provider filtering are retained as source behavior around gateway
   command handling, runtime provider resolution, and auxiliary client routing.
+  On the 81 deployment, QQ `/model` intentionally exposes only the curated
+  provider set `openrouter`, `deepseek-direct`, and `xiaomi-token-plan-cn`.
+  The DeepSeek entry is the server's user-defined provider, not the built-in
+  env-discovered `deepseek` provider, so the deployment uses a project-specific
+  key env name instead of `DEEPSEEK_API_KEY`.
 - `/context` is a native CLI/gateway command for showing or setting
   `model.context_length`. `/context <size> --global` persists the context
   window to config; `/context auto --global` probes the active model and falls

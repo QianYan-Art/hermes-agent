@@ -11227,7 +11227,7 @@ class GatewayRunner:
             current_api_key = override.get("api_key", current_api_key)
 
         def _filter_dialog_model_providers(providers: list[dict]) -> list[dict]:
-            allowed = {"openrouter", "siliconflow", "xiaomi-token-plan-cn"}
+            allowed = {"openrouter", "deepseek-direct", "xiaomi-token-plan-cn"}
 
             def _slug(value: str) -> str:
                 raw = str(value or "").strip()
@@ -11245,8 +11245,7 @@ class GatewayRunner:
                 row = dict(provider)
                 models = [
                     model for model in row.get("models", [])
-                    if "deepseek" not in str(model).lower()
-                    and "nvidia" not in str(model).lower()
+                    if "nvidia" not in str(model).lower()
                 ]
                 row["models"] = models
                 row["total_models"] = len(models)
