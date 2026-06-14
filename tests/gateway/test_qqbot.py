@@ -1927,6 +1927,7 @@ class TestProcessAttachmentsPathExposure:
         cached.write_bytes(b"\x00\x00\x00\x18ftypmp42")
 
         async def fake_download(url, ct, original_name=""):
+            await asyncio.sleep(0)
             return str(cached)
 
         adapter._download_and_cache = fake_download  # type: ignore[assignment]

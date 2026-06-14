@@ -8693,7 +8693,7 @@ class GatewayRunner:
             from agent.auxiliary_client import _read_main_provider, _read_main_model
             provider = (_read_main_provider() or "").strip().lower()
             model = (_read_main_model() or "").strip().lower()
-        except Exception as exc:
+        except (ImportError, RuntimeError, ValueError) as exc:
             logger.debug("video_routing: provider/model lookup failed — %s", exc)
             return False
         return provider in {"minimax", "minimax-cn"} and model.startswith("minimax-m3")
@@ -18727,30 +18727,30 @@ class GatewayRunner:
                 # wrap the user turn as an OpenAI-style multimodal
                 # content list. Consume-and-clear so subsequent turns on the same
                 # runner instance don't re-attach stale media.
-                _native_imgs = self._consume_pending_native_image_paths(session_key)
-                _native_videos = self._consume_pending_native_video_paths(session_key)
-                if _native_imgs or _native_videos:
+                native_imgs = self._consume_pending_native_image_paths(session_key)
+                native_videos = self._consume_pending_native_video_paths(session_key)
+                if native_imgs or native_videos:
                     try:
                         from agent.image_routing import build_native_content_parts
-                        _parts, _skipped = build_native_content_parts(
+                        parts, skipped = build_native_content_parts(
                             message,
-                            _native_imgs,
-                            video_paths=_native_videos,
+                            native_imgs,
+                            video_paths=native_videos,
                         )
-                        if _skipped:
+                        if skipped:
                             logger.warning(
                                 "Native media attachment: skipped %d unreadable/unsupported path(s): %s",
-                                len(_skipped), _skipped,
+                                len(skipped), skipped,
                             )
-                        if any(p.get("type") in {"image_url", "video_url"} for p in _parts):
-                            _run_message: Any = _parts
+                        if any(p.get("type") in {"image_url", "video_url"} for p in parts):
+                            _run_message: Any = parts
                         else:
                             # All media failed to read — fall back to plain text.
                             _run_message = message
-                    except Exception as _media_exc:
+                    except (OSError, RuntimeError, ValueError) as media_exc:
                         logger.warning(
                             "Native media attachment failed, falling back to text: %s",
-                            _media_exc,
+                            media_exc,
                         )
                         _run_message = message
                 else:

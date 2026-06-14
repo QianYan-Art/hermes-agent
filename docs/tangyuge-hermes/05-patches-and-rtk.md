@@ -55,8 +55,8 @@ external patch files to replay:
   summarized before reaching the main model. Inbound QQ videos are separate:
   for `minimax-cn` + `minimax-m3`, cached local video files are attached as
   native Anthropic-compatible `video` blocks when small enough for inline
-  base64; unsupported or oversized videos fall back to the cached-path text
-  marker.
+  base64. The inline budget is 45 MiB per file and 45 MiB total per turn;
+  unsupported or oversized videos fall back to the cached-path text marker.
 - Built-in API-key provider discovery from generic env vars is disabled by
   default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
   legacy auto-discovery of built-in providers from env names such as

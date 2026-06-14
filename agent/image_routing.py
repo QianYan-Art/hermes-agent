@@ -59,6 +59,7 @@ _IMAGE_EXTS = (
 _VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".avi", ".3gp")
 _IMAGE_EXT_PATTERN = "|".join(e.lstrip(".") for e in _IMAGE_EXTS)
 _MAX_INLINE_VIDEO_BYTES = 45 * 1024 * 1024
+_MAX_INLINE_VIDEO_TOTAL_BYTES = _MAX_INLINE_VIDEO_BYTES
 
 # Absolute / home-relative local image path. Matches POSIX paths, Windows drive
 # paths, and ``~/``. The lookbehind avoids matching inside URLs; validation below
@@ -423,7 +424,11 @@ def _file_to_data_url(path: Path) -> Optional[str]:
     return f"data:{mime};base64,{b64}"
 
 
-def _video_file_to_data_url(path: Path) -> Optional[str]:
+def _video_file_to_data_url(
+    path: Path,
+    *,
+    max_bytes: int = _MAX_INLINE_VIDEO_BYTES,
+) -> Optional[Tuple[str, int]]:
     """Encode a local video for MiniMax native video input.
 
     MiniMax's Anthropic-compatible endpoint documents 50 MB for URL/base64
@@ -432,19 +437,26 @@ def _video_file_to_data_url(path: Path) -> Optional[str]:
     Larger videos fall back to the existing text path with the cached file
     location instead of risking a provider-side hard failure.
     """
+    if max_bytes <= 0:
+        logger.info("video_routing: skipping inline video because budget is exhausted: %s", path)
+        return None
+    max_bytes = min(max_bytes, _MAX_INLINE_VIDEO_BYTES)
     try:
-        if path.stat().st_size > _MAX_INLINE_VIDEO_BYTES:
+        if path.stat().st_size > max_bytes:
             logger.info("video_routing: skipping oversized inline video %s", path)
             return None
         raw = path.read_bytes()
-    except Exception as exc:
+    except OSError as exc:
         logger.warning("video_routing: failed to read %s — %s", path, exc)
+        return None
+    if len(raw) > max_bytes:
+        logger.info("video_routing: skipping oversized inline video %s", path)
         return None
     mime, _ = mimetypes.guess_type(str(path))
     if not mime or not mime.startswith("video/"):
         mime = "video/mp4"
     b64 = base64.b64encode(raw).decode("ascii")
-    return f"data:{mime};base64,{b64}"
+    return f"data:{mime};base64,{b64}", len(raw)
 
 
 def build_native_content_parts(
@@ -492,6 +504,7 @@ def build_native_content_parts(
     attached_paths: List[str] = []
     attached_urls: List[str] = []
     attached_videos: List[str] = []
+    attached_video_bytes = 0
 
     for raw_path in image_paths:
         p = Path(raw_path)
@@ -526,15 +539,18 @@ def build_native_content_parts(
         if p.suffix.lower() not in _VIDEO_EXTS:
             skipped.append(str(raw_path))
             continue
-        data_url = _video_file_to_data_url(p)
-        if not data_url:
+        remaining_video_bytes = _MAX_INLINE_VIDEO_TOTAL_BYTES - attached_video_bytes
+        encoded_video = _video_file_to_data_url(p, max_bytes=remaining_video_bytes)
+        if not encoded_video:
             skipped.append(str(raw_path))
             continue
+        data_url, video_size = encoded_video
         video_parts.append({
             "type": "video_url",
             "video_url": {"url": data_url},
         })
         attached_videos.append(str(raw_path))
+        attached_video_bytes += video_size
 
     text = (user_text or "").strip()
 

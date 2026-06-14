@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+import agent.image_routing as image_routing
 from agent.image_routing import (
     _coerce_capability_bool,
     _coerce_mode,
@@ -664,6 +665,24 @@ class TestBuildNativeContentPartsVideos:
         assert skipped == []
         assert parts[0]["text"].startswith("What do you see in this media?")
         assert parts[1]["type"] == "video_url"
+
+    def test_video_total_budget_skips_later_video(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(image_routing, "_MAX_INLINE_VIDEO_BYTES", 10)
+        monkeypatch.setattr(image_routing, "_MAX_INLINE_VIDEO_TOTAL_BYTES", 10)
+        first = tmp_path / "first.mp4"
+        second = tmp_path / "second.mp4"
+        first.write_bytes(b"123456")
+        second.write_bytes(b"abcdef")
+
+        parts, skipped = build_native_content_parts(
+            "describe media",
+            [],
+            video_paths=[str(first), str(second)],
+        )
+
+        assert skipped == [str(second)]
+        assert parts[0]["text"].count("[Video attached at:") == 1
+        assert sum(1 for part in parts if part["type"] == "video_url") == 1
 
     def test_unsupported_or_missing_video_is_skipped(self, tmp_path: Path):
         txt = tmp_path / "not-video.txt"

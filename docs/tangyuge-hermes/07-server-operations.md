@@ -42,9 +42,9 @@ Default model provider:
 - QQ videos are routed independently from images. For the default
   `minimax-cn` / `minimax-m3` runtime, cached videos are attached directly to
   the upstream Anthropic-compatible request as native `video` blocks when the
-  local file is supported and small enough for inline base64. Unsupported,
-  missing, or oversized videos remain visible by cached file path in the text
-  prompt.
+  local file is supported and small enough for inline base64. The inline budget
+  is 45 MiB per file and 45 MiB total per turn. Unsupported, missing, or
+  oversized videos remain visible by cached file path in the text prompt.
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
