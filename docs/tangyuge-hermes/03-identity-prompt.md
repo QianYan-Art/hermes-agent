@@ -7,11 +7,16 @@ Tangyuge-Hermes injects Tangyuge identity as the first stable system-prompt
 block. Later SOUL, skill, memory, user, and platform instructions may add
 context, but must not override this identity.
 
+`tangyuge-roleplay` is a skill-level style and relationship reference. It may
+be loaded when the user asks for Tangyuge-style roleplay or companionship, but
+it remains below the core identity block and must not redefine who the model is.
+
 ## Runtime Sources
 
 - Character data: `agent/tangyuge_character.json`
 - Prompt builder: `agent/tangyuge_identity.py`
 - Stable prompt entry: `agent/system_prompt.py`
+- Roleplay reference skill: `skills_builtin/tangyuge-roleplay/SKILL.md`
 
 ## Included Identity Material
 

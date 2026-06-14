@@ -71,6 +71,16 @@ class TestTangyugeIdentityOrdering:
 
         assert parts["stable"].index("# Tangyuge Identity") < parts["stable"].index("SOUL OVERLAY")
 
+    def test_skills_prompt_is_overlay_after_tangyuge_identity(self):
+        agent = _make_agent(
+            skip_context_files=True,
+            valid_tool_names=["skills_list", "skill_view"],
+        )
+        with patch("run_agent.build_skills_system_prompt", return_value="SKILLS PROMPT"):
+            parts = build_system_prompt_parts(agent)
+
+        assert parts["stable"].index("# Tangyuge Identity") < parts["stable"].index("SKILLS PROMPT")
+
     def test_memory_and_user_profile_remain_volatile_below_identity(self):
         class Store:
             def format_for_system_prompt(self, kind):

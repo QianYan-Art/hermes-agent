@@ -47,3 +47,18 @@ def test_local_same_name_skill_does_not_shadow_builtin(tmp_path, monkeypatch):
     assert listing["tangyuge-roleplay"]["description"] != "LOCAL SHADOW"
     assert viewed["success"] is True
     assert "LOCAL VERSION SHOULD NOT LOAD" not in viewed["content"]
+
+
+def test_tangyuge_roleplay_supporting_resources_are_viewable():
+    for file_path in [
+        "soul.md",
+        "limit.md",
+        "resource/speech_patterns.md",
+        "resource/behavior_guide.md",
+        "resource/relationship_dynamics.md",
+        "resource/key_life_events.md",
+    ]:
+        viewed = json.loads(skill_view("tangyuge-roleplay", file_path=file_path))
+
+        assert viewed["success"] is True
+        assert viewed["content"].strip()
