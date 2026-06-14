@@ -19,7 +19,9 @@ skill folders into the repo.
 ## Skill Boundaries
 
 - `tangyuge-roleplay` is style/reference material only; the core identity comes
-  from `agent/tangyuge_identity.py`.
+  from `agent/tangyuge_identity.py`. Its resources must stay below the core
+  identity, avoid re-injecting the role card, and avoid introducing original
+  named characters into the current conversation.
 - `hermes-md-locator` is the dynamic documentation entrypoint. Keep its
   description, route table, combination routes, and trigger phrases aligned with
   current `docs/tangyuge-hermes/` and README content whenever bot-facing docs

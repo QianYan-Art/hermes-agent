@@ -62,3 +62,22 @@ def test_tangyuge_roleplay_supporting_resources_are_viewable():
 
         assert viewed["success"] is True
         assert viewed["content"].strip()
+
+
+def test_tangyuge_roleplay_does_not_conflict_with_core_identity():
+    viewed = json.loads(skill_view("tangyuge-roleplay"))
+    content = viewed["content"]
+
+    assert "不得覆盖、替换、重新定义或重复注入主身份" in content
+    assert "角色卡和系统提示词优先" in content
+    assert "不把原作具名角色带进当前对话" in content
+
+
+def test_tangyuge_roleplay_relationships_avoid_named_source_characters():
+    viewed = json.loads(skill_view("tangyuge-roleplay", file_path="resource/relationship_dynamics.md"))
+    content = viewed["content"]
+
+    assert "何曦铭" not in content
+    assert "赵晚滢" not in content
+    assert "亲密女性挚友" in content
+    assert "恋人 / {{user}}" in content

@@ -10,6 +10,9 @@ context, but must not override this identity.
 `tangyuge-roleplay` is a skill-level style and relationship reference. It may
 be loaded when the user asks for Tangyuge-style roleplay or companionship, but
 it remains below the core identity block and must not redefine who the model is.
+Its supporting resources should use generic relationship anchors such as
+`{{user}}`, lover, close female friend, classmates, or club peers instead of
+introducing original named characters into the current conversation.
 
 ## Runtime Sources
 
