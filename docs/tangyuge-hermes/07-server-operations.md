@@ -52,6 +52,9 @@ Default model provider:
   `You are Hermes Agent`, `created by Nous Research`, or any other identity
   definition. `agent/prompt_builder.py` normalizes the old default SOUL identity
   template at load time as a second safety net.
+- Old runtime QQBot SOUL variants `SOUL_QQBOT_DM.md` and
+  `SOUL_QQBOT_GROUP.md` were confirmed unused and removed. Current runtime
+  prompt injection reads only `/home/hermes/.hermes/SOUL.md`.
 
 Retained toolsets:
 

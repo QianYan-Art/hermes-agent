@@ -47,10 +47,14 @@ def _run_display(monkeypatch, result):
     import cli as cli_mod
 
     captured: list[str] = []
+    stub = _StubCLI()
+    stub._auto_persist_context_window = cli_mod.HermesCLI._auto_persist_context_window.__get__(stub, _StubCLI)
+    stub._current_context_config = lambda: ({}, [])
+    stub._set_runtime_context_window = lambda value: setattr(stub, "_context_window", value)
     monkeypatch.setattr(cli_mod, "_cprint", lambda s, *a, **k: captured.append(str(s)))
     # Avoid writing to ~/.hermes/config.yaml during the test.
     monkeypatch.setattr(cli_mod, "save_config_value", lambda *a, **k: None)
-    cli_mod.HermesCLI._apply_model_switch_result(_StubCLI(), result, False)
+    cli_mod.HermesCLI._apply_model_switch_result(stub, result, False)
     return captured
 
 

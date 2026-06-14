@@ -56,3 +56,8 @@ python -m hermes_cli.main tools list
 
 Searches for removed platform/tool paths should return no tracked files, and
 removed top-level commands should be rejected by argparse.
+
+Retained-scope test runs should target QQBot/API-server/CLI/cron and retained
+toolsets only. Upstream tests for removed surfaces such as Signal platform
+delivery or FAL video-generation plugins are not part of this fork's passing
+baseline unless those surfaces are intentionally restored.
