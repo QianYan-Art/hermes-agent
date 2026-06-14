@@ -1923,6 +1923,7 @@ class GatewayRunner:
         # preserve the queue.
         self._queued_events: Dict[str, List[MessageEvent]] = {}
         self._pending_native_image_paths_by_session: Dict[str, List[str]] = {}
+        self._pending_native_video_paths_by_session: Dict[str, List[str]] = {}
         self._busy_ack_ts: Dict[str, float] = {}  # last busy-ack timestamp per session (debounce)
         self._session_run_generation: Dict[str, int] = {}
         # LRU cache of live SessionSources keyed by session_key. Used by
@@ -8446,6 +8447,7 @@ class GatewayRunner:
         # Reset only this session's per-call buffer; other sessions may be
         # concurrently preparing multimodal turns on the same runner.
         self._consume_pending_native_image_paths(session_key)
+        self._consume_pending_native_video_paths(session_key)
 
         _is_shared_multi_user = is_shared_multi_user_session(
             source,
@@ -8467,11 +8469,14 @@ class GatewayRunner:
 
         if event.media_urls:
             image_paths = []
+            video_paths = []
             audio_paths = []
             for i, path in enumerate(event.media_urls):
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
-                if mtype.startswith("image/") or event.message_type == MessageType.PHOTO:
+                if mtype.startswith("image/") or (not mtype and event.message_type == MessageType.PHOTO):
                     image_paths.append(path)
+                if mtype.startswith("video/") or (not mtype and event.message_type == MessageType.VIDEO):
+                    video_paths.append(path)
                 # MessageType.AUDIO = audio file attachment (e.g. .mp3, .m4a) — never STT
                 # MessageType.VOICE = voice message (Opus/OGG) — always STT
                 if event.message_type == MessageType.AUDIO:
@@ -8505,6 +8510,23 @@ class GatewayRunner:
                     message_text = await self._enrich_message_with_vision(
                         message_text,
                         image_paths,
+                    )
+
+            if video_paths:
+                if self._supports_native_video_input():
+                    pending_native_videos = getattr(self, "_pending_native_video_paths_by_session", None)
+                    if pending_native_videos is None:
+                        pending_native_videos = {}
+                        self._pending_native_video_paths_by_session = pending_native_videos
+                    pending_native_videos[session_key] = list(video_paths)
+                    logger.info(
+                        "Video routing: native (MiniMax M3). %d video(s) will be attached inline.",
+                        len(video_paths),
+                    )
+                else:
+                    logger.info(
+                        "Video routing: text. %d video(s) remain available by cached path only.",
+                        len(video_paths),
                     )
 
             if audio_paths:
@@ -8658,6 +8680,23 @@ class GatewayRunner:
         if not pending_native:
             return []
         return list(pending_native.pop(session_key, []) or [])
+
+    def _consume_pending_native_video_paths(self, session_key: str) -> List[str]:
+        pending_native = getattr(self, "_pending_native_video_paths_by_session", None)
+        if not pending_native:
+            return []
+        return list(pending_native.pop(session_key, []) or [])
+
+    def _supports_native_video_input(self) -> bool:
+        """True for providers whose current transport accepts native video blocks."""
+        try:
+            from agent.auxiliary_client import _read_main_provider, _read_main_model
+            provider = (_read_main_provider() or "").strip().lower()
+            model = (_read_main_model() or "").strip().lower()
+        except Exception as exc:
+            logger.debug("video_routing: provider/model lookup failed — %s", exc)
+            return False
+        return provider in {"minimax", "minimax-cn"} and model.startswith("minimax-m3")
 
     def _cache_session_source(self, session_key: str, source) -> None:
         if not session_key or source is None:
@@ -18684,32 +18723,34 @@ class GatewayRunner:
             _approval_session_token = set_current_session_key(_approval_session_key)
             register_gateway_notify(_approval_session_key, _approval_notify_sync)
             try:
-                # If _prepare_inbound_message_text buffered image paths for native
-                # attachment, wrap the user turn as an OpenAI-style multimodal
+                # If _prepare_inbound_message_text buffered native media paths,
+                # wrap the user turn as an OpenAI-style multimodal
                 # content list. Consume-and-clear so subsequent turns on the same
-                # runner instance don't re-attach stale images.
+                # runner instance don't re-attach stale media.
                 _native_imgs = self._consume_pending_native_image_paths(session_key)
-                if _native_imgs:
+                _native_videos = self._consume_pending_native_video_paths(session_key)
+                if _native_imgs or _native_videos:
                     try:
                         from agent.image_routing import build_native_content_parts
                         _parts, _skipped = build_native_content_parts(
                             message,
                             _native_imgs,
+                            video_paths=_native_videos,
                         )
                         if _skipped:
                             logger.warning(
-                                "Native image attachment: skipped %d unreadable path(s): %s",
+                                "Native media attachment: skipped %d unreadable/unsupported path(s): %s",
                                 len(_skipped), _skipped,
                             )
-                        if any(p.get("type") == "image_url" for p in _parts):
+                        if any(p.get("type") in {"image_url", "video_url"} for p in _parts):
                             _run_message: Any = _parts
                         else:
-                            # All images failed to read — fall back to plain text.
+                            # All media failed to read — fall back to plain text.
                             _run_message = message
-                    except Exception as _img_exc:
+                    except Exception as _media_exc:
                         logger.warning(
-                            "Native image attachment failed, falling back to text: %s",
-                            _img_exc,
+                            "Native media attachment failed, falling back to text: %s",
+                            _media_exc,
                         )
                         _run_message = message
                 else:

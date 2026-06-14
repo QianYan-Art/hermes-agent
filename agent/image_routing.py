@@ -56,13 +56,17 @@ _VALID_MODES = frozenset({"auto", "native", "text"})
 _IMAGE_EXTS = (
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".heic",
 )
+_VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".avi", ".3gp")
 _IMAGE_EXT_PATTERN = "|".join(e.lstrip(".") for e in _IMAGE_EXTS)
+_MAX_INLINE_VIDEO_BYTES = 45 * 1024 * 1024
 
-# Absolute / home-relative local image path. Matches the same shape gateway's
-# extract_local_files() uses: anchors to ``~/`` or ``/``, ignores matches inside
-# URLs (the ``(?<![/:\w.])`` lookbehind), and case-insensitive on the extension.
+# Absolute / home-relative local image path. Matches POSIX paths, Windows drive
+# paths, and ``~/``. The lookbehind avoids matching inside URLs; validation below
+# still requires the expanded path to exist on disk.
 _LOCAL_IMAGE_PATH_RE = re.compile(
-    r"(?<![/:\w.])(?:~/|/)(?:[\w.\-]+/)*[\w.\-]+\.(?:" + _IMAGE_EXT_PATTERN + r")\b",
+    r"(?<![/:\w.])(?:~/|/|[A-Za-z]:[\\/])(?:[^\s<>\"'`|?*]+[\\/])*[^\s<>\"'`\\/|?*]+\.(?:"
+    + _IMAGE_EXT_PATTERN
+    + r")\b",
     re.IGNORECASE,
 )
 
@@ -115,7 +119,11 @@ def extract_image_refs(text: str) -> Tuple[List[str], List[str]]:
         if _in_code(match.start()):
             continue
         raw = match.group(0)
-        expanded = os.path.expanduser(raw)
+        if raw.startswith("~/"):
+            home = os.environ.get("HOME") or str(Path.home())
+            expanded = os.path.join(home, raw[2:])
+        else:
+            expanded = os.path.expanduser(raw)
         try:
             if not os.path.isfile(expanded):
                 continue
@@ -415,10 +423,35 @@ def _file_to_data_url(path: Path) -> Optional[str]:
     return f"data:{mime};base64,{b64}"
 
 
+def _video_file_to_data_url(path: Path) -> Optional[str]:
+    """Encode a local video for MiniMax native video input.
+
+    MiniMax's Anthropic-compatible endpoint documents 50 MB for URL/base64
+    video input and 64 MB for the full request body. Use a 45 MB raw-file
+    ceiling so base64 expansion plus text/tools stays under the request cap.
+    Larger videos fall back to the existing text path with the cached file
+    location instead of risking a provider-side hard failure.
+    """
+    try:
+        if path.stat().st_size > _MAX_INLINE_VIDEO_BYTES:
+            logger.info("video_routing: skipping oversized inline video %s", path)
+            return None
+        raw = path.read_bytes()
+    except Exception as exc:
+        logger.warning("video_routing: failed to read %s — %s", path, exc)
+        return None
+    mime, _ = mimetypes.guess_type(str(path))
+    if not mime or not mime.startswith("video/"):
+        mime = "video/mp4"
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
 def build_native_content_parts(
     user_text: str,
     image_paths: List[str],
     image_urls: Optional[List[str]] = None,
+    video_paths: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Build an OpenAI-style ``content`` list for a user turn.
 
@@ -455,8 +488,10 @@ def build_native_content_parts(
     """
     skipped: List[str] = []
     image_parts: List[Dict[str, Any]] = []
+    video_parts: List[Dict[str, Any]] = []
     attached_paths: List[str] = []
     attached_urls: List[str] = []
+    attached_videos: List[str] = []
 
     for raw_path in image_paths:
         p = Path(raw_path)
@@ -483,18 +518,42 @@ def build_native_content_parts(
         })
         attached_urls.append(url)
 
+    for raw_path in video_paths or []:
+        p = Path(raw_path)
+        if not p.exists() or not p.is_file():
+            skipped.append(str(raw_path))
+            continue
+        if p.suffix.lower() not in _VIDEO_EXTS:
+            skipped.append(str(raw_path))
+            continue
+        data_url = _video_file_to_data_url(p)
+        if not data_url:
+            skipped.append(str(raw_path))
+            continue
+        video_parts.append({
+            "type": "video_url",
+            "video_url": {"url": data_url},
+        })
+        attached_videos.append(str(raw_path))
+
     text = (user_text or "").strip()
 
     # If at least one image attached, build a single text part that combines
     # the user's caption (or a neutral default) with one hint per image.
-    if attached_paths or attached_urls:
-        base_text = text or "What do you see in this image?"
+    if attached_paths or attached_urls or attached_videos:
+        base_text = text or (
+            "What do you see in this media?"
+            if attached_videos else
+            "What do you see in this image?"
+        )
         hint_lines: List[str] = []
         hint_lines.extend(f"[Image attached at: {p}]" for p in attached_paths)
         hint_lines.extend(f"[Image attached: {u}]" for u in attached_urls)
+        hint_lines.extend(f"[Video attached at: {p}]" for p in attached_videos)
         combined_text = f"{base_text}\n\n" + "\n".join(hint_lines)
         parts: List[Dict[str, Any]] = [{"type": "text", "text": combined_text}]
         parts.extend(image_parts)
+        parts.extend(video_parts)
         return parts, skipped
 
     # No images successfully attached — fall back to plain text-only behaviour.

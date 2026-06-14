@@ -1322,7 +1322,13 @@ class TestProcessQuotedContext:
         adapter = self._make_adapter()
         d = {"message_type": 0, "content": "hi"}
         out = await adapter._process_quoted_context(d)
-        assert out == {"quote_block": "", "image_urls": [], "image_media_types": []}
+        assert out == {
+            "quote_block": "",
+            "image_urls": [],
+            "image_media_types": [],
+            "video_urls": [],
+            "video_media_types": [],
+        }
 
     @pytest.mark.asyncio
     async def test_quote_type_but_no_elements_returns_empty(self):
@@ -1913,6 +1919,29 @@ class TestProcessAttachmentsPathExposure:
         assert "[video:" in info
         assert "my_video.mp4" in info
         assert "/tmp/cache/video_abc123.mp4" in info
+
+    @pytest.mark.asyncio
+    async def test_video_attachment_populates_video_media_lists(self, tmp_path):
+        adapter = self._make_adapter()
+        cached = tmp_path / "video_abc123.mp4"
+        cached.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+        async def fake_download(url, ct, original_name=""):
+            return str(cached)
+
+        adapter._download_and_cache = fake_download  # type: ignore[assignment]
+
+        result = await adapter._process_attachments([
+            {
+                "content_type": "video/mp4",
+                "url": "https://multimedia.nt.qq.com.cn/download/video123",
+                "filename": "my_video.mp4",
+            }
+        ])
+
+        assert result["video_urls"] == [str(cached)]
+        assert result["video_media_types"] == ["video/mp4"]
+        assert str(cached) in result["attachment_info"]
 
     @pytest.mark.asyncio
     async def test_file_attachment_includes_path(self):

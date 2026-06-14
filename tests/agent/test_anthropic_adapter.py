@@ -943,6 +943,50 @@ class TestConvertMessages:
             },
         }
 
+    def test_converts_data_url_video_to_anthropic_video_block(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this clip"},
+                    {
+                        "type": "video_url",
+                        "video_url": {"url": "data:video/mp4;base64,ZmFrZQ=="},
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                ],
+            }
+        ]
+
+        _, result = convert_messages_to_anthropic(messages)
+        blocks = result[0]["content"]
+        assert blocks[0] == {"type": "text", "text": "Describe this clip"}
+        assert blocks[1] == {
+            "type": "video",
+            "source": {
+                "type": "base64",
+                "media_type": "video/mp4",
+                "data": "ZmFrZQ==",
+            },
+            "cache_control": {"type": "ephemeral"},
+        }
+
+    def test_converts_remote_video_url_to_anthropic_video_url_block(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}},
+                ],
+            }
+        ]
+
+        _, result = convert_messages_to_anthropic(messages)
+        assert result[0]["content"][0] == {
+            "type": "video",
+            "source": {"type": "url", "url": "https://example.com/clip.mp4"},
+        }
+
     def test_converts_remote_image_url_to_anthropic_image_block(self):
         messages = [
             {

@@ -1240,6 +1240,8 @@ class QQAdapter(BasePlatformAdapter):
         att_result = await self._process_attachments(attachments_raw)
         image_urls = att_result["image_urls"]
         image_media_types = att_result["image_media_types"]
+        video_urls = att_result.get("video_urls", [])
+        video_media_types = att_result.get("video_media_types", [])
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
@@ -1270,8 +1272,14 @@ class QQAdapter(BasePlatformAdapter):
         if quoted["image_urls"]:
             image_urls = image_urls + quoted["image_urls"]
             image_media_types = image_media_types + quoted["image_media_types"]
+        if quoted.get("video_urls"):
+            video_urls = video_urls + quoted["video_urls"]
+            video_media_types = video_media_types + quoted["video_media_types"]
 
-        if not text.strip() and not image_urls:
+        media_urls = image_urls + video_urls
+        media_types = image_media_types + video_media_types
+
+        if not text.strip() and not media_urls:
             return
 
         self._chat_type_map[user_openid] = "c2c"
@@ -1282,11 +1290,11 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="dm",
             ),
             text=text,
-            message_type=self._detect_message_type(image_urls, image_media_types),
+            message_type=self._detect_message_type(media_urls, media_types),
             raw_message=d,
             message_id=msg_id,
-            media_urls=image_urls,
-            media_types=image_media_types,
+            media_urls=media_urls,
+            media_types=media_types,
             timestamp=self._parse_qq_timestamp(timestamp),
         )
         await self.handle_message(event)
@@ -1313,6 +1321,8 @@ class QQAdapter(BasePlatformAdapter):
         att_result = await self._process_attachments(d.get("attachments"))
         image_urls = att_result["image_urls"]
         image_media_types = att_result["image_media_types"]
+        video_urls = att_result.get("video_urls", [])
+        video_media_types = att_result.get("video_media_types", [])
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
@@ -1335,8 +1345,14 @@ class QQAdapter(BasePlatformAdapter):
         if quoted["image_urls"]:
             image_urls = image_urls + quoted["image_urls"]
             image_media_types = image_media_types + quoted["image_media_types"]
+        if quoted.get("video_urls"):
+            video_urls = video_urls + quoted["video_urls"]
+            video_media_types = video_media_types + quoted["video_media_types"]
 
-        if not text.strip() and not image_urls:
+        media_urls = image_urls + video_urls
+        media_types = image_media_types + video_media_types
+
+        if not text.strip() and not media_urls:
             return
 
         self._chat_type_map[group_openid] = "group"
@@ -1347,11 +1363,11 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="group",
             ),
             text=text,
-            message_type=self._detect_message_type(image_urls, image_media_types),
+            message_type=self._detect_message_type(media_urls, media_types),
             raw_message=d,
             message_id=msg_id,
-            media_urls=image_urls,
-            media_types=image_media_types,
+            media_urls=media_urls,
+            media_types=media_types,
             timestamp=self._parse_qq_timestamp(timestamp),
         )
         await self.handle_message(event)
@@ -1388,6 +1404,8 @@ class QQAdapter(BasePlatformAdapter):
         att_result = await self._process_attachments(d.get("attachments"))
         image_urls = att_result["image_urls"]
         image_media_types = att_result["image_media_types"]
+        video_urls = att_result.get("video_urls", [])
+        video_media_types = att_result.get("video_media_types", [])
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
@@ -1409,8 +1427,14 @@ class QQAdapter(BasePlatformAdapter):
         if quoted["image_urls"]:
             image_urls = image_urls + quoted["image_urls"]
             image_media_types = image_media_types + quoted["image_media_types"]
+        if quoted.get("video_urls"):
+            video_urls = video_urls + quoted["video_urls"]
+            video_media_types = video_media_types + quoted["video_media_types"]
 
-        if not text.strip() and not image_urls:
+        media_urls = image_urls + video_urls
+        media_types = image_media_types + video_media_types
+
+        if not text.strip() and not media_urls:
             return
 
         self._chat_type_map[channel_id] = "guild"
@@ -1422,11 +1446,11 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="group",
             ),
             text=text,
-            message_type=self._detect_message_type(image_urls, image_media_types),
+            message_type=self._detect_message_type(media_urls, media_types),
             raw_message=d,
             message_id=msg_id,
-            media_urls=image_urls,
-            media_types=image_media_types,
+            media_urls=media_urls,
+            media_types=media_types,
             timestamp=self._parse_qq_timestamp(timestamp),
         )
         await self.handle_message(event)
@@ -1459,6 +1483,8 @@ class QQAdapter(BasePlatformAdapter):
         att_result = await self._process_attachments(d.get("attachments"))
         image_urls = att_result["image_urls"]
         image_media_types = att_result["image_media_types"]
+        video_urls = att_result.get("video_urls", [])
+        video_media_types = att_result.get("video_media_types", [])
         voice_transcripts = att_result["voice_transcripts"]
         attachment_info = att_result["attachment_info"]
 
@@ -1480,8 +1506,14 @@ class QQAdapter(BasePlatformAdapter):
         if quoted["image_urls"]:
             image_urls = image_urls + quoted["image_urls"]
             image_media_types = image_media_types + quoted["image_media_types"]
+        if quoted.get("video_urls"):
+            video_urls = video_urls + quoted["video_urls"]
+            video_media_types = video_media_types + quoted["video_media_types"]
 
-        if not text.strip() and not image_urls:
+        media_urls = image_urls + video_urls
+        media_types = image_media_types + video_media_types
+
+        if not text.strip() and not media_urls:
             return
 
         self._chat_type_map[guild_id] = "dm"
@@ -1492,11 +1524,11 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="dm",
             ),
             text=text,
-            message_type=self._detect_message_type(image_urls, image_media_types),
+            message_type=self._detect_message_type(media_urls, media_types),
             raw_message=d,
             message_id=msg_id,
-            media_urls=image_urls,
-            media_types=image_media_types,
+            media_urls=media_urls,
+            media_types=media_types,
             timestamp=self._parse_qq_timestamp(timestamp),
         )
         await self.handle_message(event)
@@ -1540,6 +1572,8 @@ class QQAdapter(BasePlatformAdapter):
             "quote_block": "",
             "image_urls": [],
             "image_media_types": [],
+            "video_urls": [],
+            "video_media_types": [],
         }
         # Short-circuit: only message_type 103 indicates a quote.
         try:
@@ -1574,6 +1608,8 @@ class QQAdapter(BasePlatformAdapter):
         quoted_info = att_result.get("attachment_info") or ""
         quoted_images = att_result.get("image_urls") or []
         quoted_image_types = att_result.get("image_media_types") or []
+        quoted_videos = att_result.get("video_urls") or []
+        quoted_video_types = att_result.get("video_media_types") or []
 
         lines: List[str] = []
         if quoted_text_parts:
@@ -1597,6 +1633,8 @@ class QQAdapter(BasePlatformAdapter):
             "quote_block": quote_block,
             "image_urls": quoted_images,
             "image_media_types": quoted_image_types,
+            "video_urls": quoted_videos,
+            "video_media_types": quoted_video_types,
         }
 
     @staticmethod
@@ -1644,6 +1682,8 @@ class QQAdapter(BasePlatformAdapter):
         Returns a dict with:
         - image_urls: list[str]  — cached local image paths
         - image_media_types: list[str] — MIME types of cached images
+        - video_urls: list[str] — cached local video paths
+        - video_media_types: list[str] — MIME types of cached videos
         - voice_transcripts: list[str] — STT transcripts for voice messages
         - attachment_info: str — text description of non-image, non-voice attachments
         """
@@ -1651,12 +1691,16 @@ class QQAdapter(BasePlatformAdapter):
             return {
                 "image_urls": [],
                 "image_media_types": [],
+                "video_urls": [],
+                "video_media_types": [],
                 "voice_transcripts": [],
                 "attachment_info": "",
             }
 
         image_urls: List[str] = []
         image_media_types: List[str] = []
+        video_urls: List[str] = []
+        video_media_types: List[str] = []
         voice_transcripts: List[str] = []
         other_attachments: List[str] = []
 
@@ -1731,6 +1775,9 @@ class QQAdapter(BasePlatformAdapter):
                     if cached_path:
                         name = filename or ct
                         if ct.startswith("video/"):
+                            if os.path.isfile(cached_path):
+                                video_urls.append(cached_path)
+                                video_media_types.append(ct or "video/mp4")
                             other_attachments.append(f"[video: {name} ({cached_path})]")
                         else:
                             other_attachments.append(f"[file: {name} ({cached_path})]")
@@ -1741,6 +1788,8 @@ class QQAdapter(BasePlatformAdapter):
         return {
             "image_urls": image_urls,
             "image_media_types": image_media_types,
+            "video_urls": video_urls,
+            "video_media_types": video_media_types,
             "voice_transcripts": voice_transcripts,
             "attachment_info": attachment_info,
         }

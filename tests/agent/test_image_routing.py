@@ -636,3 +636,44 @@ class TestBuildNativeContentPartsURLs:
         )
         assert parts[0]["type"] == "text"
         assert parts[0]["text"].startswith("What do you see in this image?")
+
+
+class TestBuildNativeContentPartsVideos:
+    def test_local_video_becomes_video_url_data_part(self, tmp_path: Path):
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+        parts, skipped = build_native_content_parts(
+            "describe motion",
+            [],
+            video_paths=[str(video)],
+        )
+
+        assert skipped == []
+        assert parts[0]["type"] == "text"
+        assert "[Video attached at:" in parts[0]["text"]
+        assert parts[1]["type"] == "video_url"
+        assert parts[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
+
+    def test_video_only_uses_media_default_prompt(self, tmp_path: Path):
+        video = tmp_path / "clip.webm"
+        video.write_bytes(b"webm")
+
+        parts, skipped = build_native_content_parts("", [], video_paths=[str(video)])
+
+        assert skipped == []
+        assert parts[0]["text"].startswith("What do you see in this media?")
+        assert parts[1]["type"] == "video_url"
+
+    def test_unsupported_or_missing_video_is_skipped(self, tmp_path: Path):
+        txt = tmp_path / "not-video.txt"
+        txt.write_text("x", encoding="utf-8")
+
+        parts, skipped = build_native_content_parts(
+            "see file",
+            [],
+            video_paths=[str(txt), str(tmp_path / "missing.mp4")],
+        )
+
+        assert parts == [{"type": "text", "text": "see file"}]
+        assert skipped == [str(txt), str(tmp_path / "missing.mp4")]
