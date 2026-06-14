@@ -34,7 +34,10 @@ external patch files to replay:
   the old conversation is no longer resumable; `/reset` keeps the old session
   record. Both commands bypass the running-agent queue path, interrupt active
   work first, clear pending queued text, and then dispatch the reset handler so
-  stale slash-command text is not fed back to the agent.
+  stale slash-command text is not fed back to the agent. Gateway `/new` and
+  `/reset` replies do not append random `hermes_cli.tips` discovery tips, so
+  irrelevant platform hints such as Telegram webhook setup do not appear in QQ
+  new-session replies.
 - Manual reset state is tracked with `SessionEntry.is_fresh_reset` in
   `gateway/session.py`. The next turn can re-inject session/topic skills
   without falsely showing the idle/daily auto-reset notice.
@@ -72,6 +75,11 @@ external patch files to replay:
   runtime path. `agent/codex_runtime.py` explicitly sets
   `should_review_memory = False` and `should_review_skills = False`; memory
   writes remain available through explicit user/tool action only.
+- Tangyuge identity prompt hardening is built in. `agent/system_prompt.py`
+  injects `# Tangyuge Identity` before SOUL, skills, context, memory, and
+  platform hints; `agent/prompt_builder.py` treats SOUL as style-only overlay,
+  rewrites legacy upstream default SOUL identity text to the style overlay, and
+  labels Hermes docs/runtime guidance as non-identity guidance.
 - Delegated child agents inherit active runtime/toolset configuration, but child
   tool access is constrained. `tools/delegate_tool.py` documents that leaf
   subagents cannot call `delegate_task`, `clarify`, `memory`, `send_message`,

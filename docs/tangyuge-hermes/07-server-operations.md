@@ -48,6 +48,10 @@ Default model provider:
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
+- `/home/hermes/.hermes/SOUL.md` is a style-only overlay. It must not contain
+  `You are Hermes Agent`, `created by Nous Research`, or any other identity
+  definition. `agent/prompt_builder.py` normalizes the old default SOUL identity
+  template at load time as a second safety net.
 
 Retained toolsets:
 
@@ -108,10 +112,11 @@ systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service -p ExecStart --value
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main skills list --enabled-only
+grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true
 ```
 
 Expected service state is `active`. Expected `ExecStart` uses the external venv
-path, not a repo-local `venv`.
+path, not a repo-local `venv`. The SOUL grep should print nothing.
 
 ## Session Cleanup Timer
 
@@ -180,6 +185,8 @@ After deployment or documentation changes:
 - Remove local and server `.bundle` deployment archives after successful use.
 - Keep server runtime data under `/home/hermes/.hermes/` intact; never replace
   `.env`, `config.yaml`, memories, sessions, media caches, or user documents.
+- Keep `/home/hermes/.hermes/SOUL.md` as a clean style overlay when prompt or
+  identity code changes; do not restore old upstream default identity text.
 - Remove obsolete home-directory lookup docs and old code backups when they are
   no longer referenced.
 - For NowledgeMem, update the existing Tangyuge-Hermes current-state memory and

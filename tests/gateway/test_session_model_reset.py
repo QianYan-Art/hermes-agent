@@ -170,3 +170,22 @@ async def test_reset_command_preserves_session_model_override_and_old_session():
     assert session_key in runner._session_reasoning_overrides
     assert session_key not in runner._pending_model_notes
     runner._session_db.delete_session.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_new_and_reset_do_not_append_random_tips(monkeypatch):
+    """Gateway /new and /reset replies must stay free of random discovery tips."""
+    from hermes_cli import tips
+
+    monkeypatch.setattr(
+        tips,
+        "get_random_tip",
+        lambda: "TELEGRAM_WEBHOOK_SECRET is required whenever TELEGRAM_WEBHOOK_URL is set",
+    )
+
+    new_result = await _make_runner()._handle_new_command(_make_event("/new"))
+    reset_result = await _make_runner()._handle_reset_command(_make_event("/reset"))
+
+    for result in (new_result, reset_result):
+        assert "TELEGRAM_WEBHOOK_SECRET" not in result
+        assert "Tip:" not in result

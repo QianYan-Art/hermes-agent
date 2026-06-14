@@ -7,7 +7,7 @@ operator scripts, and runtime paths.
 
 This repository is not an upstream-tracking Hermes Agent distribution. The
 baseline is frozen at Hermes Agent v0.16.0 and the server snapshot
-the 2026-06-12 81-server snapshot; later work should treat this fork as its
+from the 2026-06-12 81-server snapshot; later work should treat this fork as its
 own project unless a deliberate upstream merge is planned and tested.
 
 ## Runtime Shape
@@ -40,10 +40,14 @@ during deploys:
   operators. The character card is extracted into `agent/tangyuge_character.json`,
   rendered by `agent/tangyuge_identity.py`, and injected first from
   `agent/system_prompt.py`.
+- `SOUL.md` is a style overlay only. Legacy default SOUL files that still say
+  `You are Hermes Agent` are normalized to the style-only overlay at load time,
+  and the 81 runtime file must not redefine identity.
 - `/new` and `/reset` are distinct gateway commands. `/new` starts a fresh
   session, returns model settings to global defaults, and deletes the previous
   session DB row/transcript. `/reset` starts a fresh session while preserving
-  the current model/provider/reasoning config and the old session record.
+  the current model/provider/reasoning config and the old session record. The
+  gateway replies for these commands do not append random discovery tips.
 - `/restart` is exposed to allowed/admin chat operators. In DM, exact plaintext
   such as `restart gateway` is also routed to `/restart`. It uses the gateway's
   built-in graceful restart handler, not arbitrary shell execution.
@@ -113,6 +117,7 @@ Before release or deploy:
 ```bash
 python -m compileall -q agent gateway tools skills_builtin scripts tests
 python -m pytest \
+  tests/agent/test_prompt_builder.py \
   tests/gateway/test_session_model_reset.py \
   tests/gateway/test_session_boundary_hooks.py \
   tests/gateway/test_command_bypass_active_session.py \

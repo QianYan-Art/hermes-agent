@@ -14,6 +14,8 @@ This fork keeps the 81 server's daily QQBot workflow as the primary supported ru
 - QQBot gateway operation.
 - QianYan server patches already present in the snapshot.
 - Tangyuge identity as the highest-priority model identity.
+- Runtime `SOUL.md` as style overlay only; legacy default SOUL identity text is
+  normalized away by the loader and should not exist in the active 81 file.
 - The retained operational skills and RTK plugin path required by the server.
 
 Non-server surfaces such as desktop apps, website/web UI, bootstrap installers, dashboard GUI, and TUI shells are outside the target runtime unless a later mission issue explicitly keeps a compatibility shim.
@@ -67,6 +69,10 @@ When project behavior changes, keep these sources aligned:
 - Update durable NowledgeMem state by refining the existing Tangyuge-Hermes
   current-state memory when possible. Prefer merging/superseding stale duplicate
   memories over creating new memory entries.
+- When prompt, SOUL, identity, or roleplay behavior changes, verify both the
+  always-on role card and `tangyuge-roleplay` skill boundary: the role card
+  defines identity; the skill only adds style, relationship, and topic
+  resources.
 - Do not keep old bundles, temporary deployment archives, historical home-level
   docs, or obsolete server backups after successful deployment verification.
 

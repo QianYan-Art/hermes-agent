@@ -63,6 +63,9 @@ class TestTangyugeIdentityOrdering:
 
         assert parts["stable"].startswith("# Tangyuge Identity")
         assert "唐语歌" in parts["stable"]
+        assert "You are Hermes Agent" not in parts["stable"]
+        assert "created by Nous Research" not in parts["stable"]
+        assert "You run on Hermes Agent" not in parts["stable"]
 
     def test_soul_md_is_overlay_after_tangyuge_identity(self):
         agent = _make_agent(load_soul_identity=True, skip_context_files=True)

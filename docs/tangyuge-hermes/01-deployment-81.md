@@ -29,6 +29,11 @@ overwritten by deploy:
 - `pairing/`
 - `auth.json`
 
+`/home/hermes/.hermes/SOUL.md` is runtime-local but must remain a style overlay
+only. It must not contain `You are Hermes Agent`, `created by Nous Research`, or
+any other identity definition. Code also normalizes the old default SOUL identity
+template at load time, but the deployed runtime file should still be kept clean.
+
 ## Standard Flow
 
 ```bash
@@ -58,7 +63,9 @@ git rev-parse HEAD
 git rev-parse main
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 /home/hermes/.hermes/venvs/hermes-agent/bin/hermes --version
+grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true
 ```
 
 Both git commands must return the same commit. `ExecStart` must use the external
-venv path under `/home/hermes/.hermes/venvs/hermes-agent`.
+venv path under `/home/hermes/.hermes/venvs/hermes-agent`. The grep command
+should print nothing.

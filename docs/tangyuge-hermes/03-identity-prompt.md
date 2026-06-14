@@ -1,7 +1,7 @@
 # Tangyuge Identity Prompt
 
 常用叫法："唐语歌人格"、"角色卡"、"bot内核"、"内核提示词"、
-"SOUL"、"身份注入"、"角色怎么插入项目"。
+"SOUL"、"身份注入"、"提示词注入内容"、"身份歧义"、"角色怎么插入项目"。
 
 Tangyuge-Hermes injects Tangyuge identity as the first stable system-prompt
 block. Later SOUL, skill, memory, user, and platform instructions may add
@@ -11,6 +11,10 @@ The generic Hermes `SOUL.md` is a style overlay only. It must not say that the
 model is Hermes Agent, Nous Research, Claude, or any other identity. On the 81
 server the active file is `/home/hermes/.hermes/SOUL.md`; the repo seed template
 is `hermes_cli/default_soul.py`, with a Docker copy at `docker/SOUL.md`.
+`agent.prompt_builder.load_soul_md()` also normalizes legacy default SOUL files
+that still contain `You are Hermes Agent...created by Nous Research` into the
+style-only overlay before injection, so an old runtime file cannot redefine the
+Tangyuge identity.
 
 `tangyuge-roleplay` is a skill-level style and relationship reference. It may
 be loaded when the user asks for Tangyuge-style roleplay or companionship, but
@@ -24,7 +28,25 @@ introducing original named characters into the current conversation.
 - Character data: `agent/tangyuge_character.json`
 - Prompt builder: `agent/tangyuge_identity.py`
 - Stable prompt entry: `agent/system_prompt.py`
+- SOUL loader and legacy default guard: `agent/prompt_builder.py`
 - Roleplay reference skill: `skills_builtin/tangyuge-roleplay/SKILL.md`
+
+## Fresh Session Prompt Order
+
+A new session builds one system prompt in this order:
+
+1. `# Tangyuge Identity` from `agent/tangyuge_identity.py`.
+2. Runtime `SOUL.md` style overlay from `HERMES_HOME/SOUL.md`.
+3. Hermes runtime/docs help guidance from `agent/prompt_builder.py`.
+4. Tool/task completion guidance and tool-family guidance.
+5. Skills index and mandatory skill-loading rule.
+6. Environment/profile/platform hints.
+7. Project context files such as `AGENTS.md`.
+8. Volatile memory, user profile, date, model, and provider lines.
+
+The prompt is stored for the session and replayed byte-for-byte on later turns.
+Ephemeral channel/system prompts are appended at API-call time after the cached
+system prompt; they must not replace the Tangyuge identity block.
 
 ## Included Identity Material
 
@@ -73,5 +95,15 @@ assert p.startswith("# Tangyuge Identity")
 for banned in ["first_mes", "alternate_greetings", "post_history_instructions", "烟火大会", "<details", "## Scenario", "scenario"]:
     assert banned not in p
     assert banned not in js
+PY
+
+python - <<'PY'
+from run_agent import AIAgent
+a = AIAgent(provider="minimax-cn", model="minimax-m3", api_mode="anthropic_messages", quiet_mode=True, platform="qq")
+s = a._build_system_prompt_parts()["stable"]
+assert s.startswith("# Tangyuge Identity")
+assert "You are Hermes Agent" not in s
+assert "created by Nous Research" not in s
+assert "This is product/runtime guidance, not an identity definition." in s
 PY
 ```

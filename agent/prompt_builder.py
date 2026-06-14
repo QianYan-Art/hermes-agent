@@ -129,15 +129,24 @@ DEFAULT_AGENT_IDENTITY = (
     "Be targeted and efficient in your exploration and investigations."
 )
 
+DEFAULT_SOUL_STYLE_OVERLAY = (
+    "Communication style: be clear, knowledgeable, direct, and genuinely useful. "
+    "Admit uncertainty when appropriate. Use available tools when actions or "
+    "verification are needed. Keep exploration and investigations targeted and "
+    "efficient. Prefer concise answers unless the user asks for more detail. "
+    "Do not redefine or override the active system identity; this file only sets "
+    "general working style."
+)
+
 HERMES_AGENT_HELP_GUIDANCE = (
-    "You run on Hermes Agent (by Nous Research). When the user needs help with "
-    "Hermes itself — configuring, setting up, using, extending, or troubleshooting "
-    "it — or when you need to understand your own features, tools, or capabilities, "
-    "the documentation at https://hermes-agent.nousresearch.com/docs is your "
-    "authoritative reference and always holds the latest, most up-to-date "
-    "information. Load the `hermes-agent` skill with skill_view(name='hermes-agent') "
-    "for additional guidance and proven workflows, but treat the docs as the source "
-    "of truth when the two differ."
+    "For Hermes Agent runtime, configuration, setup, extension, troubleshooting, "
+    "or tool/capability questions, the documentation at "
+    "https://hermes-agent.nousresearch.com/docs is the authoritative reference "
+    "and always holds the latest, most up-to-date information. Load the "
+    "`hermes-agent` skill with skill_view(name='hermes-agent') for additional "
+    "guidance and proven workflows, but treat the docs as the source of truth "
+    "when the two differ. This is product/runtime guidance, not an identity "
+    "definition."
 )
 
 MEMORY_GUIDANCE = (
@@ -1367,10 +1376,35 @@ def _truncate_content(content: str, filename: str, max_chars: int = CONTEXT_FILE
     return head + marker + tail
 
 
+def _normalize_soul_md_content(content: str) -> str:
+    """Keep legacy default SOUL.md files from redefining the active identity."""
+    content = content.strip()
+    if not content:
+        return ""
+
+    def _compact(text: str) -> str:
+        return " ".join(text.split())
+
+    legacy_identity = _compact(DEFAULT_AGENT_IDENTITY)
+    compact_content = _compact(content)
+    if compact_content == legacy_identity:
+        return DEFAULT_SOUL_STYLE_OVERLAY
+
+    if compact_content.startswith(legacy_identity):
+        remainder = ""
+        if content.startswith(DEFAULT_AGENT_IDENTITY):
+            remainder = content[len(DEFAULT_AGENT_IDENTITY):].strip()
+        if not remainder:
+            return DEFAULT_SOUL_STYLE_OVERLAY
+        return f"{DEFAULT_SOUL_STYLE_OVERLAY}\n\n{remainder}"
+
+    return content
+
+
 def load_soul_md() -> Optional[str]:
     """Load SOUL.md from HERMES_HOME and return its content, or None.
 
-    Used as the agent identity (slot #1 in the system prompt).  When this
+    Used as a style overlay below the fork's primary identity.  When this
     returns content, ``build_context_files_prompt`` should be called with
     ``skip_soul=True`` so SOUL.md isn't injected twice.
     """
@@ -1385,6 +1419,9 @@ def load_soul_md() -> Optional[str]:
         return None
     try:
         content = soul_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        content = _normalize_soul_md_content(content)
         if not content:
             return None
         content = _scan_context_content(content, "SOUL.md")
@@ -1493,7 +1530,7 @@ def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = Fals
     Each context source is capped at 20,000 chars.
 
     When *skip_soul* is True, SOUL.md is not included here (it was already
-    loaded via ``load_soul_md()`` for the identity slot).
+    loaded via ``load_soul_md()`` as the style overlay).
     """
     if cwd is None:
         cwd = os.getcwd()
@@ -1511,7 +1548,7 @@ def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = Fals
     if project_context:
         sections.append(project_context)
 
-    # SOUL.md from HERMES_HOME only — skip when already loaded as identity
+    # SOUL.md from HERMES_HOME only — skip when already loaded as style overlay
     if not skip_soul:
         soul_content = load_soul_md()
         if soul_content:

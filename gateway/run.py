@@ -10121,16 +10121,9 @@ class GatewayRunner:
                     exc,
                 )
 
-        # Append a random tip to the reset/new message
-        try:
-            from hermes_cli.tips import get_random_tip
-            _tip_line = t("gateway.reset.tip", tip=get_random_tip())
-        except Exception:
-            _tip_line = ""
-
         if session_info:
-            return EphemeralReply(f"{header}\n\n{session_info}{_tip_line}")
-        return EphemeralReply(f"{header}{_tip_line}")
+            return EphemeralReply(f"{header}\n\n{session_info}")
+        return EphemeralReply(header)
 
     async def _handle_reset_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
         """Handle /reset command."""

@@ -20,6 +20,7 @@ from agent.prompt_builder import (
     build_context_files_prompt,
     CONTEXT_FILE_MAX_CHARS,
     DEFAULT_AGENT_IDENTITY,
+    DEFAULT_SOUL_STYLE_OVERLAY,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
@@ -27,6 +28,7 @@ from agent.prompt_builder import (
     SESSION_SEARCH_GUIDANCE,
     PLATFORM_HINTS,
     WSL_ENVIRONMENT_HINT,
+    load_soul_md,
 )
 from hermes_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
 
@@ -501,7 +503,8 @@ class TestBuildContextFilesPrompt:
         with patch("pathlib.Path.home", return_value=fake_home):
             result = build_context_files_prompt(cwd=str(tmp_path))
         assert "Project Context" in result
-        assert "Hermes Agent" in result
+        assert "Communication style:" in result
+        assert "You are Hermes Agent" not in result
 
     def test_loads_agents_md(self, tmp_path):
         (tmp_path / "AGENTS.md").write_text("Use Ruff for linting.")
@@ -533,6 +536,19 @@ class TestBuildContextFilesPrompt:
         assert "Be concise and friendly." in result
         assert "If SOUL.md is present" not in result
         assert "## SOUL.md" not in result
+
+    def test_legacy_default_soul_md_becomes_style_overlay(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
+        hermes_home = tmp_path / "hermes_home"
+        hermes_home.mkdir()
+        (hermes_home / "SOUL.md").write_text(DEFAULT_AGENT_IDENTITY, encoding="utf-8")
+
+        result = load_soul_md()
+
+        assert result == DEFAULT_SOUL_STYLE_OVERLAY
+        assert "You are Hermes Agent" not in result
+        assert "created by Nous Research" not in result
+        assert "Do not redefine or override the active system identity" in result
 
     def test_empty_soul_md_adds_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))

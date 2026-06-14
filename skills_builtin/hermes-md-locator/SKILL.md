@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“通用SOUL文档”“Hermes SOUL”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“locator技能”“patch记录”“/new和/reset”“/view”“/context”“上下文窗口”“关闭自动记忆”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -40,10 +40,10 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
 | "部署", "部署文档", "81部署", "81服务器部署", "服务器怎么部署", "靠什么部署", "main分支部署", "服务命令", "旧版本还保留吗" | `docs/tangyuge-hermes/01-deployment-81.md` |
 | "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪" | `docs/tangyuge-hermes/02-trim-plan.md` |
-| "唐语歌人格", "角色卡", "bot内核", "内核提示词", "SOUL", "SOUL文档", "通用SOUL文档", "Hermes SOUL", "身份注入", "角色怎么插入项目" | `docs/tangyuge-hermes/03-identity-prompt.md` |
+| "唐语歌人格", "角色卡", "bot内核", "内核提示词", "提示词注入内容", "身份歧义", "Hermes身份噪音", "SOUL", "SOUL文档", "通用SOUL文档", "Hermes SOUL", "身份注入", "角色怎么插入项目" | `docs/tangyuge-hermes/03-identity-prompt.md` |
 | "tangyuge-roleplay", "角色扮演skill", "陪聊skill", "唐语歌skill", "角色卡和skill关系" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "内置skills", "skills列表", "有哪些skill", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
-| "patch记录", "二开patch", "/new和/reset", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
+| "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "MiniMax", "minimax-m3", "视频链路", "视频阈值", "45 MiB", "图片识别", "媒体路由", "native video", "视频直传", "视频预算" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
 | "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
@@ -56,8 +56,10 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "自动清理session任务"、"session清理timer"、"retention cleanup"：读 `07-server-operations.md` 的 Session Cleanup Timer。
 - "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
 - "我的patch是否内置、/new和/reset差异、/view、/context、上下文窗口、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
+- "/new 或 /reset 出现随机 tip、Telegram webhook tip、tips 从哪里来"：读 `05-patches-and-rtk.md`。
 - "MiniMax、视频链路、视频阈值、图片识别、媒体路由"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；只问当前服务器状态时先读 `07-server-operations.md`。
 - "bot怎么成为唐语歌、角色卡怎么进内核、通用 SOUL 文档在哪里"：读 `03-identity-prompt.md`；涉及运行时文件边界再读 `00-overview.md`。
+- "新建 session 初始提示词、提示词拼接顺序、身份歧义、Hermes Agent 身份噪音"：读 `03-identity-prompt.md`；涉及当前服务器实际 SOUL 时再读 `07-server-operations.md`。
 - "tangyuge-roleplay、角色扮演skill、陪聊skill、角色卡和skill关系"：读 `03-identity-prompt.md` 和 `04-built-in-skills.md`。
 - "邮件/邮箱/验证码/附件"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops` 执行实际邮箱操作。
 - "文档在哪、KBase和服务器文档关系"：读 `00-overview.md` 和 `07-server-operations.md`。
@@ -70,10 +72,10 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “部署文档”“81部署”“81服务器部署”“服务器怎么部署”“靠什么部署”
 - “旧版本还保留吗”“main分支部署”“服务命令”
 - “精简方案”“删了什么”“保留什么”“项目裁剪”
-- “角色卡”“唐语歌人格”“bot内核”“内核提示词”“SOUL”“SOUL文档”“通用SOUL文档”“Hermes SOUL”“身份注入”
+- “角色卡”“唐语歌人格”“bot内核”“内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“SOUL”“SOUL文档”“通用SOUL文档”“Hermes SOUL”“身份注入”
 - “tangyuge-roleplay”“角色扮演skill”“陪聊skill”“唐语歌skill”“角色卡和skill关系”
 - “内置skills”“有哪些skill”“locator技能”“技能怎么内置”
-- “patch记录”“二开patch”“/new和/reset”“/view”“/context”“上下文窗口”“关闭自动记忆”“自动总结skills”“RTK”
+- “patch记录”“二开patch”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“自动总结skills”“RTK”
 - “MiniMax”“minimax-m3”“视频链路”“视频阈值”“45 MiB”“图片识别”“媒体路由”“native video”“视频直传”“视频预算”
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
 - “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”
