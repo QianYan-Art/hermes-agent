@@ -45,15 +45,15 @@ external patch files to replay:
 - `/auxmodel`, QQ `/model` provider selection, custom provider routing, and
   model/provider filtering are retained as source behavior around gateway
   command handling, runtime provider resolution, and auxiliary client routing.
-  The 81 deployment currently uses the built-in `deepseek` provider for the
-  main model (`deepseek-v4-pro`). The older main-model custom providers
+  The 81 deployment currently uses the built-in `minimax-cn` provider for the
+  main model (`minimax-m3`). The older main-model custom providers
   `openrouter`, `siliconflow`, `deepseek-direct`, and `xiaomi-token-plan-cn`
   are removed from server runtime config; auxiliary/vision, image generation,
   and TTS settings are separate and must be preserved.
 - Built-in API-key provider discovery from generic env vars is disabled by
   default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
   legacy auto-discovery of built-in providers from env names such as
-  `DEEPSEEK_API_KEY`; explicit provider selection and user-defined
+  `MINIMAX_CN_API_KEY` or `DEEPSEEK_API_KEY`; explicit provider selection and user-defined
   `providers:` entries continue to work without that flag.
 - `/context` is a native CLI/gateway command for showing or setting
   `model.context_length`. `/context <size> --global` persists the context

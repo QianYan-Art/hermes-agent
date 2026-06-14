@@ -23,15 +23,17 @@ docs.
 
 Default model provider:
 
-- Provider slug: `deepseek`
-- Display name: `DeepSeek`
-- Base URL: `https://api.deepseek.com/v1`
-- Default model: `deepseek-v4-pro`
-- Key env: `DEEPSEEK_API_KEY`
+- Provider slug: `minimax-cn`
+- Display name: `MiniMax (China)`
+- Base URL: `https://api.minimaxi.com/anthropic`
+- Default model: `minimax-m3`
+- Key env: `MINIMAX_CN_API_KEY`
 - The old main-model custom providers `openrouter`, `siliconflow`,
   `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
   Auxiliary/vision, image generation, and TTS settings are separate and should
   not be removed when cleaning main model providers.
+- `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
+  main model does not use it.
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
