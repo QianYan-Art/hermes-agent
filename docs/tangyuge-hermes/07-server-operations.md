@@ -23,14 +23,15 @@ docs.
 
 Default model provider:
 
-- Provider slug: `deepseek-direct`
+- Provider slug: `deepseek`
 - Display name: `DeepSeek`
 - Base URL: `https://api.deepseek.com/v1`
-- Default model: `deepseek-chat`
-- Key env: `TANGYUGE_DEEPSEEK_API_KEY`
-- Do not use `DEEPSEEK_API_KEY` on the 81 deployment; the built-in DeepSeek
-  provider can auto-discover that env var and duplicate the custom DeepSeek row
-  in model selection flows.
+- Default model: `deepseek-v4-pro`
+- Key env: `DEEPSEEK_API_KEY`
+- The old main-model custom providers `openrouter`, `siliconflow`,
+  `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
+  Auxiliary/vision, image generation, and TTS settings are separate and should
+  not be removed when cleaning main model providers.
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
