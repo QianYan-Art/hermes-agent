@@ -20,6 +20,10 @@ skill folders into the repo.
 
 - `tangyuge-roleplay` is style/reference material only; the core identity comes
   from `agent/tangyuge_identity.py`.
+- `hermes-md-locator` is the dynamic documentation entrypoint. Keep its
+  description, route table, combination routes, and trigger phrases aligned with
+  current `docs/tangyuge-hermes/` and README content whenever bot-facing docs
+  change.
 - `grok-search` documents environment-variable based configuration only. Real
   secrets must remain in runtime environment or server-local config.
 - Sub-agents default to no memory/skill mutation capability.

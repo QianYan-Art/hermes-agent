@@ -59,6 +59,9 @@ When project behavior changes, keep these sources aligned:
 
 - Update repo docs under `docs/tangyuge-hermes/` first. These are the bot-facing
   source of truth and must be reachable through `hermes-md-locator`.
+- When docs or README add/remove topics, aliases, or current-state facts, update
+  `skills_builtin/hermes-md-locator/SKILL.md` in the same change so the bot can
+  locate the new content from natural user phrasing.
 - Update Windows KBase records only as local operator notes. Do not sync KBase
   records to the server and do not make the bot depend on them for lookup.
 - Update durable NowledgeMem state by refining the existing Tangyuge-Hermes
