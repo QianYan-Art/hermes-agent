@@ -1461,6 +1461,16 @@ def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
         return ""
 
 
+def builtin_env_provider_discovery_enabled() -> bool:
+    """Whether built-in providers may be auto-discovered from API-key env vars.
+
+    Tangyuge-Hermes keeps this off by default so user-defined providers in
+    config.yaml do not get duplicated by generic env names such as
+    ``DEEPSEEK_API_KEY``. Explicit provider selection still works.
+    """
+    return is_truthy_value(os.getenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", ""))
+
+
 def resolve_provider(
     requested: Optional[str] = None,
     *,
@@ -1473,9 +1483,9 @@ def resolve_provider(
     Priority (when requested="auto" or None):
     1. active_provider in auth.json with valid credentials
     2. Explicit CLI api_key/base_url -> "openrouter"
-    3. OPENAI_API_KEY or OPENROUTER_API_KEY env vars -> "openrouter"
-    4. Provider-specific API keys (GLM, Kimi, MiniMax) -> that provider
-    5. Fallback: "openrouter"
+    3. If HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1, provider env vars
+       (OPENROUTER_API_KEY, DEEPSEEK_API_KEY, etc.) may select built-ins.
+    4. Otherwise no built-in env scan is performed.
     """
     normalized = (requested or "auto").strip().lower()
 
@@ -1558,24 +1568,25 @@ def resolve_provider(
     except Exception as e:
         logger.debug("Could not detect active auth provider: %s", e)
 
-    if has_usable_secret(os.getenv("OPENAI_API_KEY")) or has_usable_secret(os.getenv("OPENROUTER_API_KEY")):
-        return "openrouter"
+    if builtin_env_provider_discovery_enabled():
+        if has_usable_secret(os.getenv("OPENAI_API_KEY")) or has_usable_secret(os.getenv("OPENROUTER_API_KEY")):
+            return "openrouter"
 
-    # Auto-detect API-key providers by checking their env vars
-    for pid, pconfig in PROVIDER_REGISTRY.items():
-        if pconfig.auth_type != "api_key":
-            continue
-        # GitHub tokens are commonly present for repo/tool access but should not
-        # hijack inference auto-selection unless the user explicitly chooses
-        # Copilot/GitHub Models as the provider. LM Studio is a local server
-        # whose availability isn't implied by LM_API_KEY presence (it may be
-        # offline, and the no-auth setup uses a placeholder value), so it
-        # also requires explicit selection.
-        if pid in {"copilot", "lmstudio"}:
-            continue
-        for env_var in pconfig.api_key_env_vars:
-            if has_usable_secret(os.getenv(env_var, "")):
-                return pid
+        # Auto-detect API-key providers by checking their env vars.
+        for pid, pconfig in PROVIDER_REGISTRY.items():
+            if pconfig.auth_type != "api_key":
+                continue
+            # GitHub tokens are commonly present for repo/tool access but should not
+            # hijack inference auto-selection unless the user explicitly chooses
+            # Copilot/GitHub Models as the provider. LM Studio is a local server
+            # whose availability isn't implied by LM_API_KEY presence (it may be
+            # offline, and the no-auth setup uses a placeholder value), so it
+            # also requires explicit selection.
+            if pid in {"copilot", "lmstudio"}:
+                continue
+            for env_var in pconfig.api_key_env_vars:
+                if has_usable_secret(os.getenv(env_var, "")):
+                    return pid
 
     # AWS Bedrock — detect via boto3 credential chain (IAM roles, SSO, env vars).
     # This runs after API-key providers so explicit keys always win.

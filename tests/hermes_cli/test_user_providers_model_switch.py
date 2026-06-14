@@ -57,6 +57,38 @@ def test_list_authenticated_providers_includes_full_models_list_from_user_provid
     assert "qwen3.5:cloud" in user_prov["models"]
 
 
+def test_builtin_env_provider_discovery_does_not_duplicate_user_deepseek(monkeypatch):
+    """DEEPSEEK_API_KEY should not add a built-in row beside user config."""
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-should-not-auto-list")
+    monkeypatch.delenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", raising=False)
+
+    user_providers = {
+        "deepseek-direct": {
+            "name": "DeepSeek",
+            "base_url": "https://api.deepseek.com/v1",
+            "key_env": "TANGYUGE_DEEPSEEK_API_KEY",
+            "default_model": "deepseek-chat",
+            "models": {
+                "deepseek-chat": {"context_length": 64000},
+                "deepseek-reasoner": {"context_length": 64000},
+            },
+            "discover_models": False,
+        }
+    }
+
+    providers = list_authenticated_providers(
+        current_provider="deepseek-direct",
+        user_providers=user_providers,
+        custom_providers=[],
+        max_models=10,
+    )
+
+    slugs = [p["slug"] for p in providers]
+    assert "deepseek-direct" in slugs
+    assert "deepseek" not in slugs
+
+
 def test_list_authenticated_providers_dedupes_models_when_default_in_list(monkeypatch):
     """When default_model is also in models list, don't duplicate."""
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
@@ -523,6 +555,7 @@ def test_list_authenticated_providers_hides_custom_shadowing_builtin_endpoint(mo
     ``my-alibaba`` custom provider pointing at the same URL. Before the fix,
     the picker showed both rows for one endpoint.
     """
+    monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-test")
     monkeypatch.setattr(
         "agent.models_dev.fetch_models_dev",
@@ -609,6 +642,7 @@ def test_list_authenticated_providers_dedup_honors_base_url_env_override(monkeyp
     overrides the static inference_base_url, a custom provider pointing at
     the overridden URL (not the static one) should still be recognized as
     a duplicate."""
+    monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-test")
     monkeypatch.setenv(
         "DASHSCOPE_BASE_URL",

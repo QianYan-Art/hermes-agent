@@ -85,6 +85,7 @@ class TestXiaomiAutoDetection:
                      "GH_TOKEN", "GITHUB_TOKEN", "MINIMAX_CN_API_KEY",
                      "TOKENHUB_API_KEY", "ARCEEAI_API_KEY"):
             monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("XIAOMI_API_KEY", "sk-xiaomi-test-12345678")
         provider = resolve_provider("auto")
         assert provider == "xiaomi"

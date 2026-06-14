@@ -50,6 +50,11 @@ external patch files to replay:
   The DeepSeek entry is the server's user-defined provider, not the built-in
   env-discovered `deepseek` provider, so the deployment uses a project-specific
   key env name instead of `DEEPSEEK_API_KEY`.
+- Built-in API-key provider discovery from generic env vars is disabled by
+  default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
+  legacy auto-discovery of built-in providers from env names such as
+  `DEEPSEEK_API_KEY`; explicit provider selection and user-defined
+  `providers:` entries continue to work without that flag.
 - `/context` is a native CLI/gateway command for showing or setting
   `model.context_length`. `/context <size> --global` persists the context
   window to config; `/context auto --global` probes the active model and falls

@@ -1204,7 +1204,7 @@ def list_authenticated_providers(
         fetch_models_dev,
         get_provider_info as _mdev_pinfo,
     )
-    from hermes_cli.auth import PROVIDER_REGISTRY
+    from hermes_cli.auth import PROVIDER_REGISTRY, builtin_env_provider_discovery_enabled
     from hermes_cli.models import (
         OPENROUTER_MODELS, _PROVIDER_MODELS,
         _MODELS_DEV_PREFERRED, _merge_with_models_dev, cached_provider_model_ids,
@@ -1220,6 +1220,7 @@ def list_authenticated_providers(
     # https://coding-intl.dashscope.aliyuncs.com/v1 collides with the built-in
     # alibaba-coding-plan row when DASHSCOPE_API_KEY is present). Fixes #16970.
     _builtin_endpoints: set = set()
+    builtin_env_discovery = builtin_env_provider_discovery_enabled()
 
     def _norm_url(url: str) -> str:
         return str(url or "").strip().rstrip("/").lower()
@@ -1333,6 +1334,8 @@ def list_authenticated_providers(
     from hermes_cli.models import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
     from hermes_cli.providers import ALIASES as _PROVIDER_ALIAS_TABLE
     for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+        if not builtin_env_discovery:
+            continue
         # Skip vendor names that are merely aliases routing through an
         # aggregator (e.g. bare "openai" → "openrouter"). These are NOT
         # directly-routable providers: emitting them as their own picker
@@ -1430,6 +1433,8 @@ def list_authenticated_providers(
         # Resolve Hermes slug — e.g. "github-copilot" → "copilot"
         hermes_slug = _mdev_to_hermes.get(pid, pid)
         if hermes_slug.lower() in seen_slugs:
+            continue
+        if overlay.auth_type == "api_key" and not builtin_env_discovery:
             continue
 
         # Check if credentials exist
@@ -1588,6 +1593,10 @@ def list_authenticated_providers(
 
         # Check credentials via PROVIDER_REGISTRY (auth.py)
         _cp_config = _auth_registry.get(_cp.slug)
+        if not builtin_env_discovery and (
+            _cp_config is None or getattr(_cp_config, "auth_type", "") == "api_key"
+        ):
+            continue
         _cp_has_creds = False
         if _cp_config and _cp_config.api_key_env_vars:
             _cp_has_creds = any(os.environ.get(ev) for ev in _cp_config.api_key_env_vars)

@@ -72,6 +72,7 @@ class TestOllamaCloudAliases:
 
 class TestOllamaCloudAutoDetection:
     def test_auto_detects_ollama_api_key(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("OLLAMA_API_KEY", "test-ollama-key")
         assert resolve_provider("auto") == "ollama-cloud"
 
@@ -118,6 +119,7 @@ class TestOllamaCloudModelCatalog:
         from hermes_cli.models import provider_model_ids
 
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
 
         mock_mdev = {
@@ -144,6 +146,7 @@ class TestOllamaCloudModelPicker:
         from hermes_cli.model_switch import list_authenticated_providers
 
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
 
         mock_mdev = {

@@ -1,6 +1,8 @@
 """Tests for API-key provider support (z.ai/GLM, Kimi, MiniMax)."""
 
 import os
+import sys
+import types
 
 import pytest
 
@@ -147,6 +149,7 @@ PROVIDER_ENV_VARS = (
     "NOUS_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
     "OPENAI_BASE_URL", "HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH",
     "HERMES_COPILOT_ACP_ARGS", "COPILOT_ACP_BASE_URL",
+    "HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY",
 )
 
 
@@ -159,6 +162,16 @@ def _clear_provider_env(monkeypatch):
 
 class TestResolveProvider:
     """Test resolve_provider() with new providers."""
+
+    def _enable_builtin_env_discovery(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
+
+    def _disable_bedrock_auto_detect(self, monkeypatch):
+        monkeypatch.setitem(
+            sys.modules,
+            "agent.bedrock_adapter",
+            types.SimpleNamespace(has_aws_credentials=lambda: False),
+        )
 
     def test_explicit_zai(self):
         assert resolve_provider("zai") == "zai"
@@ -246,50 +259,67 @@ class TestResolveProvider:
             resolve_provider("nonexistent-provider-xyz")
 
     def test_auto_detects_glm_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("GLM_API_KEY", "test-glm-key")
         assert resolve_provider("auto") == "zai"
 
     def test_auto_detects_zai_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("ZAI_API_KEY", "test-zai-key")
         assert resolve_provider("auto") == "zai"
 
     def test_auto_detects_z_ai_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("Z_AI_API_KEY", "test-z-ai-key")
         assert resolve_provider("auto") == "zai"
 
     def test_auto_detects_kimi_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("KIMI_API_KEY", "test-kimi-key")
         assert resolve_provider("auto") == "kimi-coding"
 
     def test_auto_detects_stepfun_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("STEPFUN_API_KEY", "test-stepfun-key")
         assert resolve_provider("auto") == "stepfun"
 
     def test_auto_detects_minimax_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("MINIMAX_API_KEY", "test-mm-key")
         assert resolve_provider("auto") == "minimax"
 
     def test_auto_detects_minimax_cn_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-mm-cn-key")
         assert resolve_provider("auto") == "minimax-cn"
 
     def test_auto_detects_gmi_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("GMI_API_KEY", "test-gmi-key")
         assert resolve_provider("auto") == "gmi"
 
     def test_auto_detects_kilocode_key(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("KILOCODE_API_KEY", "test-kilo-key")
         assert resolve_provider("auto") == "kilocode"
 
     def test_auto_detects_hf_token(self, monkeypatch):
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("HF_TOKEN", "hf_test_token")
         assert resolve_provider("auto") == "huggingface"
 
     def test_openrouter_takes_priority_over_glm(self, monkeypatch):
         """OpenRouter API key should win over GLM in auto-detection."""
+        self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
         monkeypatch.setenv("GLM_API_KEY", "glm-key")
         assert resolve_provider("auto") == "openrouter"
+
+    def test_builtin_env_provider_discovery_is_off_by_default(self, monkeypatch):
+        self._disable_bedrock_auto_detect(monkeypatch)
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+        with pytest.raises(AuthError, match="No inference provider configured"):
+            resolve_provider("auto")
 
     def test_auto_does_not_select_copilot_from_github_token(self, monkeypatch):
         # AWS Bedrock auto-detection (via boto3's credential chain) runs at
@@ -298,10 +328,7 @@ class TestResolveProvider:
         # the hermetic conftest. Force-disable it so this test exercises
         # the specific "GitHub token alone shouldn't auto-pick copilot"
         # behavior, not the Bedrock fallback.
-        monkeypatch.setattr(
-            "agent.bedrock_adapter.has_aws_credentials",
-            lambda env=None: False,
-        )
+        self._disable_bedrock_auto_detect(monkeypatch)
         monkeypatch.setenv("GITHUB_TOKEN", "gh-test-token")
         with pytest.raises(AuthError, match="No inference provider configured"):
             resolve_provider("auto")
@@ -631,6 +658,12 @@ class TestRuntimeProviderResolution:
         assert result["base_url"] == "https://api.gmi-serving.com/v1"
 
     def test_runtime_auto_detects_api_key_provider(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
+        monkeypatch.setitem(
+            sys.modules,
+            "agent.bedrock_adapter",
+            types.SimpleNamespace(has_aws_credentials=lambda: False),
+        )
         monkeypatch.setenv("KIMI_API_KEY", "auto-kimi-key")
         from hermes_cli.runtime_provider import resolve_runtime_provider
         result = resolve_runtime_provider(requested="auto")

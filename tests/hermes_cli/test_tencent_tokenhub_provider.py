@@ -95,6 +95,7 @@ class TestTencentTokenhubAutoDetection:
     def test_auto_detect(self, monkeypatch):
         for var in _OTHER_PROVIDER_KEYS:
             monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("TOKENHUB_API_KEY", "sk-tokenhub-test-12345678")
         provider = resolve_provider("auto")
         assert provider == "tencent-tokenhub"

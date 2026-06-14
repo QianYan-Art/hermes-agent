@@ -31,6 +31,9 @@ Default model provider:
 - Do not use `DEEPSEEK_API_KEY` on the 81 deployment; the built-in DeepSeek
   provider can auto-discover that env var and duplicate the custom DeepSeek row
   in model selection flows.
+- Built-in API-key provider env discovery is disabled by default. Do not set
+  `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
+  intent is to restore legacy built-in provider auto-listing from env vars.
 
 Retained toolsets:
 

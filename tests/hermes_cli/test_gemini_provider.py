@@ -75,10 +75,12 @@ class TestGeminiAliases:
 
 class TestGeminiAutoDetection:
     def test_auto_detects_google_api_key(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
         assert resolve_provider("auto") == "gemini"
 
     def test_auto_detects_gemini_api_key(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY", "1")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         assert resolve_provider("auto") == "gemini"
 
