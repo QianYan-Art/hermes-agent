@@ -21,6 +21,17 @@ docs.
 
 ## Current Runtime Shape
 
+Default model provider:
+
+- Provider slug: `deepseek-direct`
+- Display name: `DeepSeek`
+- Base URL: `https://api.deepseek.com/v1`
+- Default model: `deepseek-chat`
+- Key env: `TANGYUGE_DEEPSEEK_API_KEY`
+- Do not use `DEEPSEEK_API_KEY` on the 81 deployment; the built-in DeepSeek
+  provider can auto-discover that env var and duplicate the custom DeepSeek row
+  in model selection flows.
+
 Retained toolsets:
 
 - `browser`
