@@ -46,7 +46,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "RTK", "provider", "模型路由", "Tavily", "HYBGZS", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "MiniMax", "minimax-m3", "视频链路", "视频阈值", "45 MiB", "图片识别", "媒体路由", "native video", "视频直传", "视频预算" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
-| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "权限", "blogsync", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
+| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
