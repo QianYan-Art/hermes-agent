@@ -56,6 +56,39 @@ Default model provider:
   `SOUL_QQBOT_GROUP.md` were confirmed unused and removed. Current runtime
   prompt injection reads only `/home/hermes/.hermes/SOUL.md`.
 
+## Operator Permissions
+
+As of 2026-06-15, the 81 server grants the `hermes` user passwordless full
+sudo for operator-approved QQ workflows:
+
+```sudoers
+hermes ALL=(ALL) NOPASSWD: ALL
+```
+
+This rule lives in `/etc/sudoers.d/hermes`, owned `root:root` with mode `440`.
+`visudo -c` must pass, and this verification should return root:
+
+```bash
+sudo -u hermes -H sudo -n id
+```
+
+The older gateway-only sudo whitelist remains in
+`/etc/sudoers.d/hermes-gateway-control` as a rollback fallback, but the full
+sudo rule currently supersedes it.
+
+The blog sync permission model should stay in place even though `hermes` can
+sudo:
+
+- `hermes` belongs to the `blogsync` group.
+- `/www/wwwroot/blog` and key writable subdirectories are `root:blogsync`
+  with mode `2775`.
+- `/usr/local/bin/blog-sync-kbase.sh` is `root:blogsync 750`.
+- `/etc/blog-sync.env` is `root:blogsync 640`.
+- `/etc/blog-sync/proxy.key` is `hermes:blogsync 600`.
+
+This lets normal blog article generation run without root while retaining sudo
+as an operator escape hatch.
+
 Retained toolsets:
 
 - `browser`
@@ -135,6 +168,15 @@ The 81 server keeps a systemd timer for old session transcript cleanup:
   `/home/hermes/.hermes/sessions/sessions.json` are not deleted.
 - Unit documentation: this file,
   `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/07-server-operations.md`
+
+On 2026-06-15, manual cleanup after a gateway restart confirmed only the active
+QQ DM session `20260615_040321_5e1df871` should remain. Two ended sessions were
+deleted from `state.db` with `SessionDB.delete_sessions()`. A SQLite backup was
+created at:
+
+```text
+/home/hermes/backups/session_manual_cleanup_20260615_123928/state.db.backup
+```
 
 Check status:
 
