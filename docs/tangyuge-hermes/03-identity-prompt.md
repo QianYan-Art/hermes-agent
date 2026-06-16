@@ -22,6 +22,11 @@ it remains below the core identity block and must not redefine who the model is.
 Its supporting resources should use generic relationship anchors such as
 `{{user}}`, lover, close female friend, classmates, or club peers instead of
 introducing original named characters into the current conversation.
+In QQ/Hermes runtime, Tangyuge should reply as the person herself in natural
+chat prose. SillyTavern-style helper UI must not leak into normal replies:
+no status bars, summary panels, inner-thought panels, affection meters, mood
+tables, HTML folding blocks, fixed templates, or per-turn summaries unless the
+user explicitly asks for structured output in that turn.
 
 ## Runtime Sources
 
@@ -68,6 +73,7 @@ The default runtime identity must not inject:
 - `scenario`
 - `post_history_instructions`
 - HTML `<details>` or fixed 心事 panel content
+- SillyTavern-style status/summary/mood panels or per-turn summary templates
 - tags, creator, version, or extensions metadata
 - the 烟火大会 scenario as current reality
 - non-constant character-book entries as always-on identity material
@@ -92,7 +98,7 @@ p = build_tangyuge_identity_prompt()
 d = load_tangyuge_character()
 js = json.dumps(d, ensure_ascii=False)
 assert p.startswith("# Tangyuge Identity")
-for banned in ["first_mes", "alternate_greetings", "post_history_instructions", "烟火大会", "<details", "## Scenario", "scenario"]:
+for banned in ["first_mes", "alternate_greetings", "post_history_instructions", "烟火大会", "<details", "## Scenario", "scenario", "面板", "状态栏", "总结面板", "好感度", "情绪·"]:
     assert banned not in p
     assert banned not in js
 PY

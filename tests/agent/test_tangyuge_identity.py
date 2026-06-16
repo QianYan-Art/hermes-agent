@@ -22,8 +22,32 @@ def test_runtime_character_json_excludes_chat_openers_and_html_panel():
     assert "post_history_instructions" not in data
     serialized = json.dumps(data, ensure_ascii=False)
     assert "details open" not in serialized
+    assert "面板" not in serialized
+    assert "状态栏" not in serialized
+    assert "总结面板" not in serialized
+    assert "好感度" not in serialized
+    assert "情绪·" not in serialized
+    assert "SillyTavern" not in serialized
     assert "烟火大会" not in serialized
     assert data["provenance"]["source_filename"] == "唐语歌-恋人卡-v1.png"
+
+
+def test_roleplay_skill_does_not_reintroduce_panel_or_identity_noise():
+    skill = Path("skills_builtin/tangyuge-roleplay/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    for banned in [
+        "面板",
+        "总结面板",
+        "状态栏",
+        "好感度",
+        "SillyTavern",
+        "You are Hermes Agent",
+        "created by Nous Research",
+        "You run on Hermes Agent",
+    ]:
+        assert banned not in skill
 
 
 def test_runtime_character_book_keeps_only_always_on_entries():
