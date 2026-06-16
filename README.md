@@ -66,6 +66,9 @@ during deploys:
   `delegate_task`, `clarify`, `memory`, `send_message`, or `execute_code`;
   orchestrator subagents may delegate within configured depth but still cannot
   call `clarify`, `memory`, `send_message`, or `execute_code`.
+- `delegate_task(background=true)` supports single-task async subagents. It
+  returns a `delegation_id` immediately, runs the child on a bounded background
+  executor, and injects the completed result back into the originating session.
 
 ## Bot-Facing Documentation
 
@@ -124,6 +127,7 @@ python -m pytest \
   tests/agent/test_tangyuge_identity.py \
   tests/agent/test_system_prompt.py \
   tests/tools/test_tangyuge_builtin_skills.py \
+  tests/tools/test_async_delegation.py \
   tests/hermes_cli/test_tools_config.py::test_configurable_toolsets_match_tangyuge_retained_scope \
   -q --timeout-method=thread
 ```

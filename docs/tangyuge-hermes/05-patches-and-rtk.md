@@ -85,6 +85,13 @@ external patch files to replay:
   subagents cannot call `delegate_task`, `clarify`, `memory`, `send_message`,
   or `execute_code`; orchestrator subagents can delegate within configured depth
   but still cannot call `clarify`, `memory`, `send_message`, or `execute_code`.
+- Async subagent delegation is available with `delegate_task(background=true)`.
+  It is single-task only: a background call returns a `delegation_id`
+  immediately, runs the child through `tools/async_delegation.py`, and pushes an
+  `async_delegation` completion event through `tools.process_registry` so
+  `gateway/run.py` can inject the result back into the originating session as a
+  new turn. `delegation.max_async_children` caps concurrent background
+  subagents; excess dispatches are rejected rather than queued.
 - API-key rotation, Tavily multi-key failover, HYBGZS image backend behavior,
   mail-vps-ops, hermes-md-locator, and tangyuge-roleplay are retained as built-in
   repo behavior or built-in skills. Secrets remain server-local and are never

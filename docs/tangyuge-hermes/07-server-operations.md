@@ -73,6 +73,14 @@ Retained toolsets:
 - `vision`
 - `web`
 
+Delegation runtime:
+
+- `delegate_task(background=true)` is available for single-task async
+  subagents. Results return to the same session through the gateway completion
+  watcher.
+- `delegation.max_async_children` defaults to `3`; new background subagent
+  dispatches are rejected at capacity instead of queued.
+
 Enabled built-in skills:
 
 - `grill-me`

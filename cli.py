@@ -972,6 +972,12 @@ def _run_cleanup():
     except Exception:
         pass
     try:
+        from tools.async_delegation import interrupt_all as _interrupt_async_delegations
+
+        _interrupt_async_delegations(reason="CLI shutdown")
+    except Exception:
+        pass
+    try:
         from tools.mcp_tool import shutdown_mcp_servers
         shutdown_mcp_servers()
     except BaseException:
