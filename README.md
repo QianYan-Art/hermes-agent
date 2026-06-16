@@ -40,6 +40,11 @@ during deploys:
   operators. The character card is extracted into `agent/tangyuge_character.json`,
   rendered by `agent/tangyuge_identity.py`, and injected first from
   `agent/system_prompt.py`.
+- Tangyuge replies are natural QQ/Hermes chat replies, not role-card UI output.
+  The role card and `tangyuge-roleplay` skill must not make normal replies add
+  fixed UI blocks, numeric meters, relationship/mood tables, HTML folding
+  blocks, or per-turn recap blocks unless the user explicitly asks for
+  structured output in that turn.
 - `SOUL.md` is a style overlay only. Legacy default SOUL files that still say
   `You are Hermes Agent` are normalized to the style-only overlay at load time,
   and the 81 runtime file must not redefine identity.
