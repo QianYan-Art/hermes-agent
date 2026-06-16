@@ -14,6 +14,8 @@ server. It replaces the old home-directory lookup documents.
 - Service: `hermes-gateway.service`
 - Service command: `/home/hermes/.hermes/venvs/hermes-agent/bin/hermes gateway run`
 - Repo docs: `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/`
+- Server checkout mode: sparse-checkout runtime tree; tests and development
+  artifacts stay in local/GitHub `main` but are excluded on the server.
 
 Do not keep separate home-directory lookup docs. `hermes-md-locator` should
 route project, server, maintenance, and mail-documentation questions to repo
@@ -94,6 +96,20 @@ Supported platform surface is narrowed to QQBot, API server, CLI, and cron.
 Removed command/platform/tool surfaces should stay removed unless a later
 mission explicitly reintroduces them.
 
+README policy:
+
+- `README.md` is the only repository README.
+- Do not restore `README.zh-CN.md`; it previously carried upstream marketing
+  and non-retained platform claims.
+
+Plugin policy:
+
+- The 81 runtime enables `rtk-rewrite` in `plugins.enabled`.
+- Disabled bundled plugins may remain in the repo when retained toolsets import
+  their compatibility shims or provider metadata.
+- Prefer runtime allow-listing over deleting plugin code unless retained-scope
+  tests prove the plugin is no longer referenced.
+
 ## Runtime Data Boundary
 
 Never overwrite or commit server runtime data:
@@ -119,6 +135,8 @@ Use these before and after deployment:
 cd /home/hermes/.hermes/hermes-agent
 git rev-parse --short HEAD
 git rev-parse --short main
+git status --short
+git sparse-checkout list
 systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service -p ExecStart --value
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
@@ -160,7 +178,9 @@ Preferred flow:
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git fetch origin main
-git checkout -f main
+git sparse-checkout init --no-cone
+git sparse-checkout set --no-cone '/*' '!/tests/' '!/.github/' '!/.plans/' '!/plans/' '!/infographic/' '!/datagen-config-examples/' '!/docker/'
+git pull --ff-only origin main
 /home/hermes/.hermes/venvs/hermes-agent/bin/python -m pip install -e .
 systemctl restart hermes-gateway.service
 ```

@@ -95,12 +95,26 @@ not keep separate home-directory lookup document copies.
 Deploy the repo by Git commit from `main` into the existing server checkout. Do
 not copy over the whole `/home/hermes/.hermes` runtime tree.
 
+The 81 server checkout uses sparse-checkout to keep runtime-only deployments
+small. Local and GitHub history still keep tests and development files, but the
+server worktree excludes:
+
+- `tests/`
+- `.github/`
+- `.plans/`
+- `plans/`
+- `infographic/`
+- `datagen-config-examples/`
+- `docker/`
+
 Standard server flow:
 
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git fetch origin main
-git checkout -f main
+git sparse-checkout init --no-cone
+git sparse-checkout set --no-cone '/*' '!/tests/' '!/.github/' '!/.plans/' '!/plans/' '!/infographic/' '!/datagen-config-examples/' '!/docker/'
+git pull --ff-only origin main
 /home/hermes/.hermes/venvs/hermes-agent/bin/python -m pip install -e .
 systemctl restart hermes-gateway.service
 systemctl is-active hermes-gateway.service
@@ -137,6 +151,8 @@ On the server:
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git rev-parse --short HEAD
+git status --short
+git sparse-checkout list
 systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 ```

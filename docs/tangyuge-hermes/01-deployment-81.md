@@ -34,12 +34,39 @@ only. It must not contain `You are Hermes Agent`, `created by Nous Research`, or
 any other identity definition. Code also normalizes the old default SOUL identity
 template at load time, but the deployed runtime file should still be kept clean.
 
+## Sparse Server Checkout
+
+The 81 server checkout is runtime-only. Keep tests and development-only files in
+local/GitHub history, but exclude them from the server worktree with
+sparse-checkout:
+
+```bash
+cd /home/hermes/.hermes/hermes-agent
+git sparse-checkout init --no-cone
+git sparse-checkout set --no-cone '/*' '!/tests/' '!/.github/' '!/.plans/' '!/plans/' '!/infographic/' '!/datagen-config-examples/' '!/docker/'
+```
+
+Excluded server paths:
+
+- `tests/`
+- `.github/`
+- `.plans/`
+- `plans/`
+- `infographic/`
+- `datagen-config-examples/`
+- `docker/`
+
+Do not interpret these sparse omissions as source deletion. Local and GitHub
+`main` remain the full review/test baseline; only the server checkout is slim.
+
 ## Standard Flow
 
 ```bash
 cd /home/hermes/.hermes/hermes-agent
 git fetch origin main
-git checkout -f main
+git sparse-checkout init --no-cone
+git sparse-checkout set --no-cone '/*' '!/tests/' '!/.github/' '!/.plans/' '!/plans/' '!/infographic/' '!/datagen-config-examples/' '!/docker/'
+git pull --ff-only origin main
 /home/hermes/.hermes/venvs/hermes-agent/bin/python -m pip install -e .
 systemctl restart hermes-gateway.service
 systemctl is-active hermes-gateway.service
@@ -53,7 +80,7 @@ Chat-side operator restart:
 - This is not a general shell escape; it is the gateway restart handler.
 
 If the server cannot fetch GitHub, copy a local git bundle to `/tmp/` and fetch
-from that bundle, then check out `main`.
+from that bundle, then fast-forward `main`.
 
 ## Verification
 
@@ -61,6 +88,8 @@ from that bundle, then check out `main`.
 cd /home/hermes/.hermes/hermes-agent
 git rev-parse HEAD
 git rev-parse main
+git status --short
+git sparse-checkout list
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 /home/hermes/.hermes/venvs/hermes-agent/bin/hermes --version
 grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true
