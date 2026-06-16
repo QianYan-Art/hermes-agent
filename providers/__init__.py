@@ -48,6 +48,13 @@ _discovered = False
 _BUNDLED_PLUGINS_DIR = (
     Path(__file__).resolve().parent.parent / "plugins" / "model-providers"
 )
+_TANGYUGE_RETAINED_BUNDLED_PROVIDERS = frozenset(
+    {
+        "custom",
+        "deepseek",
+        "minimax",
+    }
+)
 
 
 def register_provider(profile: ProviderProfile) -> None:
@@ -157,6 +164,9 @@ def _discover_providers() -> None:
     if _BUNDLED_PLUGINS_DIR.is_dir():
         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
+                continue
+            if child.name not in _TANGYUGE_RETAINED_BUNDLED_PROVIDERS:
+                logger.debug("Skipping non-retained bundled provider %s", child.name)
                 continue
             _import_plugin_dir(child, "bundled")
 

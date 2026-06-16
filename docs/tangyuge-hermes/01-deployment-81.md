@@ -92,9 +92,17 @@ git status --short
 git sparse-checkout list
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 /home/hermes/.hermes/venvs/hermes-agent/bin/hermes --version
+HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
+  /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main plugins list --plain
+HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
+  /home/hermes/.hermes/venvs/hermes-agent/bin/python - <<'PY'
+import providers
+print(",".join(sorted(p.name for p in providers.list_providers())))
+PY
 grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true
 ```
 
 Both git commands must return the same commit. `ExecStart` must use the external
 venv path under `/home/hermes/.hermes/venvs/hermes-agent`. The grep command
-should print nothing.
+should print nothing. Plugin list should show only retained standalone plugins,
+and provider output should be `custom,deepseek,minimax,minimax-cn,minimax-oauth`.

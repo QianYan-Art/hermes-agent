@@ -230,6 +230,19 @@ def _get_enabled_plugins() -> Optional[set]:
 # ---------------------------------------------------------------------------
 
 _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform", "model-provider"}
+_TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS: Set[str] = {
+    "browser/browser_use",
+    "browser/browserbase",
+    "browser/firecrawl",
+    "disk-cleanup",
+    "image_gen/hybgzs",
+    "rtk-rewrite",
+    "security-guidance",
+    "web/exa",
+    "web/firecrawl",
+    "web/parallel",
+    "web/tavily",
+}
 
 
 @dataclass
@@ -1038,11 +1051,23 @@ class PluginManager:
             source="bundled",
             skip_names={"memory", "context_engine", "platforms", "model-providers"},
         )
+        bundled = [
+            manifest
+            for manifest in bundled
+            if (manifest.key or manifest.name)
+            in _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS
+        ]
         logger.debug("  bundled (top-level): %d manifest(s)", len(bundled))
         manifests.extend(bundled)
         bundled_platforms = self._scan_directory(
             repo_plugins / "platforms", source="bundled"
         )
+        bundled_platforms = [
+            manifest
+            for manifest in bundled_platforms
+            if (manifest.key or manifest.name)
+            in _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS
+        ]
         logger.debug("  bundled/platforms: %d manifest(s)", len(bundled_platforms))
         manifests.extend(bundled_platforms)
 

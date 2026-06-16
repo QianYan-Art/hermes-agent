@@ -2,7 +2,8 @@
 
 常用叫法："精简方案"、"删了什么"、"保留什么"、"保留平台"、
 "保留toolsets"、"项目裁剪"、"服务器瘦身"、"sparse checkout"、
-"README留几个"。
+"README留几个"、"CLI裁剪"、"removed commands"、"provider白名单"、
+"插件白名单"、"依赖精简"、"scripts删除"。
 
 Tangyuge-Hermes keeps only the 81 server QQBot/API-server operating scope and
 removes non-retained runtime surfaces physically where practical.
@@ -51,6 +52,31 @@ The fork removes web UI, website, desktop app, TUI shell, bootstrap installers,
 non-retained platform plugins, non-retained tool plugins, and non-retained CLI
 command surfaces such as `computer-use`, `whatsapp`, `slack`, and `webhook`.
 
+Removed top-level CLI command surfaces fail closed instead of silently
+dispatching to old upstream behavior:
+
+- `proxy`
+- `lsp`
+- `portal`
+- `kanban`
+- `curator`
+- `insights`
+- `claw`
+- `acp`
+- `profile`
+- `honcho`
+- `dashboard`
+- `desktop`
+- `gui`
+
+`memory` remains as a narrow local command group with `status`, `off`, and
+`reset`; external setup/bootstrap memory commands are outside this fork.
+
+Non-retained helper scripts are also removed from the tracked source when they
+belong only to upstream live tests, release automation, Docker migrations,
+Discord/WhatsApp adapters, Modal/Open WebUI helpers, Android installers, or
+other non-retained deployment paths.
+
 ## Server Slimming
 
 Local and GitHub `main` keep tests and development artifacts so the fork remains
@@ -74,9 +100,29 @@ Bundled plugins are not all runtime-enabled. The 81 runtime currently enables
 only `rtk-rewrite` through `plugins.enabled`; other retained capabilities are
 loaded by configured providers/toolsets or explicit user configuration.
 
-Do not physically remove plugin packages just because they are disabled on the
-81 server. Some retained toolsets still import provider compatibility shims, for
-example:
+Bundled plugin discovery is allow-listed to retained capabilities:
+
+- `browser/browser_use`
+- `browser/browserbase`
+- `browser/firecrawl`
+- `web/exa`
+- `web/firecrawl`
+- `web/parallel`
+- `web/tavily`
+- `image_gen/hybgzs`
+- `rtk-rewrite`
+- `disk-cleanup`
+- `security-guidance`
+
+`hermes plugins list --plain` lists only retained standalone plugin manifests:
+
+- `disk-cleanup`
+- `rtk-rewrite`
+- `security-guidance`
+
+Do not physically remove plugin packages solely because they are disabled on
+the 81 server. Some retained toolsets still import provider compatibility shims,
+for example:
 
 - `tools/web_tools.py` re-exports plugin-backed web providers.
 - `tools/browser_tool.py` re-exports plugin-backed browser providers.
@@ -85,6 +131,28 @@ example:
 Safe plugin trimming means first proving no retained toolset/import path depends
 on that plugin. Until then, prefer runtime allow-listing over deleting files.
 
+## Provider Boundary
+
+Bundled model provider discovery is narrowed to:
+
+- `custom`
+- `deepseek`
+- `minimax`
+
+The visible provider registry should contain only `custom`, `deepseek`,
+`minimax`, `minimax-cn`, and `minimax-oauth`. MiniMax is the default 81 runtime
+provider; DeepSeek is the retained backup provider.
+
+## Dependency Boundary
+
+`pyproject.toml` optional dependencies are limited to retained runtime needs:
+web search backends, `edge-tts`, dev/test, cron compatibility, CLI, PTY,
+vision, MCP, and `[all]` as the small Tangyuge server install profile. Removed
+upstream extras such as Slack, Matrix, WeCom, ACP, Modal, Daytona, Honcho,
+HomeAssistant, SMS, Google/YouTube, premium TTS, voice/STT, Bedrock, Azure,
+Termux, DingTalk, Feishu, FAL, and non-retained messaging stacks are outside the
+current install profile.
+
 ## Verification
 
 ```bash
@@ -92,6 +160,8 @@ git ls-files gateway/platforms plugins tools hermes_cli
 git ls-files README.zh-CN.md
 python -m hermes_cli.main --help
 python -m hermes_cli.main tools list
+python -m hermes_cli.main plugins list --plain
+python -m hermes_cli.main proxy
 ```
 
 Searches for removed platform/tool paths should return no tracked files, and
@@ -102,3 +172,6 @@ Retained-scope test runs should target QQBot/API-server/CLI/cron and retained
 toolsets only. Upstream tests for removed surfaces such as Signal platform
 delivery or FAL video-generation plugins are not part of this fork's passing
 baseline unless those surfaces are intentionally restored.
+
+The current trim boundary is covered by
+`tests/hermes_cli/test_tangyuge_trim_scope.py`.

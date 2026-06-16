@@ -18,29 +18,10 @@ Usage:
     hermes cron list           # List cron jobs
     hermes cron status         # Check if cron scheduler is running
     hermes doctor              # Check configuration and dependencies
-    hermes honcho setup                    # Configure Honcho AI memory integration
-    hermes honcho status                   # Show Honcho config and connection status
-    hermes honcho sessions                 # List directory → session name mappings
-    hermes honcho map <name>               # Map current directory to a session name
-    hermes honcho peer                     # Show peer names and dialectic settings
-    hermes honcho peer --user NAME         # Set user peer name
-    hermes honcho peer --ai NAME           # Set AI peer name
-    hermes honcho peer --reasoning LEVEL   # Set dialectic reasoning level
-    hermes honcho mode                     # Show current memory mode
-    hermes honcho mode [hybrid|honcho|local]  # Set memory mode
-    hermes honcho tokens                   # Show token budget settings
-    hermes honcho tokens --context N       # Set session.context() token cap
-    hermes honcho tokens --dialectic N     # Set dialectic result char cap
-    hermes honcho identity                 # Show AI peer identity representation
-    hermes honcho identity <file>          # Seed AI peer identity from a file (SOUL.md etc.)
-    hermes honcho migrate                  # Step-by-step migration guide: OpenClaw native → Hermes + Honcho
     hermes version             Show version
     hermes update              Update to latest version
     hermes uninstall           Uninstall Hermes Agent
-    hermes acp                 Run as an ACP server for editor integration
     hermes sessions browse     Interactive session picker with search
-
-    hermes claw migrate --dry-run  # Preview migration without changes
 """
 
 # IMPORTANT: hermes_bootstrap must be the very first import — it sets up
@@ -9435,19 +9416,11 @@ def _coalesce_session_name_args(argv: list) -> list:
         "tools",
         "mcp",
         "sessions",
-        "insights",
         "version",
         "update",
         "uninstall",
-        "profile",
-        "dashboard",
-        "desktop",
-        "gui",
-        "honcho",
-        "claw",
         "plugins",
         "security",
-        "acp",
         "memory",
         "dump",
         "debug",
@@ -10178,13 +10151,32 @@ def cmd_logs(args):
 # below in ``main()``. Missing an entry here only costs a one-time
 # discovery; extra entries here would let a plugin command silently fail
 # to parse.
+_TANGYUGE_REMOVED_SUBCOMMANDS = frozenset(
+    {
+        "acp",
+        "claw",
+        "curator",
+        "dashboard",
+        "desktop",
+        "gui",
+        "honcho",
+        "insights",
+        "kanban",
+        "lsp",
+        "portal",
+        "profile",
+        "proxy",
+    }
+)
+
+
 _BUILTIN_SUBCOMMANDS = frozenset(
     {
-        "acp", "auth", "backup", "bundles", "checkpoints", "claw", "completion",
-        "config", "cron", "curator", "dashboard", "debug", "doctor",
-        "dump", "fallback", "gateway", "hooks", "import", "insights",
-        "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate",
-        "model", "pairing", "plugins", "portal", "postinstall", "profile", "proxy",
+        "auth", "backup", "bundles", "checkpoints", "completion",
+        "config", "cron", "debug", "doctor",
+        "dump", "fallback", "gateway", "hooks", "import",
+        "login", "logout", "logs", "mcp", "memory", "migrate",
+        "model", "pairing", "plugins", "postinstall",
         "prompt-size",
         "send", "sessions", "setup",
         "skills", "status", "tools", "uninstall", "update",
@@ -10278,7 +10270,20 @@ def _plugin_cli_discovery_needed() -> bool:
     return True
 
 
-_AGENT_COMMANDS = {None, "chat", "acp", "rl"}
+def _reject_tangyuge_removed_subcommand() -> None:
+    """Fail closed when a removed upstream command is invoked directly."""
+    first = _first_positional_argv()
+    if first not in _TANGYUGE_REMOVED_SUBCOMMANDS:
+        return
+    print(
+        f"error: '{first}' is not retained in Tangyuge-Hermes. "
+        "Use repo docs/tangyuge-hermes/ for supported operations.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+_AGENT_COMMANDS = {None, "chat", "rl"}
 _AGENT_SUBCOMMANDS = {
     "cron": ("cron_command", {"run", "tick"}),
     "gateway": ("gateway_command", {"run"}),
@@ -10291,8 +10296,6 @@ def _is_tui_chat_launch(args) -> bool:
 
 
 def _command_has_dedicated_mcp_startup(args) -> bool:
-    if args.command == "acp":
-        return True
     if args.command == "gateway" and getattr(args, "gateway_command", None) == "run":
         return True
     if args.command == "cron" and getattr(args, "cron_command", None) in {"run", "tick"}:
@@ -10495,6 +10498,7 @@ def main():
 
     parser, subparsers, chat_parser = build_top_level_parser()
     chat_parser.set_defaults(func=cmd_chat)
+    _reject_tangyuge_removed_subcommand()
 
     # =========================================================================
     # model command
@@ -10858,63 +10862,7 @@ def main():
         help="Skip the confirmation prompt",
     )
 
-    # =========================================================================
-    # proxy command — local OpenAI-compatible proxy that attaches the user's
-    # OAuth-authenticated provider credentials to outbound requests. Lets
-    # external apps (OpenViking, Karakeep, Open WebUI, ...) ride a logged-in
-    # subscription without copy-pasting static API keys.
-    # =========================================================================
-    proxy_parser = subparsers.add_parser(
-        "proxy",
-        help="Local OpenAI-compatible proxy to OAuth providers",
-        description=(
-            "Run a local HTTP server that forwards OpenAI-compatible requests "
-            "to an OAuth-authenticated provider (e.g. Nous Portal). External "
-            "apps can point at the proxy with any bearer token; the proxy "
-            "attaches your real credentials."
-        ),
-    )
-    proxy_subparsers = proxy_parser.add_subparsers(dest="proxy_command")
-
-    proxy_start = proxy_subparsers.add_parser(
-        "start", help="Run the proxy in the foreground"
-    )
-    proxy_start.add_argument(
-        "--provider",
-        default="nous",
-        help="Upstream provider: nous or xai (default: nous). See `hermes proxy providers`.",
-    )
-    proxy_start.add_argument(
-        "--host",
-        default=None,
-        help="Bind address (default: 127.0.0.1). Use 0.0.0.0 to expose on LAN.",
-    )
-    proxy_start.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="Bind port (default: 8645)",
-    )
-
-    proxy_subparsers.add_parser(
-        "status", help="Show which proxy upstreams are ready"
-    )
-    proxy_subparsers.add_parser(
-        "providers", help="List available proxy upstream providers"
-    )
-    proxy_parser.set_defaults(func=cmd_proxy)
     gateway_parser.set_defaults(func=cmd_gateway)
-
-    # =========================================================================
-    # lsp command
-    # =========================================================================
-    try:
-        from agent.lsp.cli import register_subparser as _lsp_register
-        _lsp_register(subparsers)
-    except Exception as _lsp_err:  # noqa: BLE001
-        # LSP is optional infrastructure — never let a registration
-        # failure break the CLI overall.
-        logger.debug("LSP CLI registration failed: %s", _lsp_err)
 
     # =========================================================================
     # setup command
@@ -11312,20 +11260,6 @@ def main():
     _add_accept_hooks_flag(cron_tick)
     _add_accept_hooks_flag(cron_parser)
     cron_parser.set_defaults(func=cmd_cron)
-
-    # =========================================================================
-    # portal command — Nous Portal status + Tool Gateway routing
-    # =========================================================================
-    from hermes_cli.portal_cli import add_parser as _add_portal_parser
-    _add_portal_parser(subparsers)
-
-    # =========================================================================
-    # kanban command — multi-profile collaboration board
-    # =========================================================================
-    from hermes_cli.kanban import build_parser as _build_kanban_parser
-
-    kanban_parser = _build_kanban_parser(subparsers)
-    kanban_parser.set_defaults(func=cmd_kanban)
 
     # =========================================================================
     # hooks command — shell-hook inspection and management
@@ -12102,50 +12036,17 @@ Examples:
             logging.getLogger(__name__).debug("Plugin CLI discovery failed: %s", _exc)
 
     # =========================================================================
-    # curator command — background skill maintenance
-    # =========================================================================
-    curator_parser = subparsers.add_parser(
-        "curator",
-        help="Background skill maintenance (curator) — status, run, pause, pin",
-        description=(
-            "The curator is an auxiliary-model background task that "
-            "periodically reviews agent-created skills, prunes stale ones, "
-            "consolidates overlaps, and archives obsolete skills. "
-            "Bundled and hub-installed skills are never touched. "
-            "Archives are recoverable; auto-deletion never happens."
-        ),
-    )
-    try:
-        from hermes_cli.curator import register_cli as _register_curator_cli
-
-        _register_curator_cli(curator_parser)
-    except Exception as _exc:
-        logging.getLogger(__name__).debug("curator CLI wiring failed: %s", _exc)
-
-    # =========================================================================
     # memory command
     # =========================================================================
     memory_parser = subparsers.add_parser(
         "memory",
-        help="Configure external memory provider",
+        help="Manage built-in memory",
         description=(
-            "Set up and manage external memory provider plugins.\n\n"
-            "Available providers: honcho, openviking, mem0, hindsight,\n"
-            "holographic, retaindb, byterover.\n\n"
-            "Only one external provider can be active at a time.\n"
-            "Built-in memory (MEMORY.md/USER.md) is always active."
+            "Manage Tangyuge-Hermes built-in memory files.\n\n"
+            "External memory provider setup is not retained in this fork."
         ),
     )
     memory_sub = memory_parser.add_subparsers(dest="memory_command")
-    _setup_parser = memory_sub.add_parser(
-        "setup", help="Interactive provider selection and configuration"
-    )
-    _setup_parser.add_argument(
-        "provider",
-        nargs="?",
-        default=None,
-        help="Provider to configure directly (e.g. honcho), skipping the picker",
-    )
     memory_sub.add_parser("status", help="Show current memory provider config")
     memory_sub.add_parser("off", help="Disable external provider (built-in only)")
     _reset_parser = memory_sub.add_parser(
@@ -12223,9 +12124,13 @@ Examples:
             )
             print(f"  Files were in: {display_hermes_home()}/memories/\n")
         else:
-            from hermes_cli.memory_setup import memory_command
-
-            memory_command(args)
+            if sub == "setup":
+                print(
+                    "error: external memory provider setup is not retained in Tangyuge-Hermes",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            memory_parser.print_help()
 
     memory_parser.set_defaults(func=cmd_memory)
 
@@ -12681,125 +12586,6 @@ Examples:
     sessions_parser.set_defaults(func=cmd_sessions)
 
     # =========================================================================
-    # insights command
-    # =========================================================================
-    insights_parser = subparsers.add_parser(
-        "insights",
-        help="Show usage insights and analytics",
-        description="Analyze session history to show token usage, costs, tool patterns, and activity trends",
-    )
-    insights_parser.add_argument(
-        "--days", type=int, default=30, help="Number of days to analyze (default: 30)"
-    )
-    insights_parser.add_argument(
-        "--source", help="Filter by platform (cli, telegram, discord, etc.)"
-    )
-
-    def cmd_insights(args):
-        try:
-            from hermes_state import SessionDB
-            from agent.insights import InsightsEngine
-
-            db = SessionDB()
-            engine = InsightsEngine(db)
-            report = engine.generate(days=args.days, source=args.source)
-            print(engine.format_terminal(report))
-            db.close()
-        except Exception as e:
-            print(f"Error generating insights: {e}")
-
-    insights_parser.set_defaults(func=cmd_insights)
-
-    # =========================================================================
-    # claw command (OpenClaw migration)
-    # =========================================================================
-    claw_parser = subparsers.add_parser(
-        "claw",
-        help="OpenClaw migration tools",
-        description="Migrate settings, memories, skills, and API keys from OpenClaw to Hermes",
-    )
-    claw_subparsers = claw_parser.add_subparsers(dest="claw_action")
-
-    # claw migrate
-    claw_migrate = claw_subparsers.add_parser(
-        "migrate",
-        help="Migrate from OpenClaw to Hermes",
-        description="Import settings, memories, skills, and API keys from an OpenClaw installation. "
-        "Always shows a preview before making changes.",
-    )
-    claw_migrate.add_argument(
-        "--source", help="Path to OpenClaw directory (default: ~/.openclaw)"
-    )
-    claw_migrate.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview only — stop after showing what would be migrated",
-    )
-    claw_migrate.add_argument(
-        "--preset",
-        choices=["user-data", "full"],
-        default="full",
-        help="Migration preset (default: full). Neither preset imports secrets — "
-        "pass --migrate-secrets to include API keys.",
-    )
-    claw_migrate.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing files (default: refuse to apply when the plan has conflicts)",
-    )
-    claw_migrate.add_argument(
-        "--migrate-secrets",
-        action="store_true",
-        help="Include allowlisted secrets (TELEGRAM_BOT_TOKEN, API keys, etc.). "
-        "Required even under --preset full.",
-    )
-    claw_migrate.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Skip the pre-migration zip snapshot of ~/.hermes/ (by default a "
-        "single restore-point archive is written to ~/.hermes/backups/ "
-        "before apply; restorable with 'hermes import').",
-    )
-    claw_migrate.add_argument(
-        "--workspace-target", help="Absolute path to copy workspace instructions into"
-    )
-    claw_migrate.add_argument(
-        "--skill-conflict",
-        choices=["skip", "overwrite", "rename"],
-        default="skip",
-        help="How to handle skill name conflicts (default: skip)",
-    )
-    claw_migrate.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation prompts"
-    )
-
-    # claw cleanup
-    claw_cleanup = claw_subparsers.add_parser(
-        "cleanup",
-        aliases=["clean"],
-        help="Archive leftover OpenClaw directories after migration",
-        description="Scan for and archive leftover OpenClaw directories to prevent state fragmentation",
-    )
-    claw_cleanup.add_argument(
-        "--source", help="Path to a specific OpenClaw directory to clean up"
-    )
-    claw_cleanup.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview what would be archived without making changes",
-    )
-    claw_cleanup.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation prompts"
-    )
-
-    def cmd_claw(args):
-        from hermes_cli.claw import claw_command
-
-        claw_command(args)
-
-    claw_parser.set_defaults(func=cmd_claw)
-
-    # =========================================================================
     # version command
     # =========================================================================
     version_parser = subparsers.add_parser("version", help="Show version information")
@@ -12880,261 +12666,6 @@ Examples:
         "--yes", "-y", action="store_true", help="Skip confirmation prompts"
     )
     uninstall_parser.set_defaults(func=cmd_uninstall)
-
-    # =========================================================================
-    # acp command
-    # =========================================================================
-    acp_parser = subparsers.add_parser(
-        "acp",
-        help="Run Hermes Agent as an ACP (Agent Client Protocol) server",
-        description="Start Hermes Agent in ACP mode for editor integration (VS Code, Zed, JetBrains)",
-    )
-    _add_accept_hooks_flag(acp_parser)
-    acp_parser.add_argument(
-        "--version",
-        action="store_true",
-        dest="acp_version",
-        help="Print Hermes ACP version and exit",
-    )
-    acp_parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Verify ACP dependencies and adapter imports, then exit",
-    )
-    acp_parser.add_argument(
-        "--setup",
-        action="store_true",
-        help="Run interactive Hermes provider/model setup for ACP terminal auth",
-    )
-    acp_parser.add_argument(
-        "--setup-browser",
-        action="store_true",
-        help="Install agent-browser + Playwright Chromium into ~/.hermes/node/ "
-             "for browser tool support (idempotent).",
-    )
-    acp_parser.add_argument(
-        "--yes",
-        "-y",
-        action="store_true",
-        dest="assume_yes",
-        help="Accept all prompts (used by --setup-browser to skip the "
-             "~400 MB Chromium download confirmation).",
-    )
-
-    def cmd_acp(args):
-        """Launch Hermes Agent as an ACP server."""
-        try:
-            from acp_adapter.entry import main as acp_main
-
-            acp_argv = []
-            if getattr(args, "acp_version", False):
-                acp_argv.append("--version")
-            if getattr(args, "check", False):
-                acp_argv.append("--check")
-            if getattr(args, "setup", False):
-                acp_argv.append("--setup")
-            if getattr(args, "setup_browser", False):
-                acp_argv.append("--setup-browser")
-            if getattr(args, "assume_yes", False):
-                acp_argv.append("--yes")
-            acp_main(acp_argv)
-        except ImportError:
-            print("ACP dependencies not installed.", file=sys.stderr)
-            print("Install them with:  pip install -e '.[acp]'", file=sys.stderr)
-            sys.exit(1)
-
-    acp_parser.set_defaults(func=cmd_acp)
-
-    # =========================================================================
-    # profile command
-    # =========================================================================
-    profile_parser = subparsers.add_parser(
-        "profile",
-        help="Manage profiles — multiple isolated Hermes instances",
-    )
-    profile_subparsers = profile_parser.add_subparsers(dest="profile_action")
-
-    profile_subparsers.add_parser("list", help="List all profiles")
-    profile_use = profile_subparsers.add_parser(
-        "use", help="Set sticky default profile"
-    )
-    profile_use.add_argument("profile_name", help="Profile name (or 'default')")
-
-    profile_create = profile_subparsers.add_parser(
-        "create", help="Create a new profile"
-    )
-    profile_create.add_argument(
-        "profile_name", help="Profile name (lowercase, alphanumeric)"
-    )
-    profile_create.add_argument(
-        "--clone",
-        action="store_true",
-        help="Copy config.yaml, .env, SOUL.md from active profile",
-    )
-    profile_create.add_argument(
-        "--clone-all",
-        action="store_true",
-        help="Full copy of active profile (all state)",
-    )
-    profile_create.add_argument(
-        "--clone-from",
-        metavar="SOURCE",
-        help="Source profile to clone from (default: active)",
-    )
-    profile_create.add_argument(
-        "--no-alias", action="store_true", help="Skip wrapper script creation"
-    )
-    profile_create.add_argument(
-        "--no-skills",
-        action="store_true",
-        help="Create an empty profile with no bundled skills (opts out of `hermes update` skill sync)",
-    )
-    profile_create.add_argument(
-        "--description",
-        default=None,
-        help="One- or two-sentence description of what this profile is good at. "
-             "Used by the kanban decomposer to route tasks based on role instead "
-             "of profile name alone. Skip and add later via `hermes profile describe`.",
-    )
-
-    profile_delete = profile_subparsers.add_parser("delete", help="Delete a profile")
-    profile_delete.add_argument("profile_name", help="Profile to delete")
-    profile_delete.add_argument(
-        "-y", "--yes", action="store_true", help="Skip confirmation prompt"
-    )
-
-    profile_describe = profile_subparsers.add_parser(
-        "describe",
-        help="Read or set a profile's description (used by the kanban orchestrator)",
-    )
-    profile_describe.add_argument(
-        "profile_name",
-        nargs="?",
-        default=None,
-        help="Profile to describe (omit + use --all --auto to sweep)",
-    )
-    profile_describe.add_argument(
-        "--text",
-        default=None,
-        help="Set description to this exact text (overwrites any existing description)",
-    )
-    profile_describe.add_argument(
-        "--auto",
-        action="store_true",
-        help="Auto-generate description via the auxiliary LLM "
-             "(uses auxiliary.profile_describer)",
-    )
-    profile_describe.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="With --auto, replace user-authored descriptions too (default: only "
-             "fill in missing or previously-auto descriptions)",
-    )
-    profile_describe.add_argument(
-        "--all",
-        dest="all_missing",
-        action="store_true",
-        help="With --auto, run on every profile missing a description",
-    )
-
-    profile_show = profile_subparsers.add_parser("show", help="Show profile details")
-    profile_show.add_argument("profile_name", help="Profile to show")
-
-    profile_alias = profile_subparsers.add_parser(
-        "alias", help="Manage wrapper scripts"
-    )
-    profile_alias.add_argument("profile_name", help="Profile name")
-    profile_alias.add_argument(
-        "--remove", action="store_true", help="Remove the wrapper script"
-    )
-    profile_alias.add_argument(
-        "--name",
-        dest="alias_name",
-        metavar="NAME",
-        help="Custom alias name (default: profile name)",
-    )
-
-    profile_rename = profile_subparsers.add_parser("rename", help="Rename a profile")
-    profile_rename.add_argument("old_name", help="Current profile name")
-    profile_rename.add_argument("new_name", help="New profile name")
-
-    profile_export = profile_subparsers.add_parser(
-        "export", help="Export a profile to archive"
-    )
-    profile_export.add_argument("profile_name", help="Profile to export")
-    profile_export.add_argument(
-        "-o", "--output", default=None, help="Output file (default: <name>.tar.gz)"
-    )
-
-    profile_import = profile_subparsers.add_parser(
-        "import", help="Import a profile from archive"
-    )
-    profile_import.add_argument("archive", help="Path to .tar.gz archive")
-    profile_import.add_argument(
-        "--name",
-        dest="import_name",
-        metavar="NAME",
-        help="Profile name (default: inferred from archive)",
-    )
-
-    # ---------- Distribution subcommands (issue #20456) ----------
-    profile_install = profile_subparsers.add_parser(
-        "install",
-        help="Install a profile distribution from a git URL or local directory",
-        description=(
-            "Install a Hermes profile distribution. SOURCE can be a git URL "
-            "(github.com/user/repo, https://..., git@...) or a local "
-            "directory containing distribution.yaml at its root."
-        ),
-    )
-    profile_install.add_argument(
-        "source",
-        help="Distribution source (git URL or local directory)",
-    )
-    profile_install.add_argument(
-        "--name", dest="install_name", metavar="NAME",
-        help="Override profile name (default: read from manifest)",
-    )
-    profile_install.add_argument(
-        "--alias", action="store_true",
-        help="Create a shell wrapper alias for the installed profile",
-    )
-    profile_install.add_argument(
-        "--force", action="store_true",
-        help="Overwrite an existing profile of the same name (user data preserved)",
-    )
-    profile_install.add_argument(
-        "-y", "--yes", action="store_true",
-        help="Skip manifest preview confirmation",
-    )
-
-    profile_update = profile_subparsers.add_parser(
-        "update",
-        help="Re-pull a distribution and apply updates (user data preserved)",
-        description=(
-            "Fetch the distribution from its recorded source and overwrite "
-            "distribution-owned files (SOUL.md, skills/, cron/, mcp.json). "
-            "User data (memories, sessions, auth, .env) is never touched. "
-            "config.yaml is preserved unless --force-config is passed."
-        ),
-    )
-    profile_update.add_argument("profile_name", help="Profile to update")
-    profile_update.add_argument(
-        "--force-config", action="store_true",
-        help="Also overwrite config.yaml (normally preserved to keep user overrides)",
-    )
-    profile_update.add_argument(
-        "-y", "--yes", action="store_true",
-        help="Skip confirmation",
-    )
-
-    profile_info = profile_subparsers.add_parser(
-        "info",
-        help="Show a profile's distribution manifest (version, requirements, source)",
-    )
-    profile_info.add_argument("profile_name", help="Profile to inspect")
-
-    profile_parser.set_defaults(func=cmd_profile)
 
     # =========================================================================
     # completion command

@@ -50,6 +50,9 @@ Default model provider:
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
+- Bundled main-model provider discovery is allow-listed to `custom`,
+  `deepseek`, and `minimax`. The expected provider registry is `custom`,
+  `deepseek`, `minimax`, `minimax-cn`, and `minimax-oauth`.
 - `/home/hermes/.hermes/SOUL.md` is a style-only overlay. It must not contain
   `You are Hermes Agent`, `created by Nous Research`, or any other identity
   definition. `agent/prompt_builder.py` normalizes the old default SOUL identity
@@ -96,6 +99,11 @@ Supported platform surface is narrowed to QQBot, API server, CLI, and cron.
 Removed command/platform/tool surfaces should stay removed unless a later
 mission explicitly reintroduces them.
 
+Removed top-level CLI commands fail closed with a Tangyuge-Hermes message:
+`proxy`, `lsp`, `portal`, `kanban`, `curator`, `insights`, `claw`, `acp`,
+`profile`, `honcho`, `dashboard`, `desktop`, and `gui`. The `memory` command is
+narrowed to `status`, `off`, and `reset`.
+
 README policy:
 
 - `README.md` is the only repository README.
@@ -105,8 +113,15 @@ README policy:
 Plugin policy:
 
 - The 81 runtime enables `rtk-rewrite` in `plugins.enabled`.
-- Disabled bundled plugins may remain in the repo when retained toolsets import
-  their compatibility shims or provider metadata.
+- Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
+  surfaces: `browser/browser_use`, `browser/browserbase`,
+  `browser/firecrawl`, `web/exa`, `web/firecrawl`, `web/parallel`,
+  `web/tavily`, `image_gen/hybgzs`, `rtk-rewrite`, `disk-cleanup`, and
+  `security-guidance`.
+- `hermes plugins list --plain` should list only `disk-cleanup`,
+  `rtk-rewrite`, and `security-guidance`.
+- Disabled bundled plugin files may remain in the repo when retained toolsets
+  import their compatibility shims or provider metadata.
 - Prefer runtime allow-listing over deleting plugin code unless retained-scope
   tests prove the plugin is no longer referenced.
 
@@ -139,6 +154,8 @@ git status --short
 git sparse-checkout list
 systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service -p ExecStart --value
+HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
+  /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main plugins list --plain
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main skills list --enabled-only
 grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true

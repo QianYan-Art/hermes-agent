@@ -56,7 +56,7 @@ Examples:
     hermes fallback remove        Remove a fallback provider from the chain
     hermes config                 View configuration
     hermes config edit            Edit config in $EDITOR
-    hermes config set model gpt-4 Set a config value
+    hermes config set model minimax-m3 Set a config value
     hermes gateway                Run messaging gateway
     hermes -s hermes-agent-dev,github-auth
     hermes -w                     Start in isolated git worktree
@@ -85,7 +85,7 @@ def build_top_level_parser():
     """
     parser = argparse.ArgumentParser(
         prog="hermes",
-        description="Hermes Agent - AI assistant with tool-calling capabilities",
+        description="Tangyuge-Hermes - QQBot/API/CLI/cron server agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_EPILOGUE,
     )
@@ -116,7 +116,7 @@ def build_top_level_parser():
         "--model",
         default=None,
         help=(
-            "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). "
+            "Model override for this invocation (e.g. minimax-m3). "
             "Applies to -z/--oneshot. Also settable via HERMES_INFERENCE_MODEL env var."
         ),
     )
@@ -125,7 +125,7 @@ def build_top_level_parser():
         "--provider",
         default=None,
         help=(
-            "Provider override for this invocation (e.g. openrouter, anthropic). "
+            "Provider override for this invocation (e.g. minimax-cn, deepseek). "
             "Applies to -z/--oneshot. The persistent provider lives in config.yaml "
             "under model.provider — use `hermes setup` or edit the file to change it."
         ),
@@ -226,7 +226,7 @@ def build_top_level_parser():
     )
     _inherited_flag(
         chat_parser,
-        "-m", "--model", help="Model to use (e.g., anthropic/claude-sonnet-4)",
+        "-m", "--model", help="Model to use (e.g., minimax-m3)",
     )
     chat_parser.add_argument(
         "-t", "--toolsets", help="Comma-separated toolsets to enable"

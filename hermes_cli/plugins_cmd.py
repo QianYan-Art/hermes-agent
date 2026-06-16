@@ -716,9 +716,14 @@ def _plugin_exists(name: str) -> bool:
             if manifest.get("name") == name:
                 return True
     # Bundled: <repo>/plugins/<name>/ (or HERMES_BUNDLED_PLUGINS on Nix).
-    from hermes_cli.plugins import get_bundled_plugins_dir
+    from hermes_cli.plugins import (
+        _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS,
+        get_bundled_plugins_dir,
+    )
     repo_plugins = get_bundled_plugins_dir()
     if repo_plugins.is_dir():
+        if name not in _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS:
+            return False
         candidate = repo_plugins / name
         if candidate.is_dir() and (
             (candidate / "plugin.yaml").exists()
@@ -744,7 +749,10 @@ def _discover_all_plugins() -> list:
     seen: dict = {}  # name -> (name, version, description, source, path)
 
     # Bundled (<repo>/plugins/<name>/), excluding memory/ and context_engine/
-    from hermes_cli.plugins import get_bundled_plugins_dir
+    from hermes_cli.plugins import (
+        _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS,
+        get_bundled_plugins_dir,
+    )
     repo_plugins = get_bundled_plugins_dir()
     for base, source in ((repo_plugins, "bundled"), (_plugins_dir(), "user")):
         if not base.is_dir():
@@ -753,6 +761,8 @@ def _discover_all_plugins() -> list:
             if not d.is_dir():
                 continue
             if source == "bundled" and d.name in {"memory", "context_engine"}:
+                continue
+            if source == "bundled" and d.name not in _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS:
                 continue
             manifest_file = d / "plugin.yaml"
             if not manifest_file.exists():

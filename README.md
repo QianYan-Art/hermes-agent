@@ -70,6 +70,29 @@ during deploys:
   returns a `delegation_id` immediately, runs the child on a bounded background
   executor, and injects the completed result back into the originating session.
 
+## Trimmed Runtime Boundary
+
+- Main chat providers are intentionally narrowed to bundled `minimax`,
+  `deepseek`, and `custom`. The MiniMax plugin exposes `minimax`,
+  `minimax-cn`, and `minimax-oauth`; DeepSeek remains available as fallback.
+- Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
+  surfaces: `browser/browser_use`, `browser/browserbase`, `browser/firecrawl`,
+  `web/exa`, `web/firecrawl`, `web/parallel`, `web/tavily`,
+  `image_gen/hybgzs`, `rtk-rewrite`, `disk-cleanup`, and
+  `security-guidance`. `hermes plugins list --plain` shows only retained
+  standalone plugins: `disk-cleanup`, `rtk-rewrite`, and `security-guidance`.
+- Removed top-level CLI command surfaces fail closed with an explicit
+  Tangyuge-Hermes message. This includes `proxy`, `lsp`, `portal`, `kanban`,
+  `curator`, `insights`, `claw`, `acp`, `profile`, `honcho`, `dashboard`,
+  `desktop`, and `gui`.
+- Runtime examples are minimal. `.env.example` and
+  `cli-config.yaml.example` describe the 81 deployment shape instead of
+  advertising upstream providers, platforms, or installers that this fork does
+  not retain.
+- Optional dependencies and helper scripts are trimmed to retained runtime
+  surfaces. Removed upstream platform/migration extras and live-test/release
+  scripts are not part of the Tangyuge-Hermes install profile.
+
 ## Bot-Facing Documentation
 
 Bot-readable project documentation lives only under `docs/tangyuge-hermes/`.
@@ -132,17 +155,24 @@ If the server cannot fetch GitHub, create a local git bundle, copy it to
 Before release or deploy:
 
 ```bash
-python -m compileall -q agent gateway tools skills_builtin scripts tests
+python -m compileall -q agent gateway tools skills_builtin scripts tests hermes_cli providers
 python -m pytest \
   tests/agent/test_prompt_builder.py \
-  tests/gateway/test_session_model_reset.py \
-  tests/gateway/test_session_boundary_hooks.py \
-  tests/gateway/test_command_bypass_active_session.py \
-  tests/agent/test_tangyuge_identity.py \
   tests/agent/test_system_prompt.py \
+  tests/agent/test_tangyuge_identity.py \
+  tests/agent/test_image_routing.py \
+  tests/gateway/test_session_model_reset.py \
+  tests/hermes_cli/test_tips.py \
   tests/tools/test_tangyuge_builtin_skills.py \
+  tests/hermes_cli/test_context_window_command.py \
+  tests/hermes_cli/test_apply_model_switch_result_context.py \
+  tests/hermes_cli/test_custom_provider_context_length.py \
+  tests/hermes_cli/test_model_switch_context_display.py \
+  tests/gateway/test_media_extraction.py \
+  tests/gateway/test_run_tool_media_re.py \
   tests/tools/test_async_delegation.py \
   tests/hermes_cli/test_tools_config.py::test_configurable_toolsets_match_tangyuge_retained_scope \
+  tests/hermes_cli/test_tangyuge_trim_scope.py \
   -q --timeout-method=thread
 ```
 
