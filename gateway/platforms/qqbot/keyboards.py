@@ -42,7 +42,7 @@ APPROVAL_BUTTON_PREFIX = "approve:"
 UPDATE_PROMPT_PREFIX = "update_prompt:"
 
 # Pattern: approve:<session_key>:<decision>
-# session_key may itself contain colons (e.g. agent:main:qqbot:c2c:OPENID),
+# session_key may itself contain colons (e.g. agent:main:qqbot:dm:OPENID),
 # so the session_key group is greedy but trails the decision.
 _APPROVAL_DATA_RE = re.compile(
     r"^approve:(.+):(allow-once|allow-always|deny)$"
