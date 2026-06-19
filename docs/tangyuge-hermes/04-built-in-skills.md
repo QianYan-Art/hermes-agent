@@ -16,6 +16,12 @@ These live under `skills_builtin/` and are loaded before local/external skill
 directories so clean installs can discover them without copying server-local
 skill folders into the repo.
 
+The 81 server runtime mirrors this exact set under
+`/home/hermes/.hermes/skills`. The runtime should not contain the upstream
+bundled skill catalog. In particular, broad upstream skills such as
+`humanizer` and `creative` are removed and should not reappear in
+`skills_list`, slash-command skill discovery, or filesystem checks.
+
 ## Skill Boundaries
 
 - `tangyuge-roleplay` is style/reference material only; the core identity comes
@@ -32,11 +38,20 @@ skill folders into the repo.
   secrets must remain in runtime environment or server-local config.
 - Sub-agents default to no memory/skill mutation capability.
 
+## Runtime Guard
+
+The 81 runtime keeps `/home/hermes/.hermes/.no-bundled-skills` so upstream
+bootstrap code does not repopulate removed bundled skills. If the runtime skill
+list ever grows beyond the six retained names, treat it as drift and resync
+from `skills_builtin/` after preserving any server-local secret files such as a
+runtime `.env`.
+
 ## Verification
 
 ```bash
 python -m hermes_cli.main skills list --enabled-only
+find /home/hermes/.hermes/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
 ```
 
 The enabled list should show the six retained skills and no broad upstream skill
-catalog.
+catalog. Slash-command skill discovery should resolve to the same six names.

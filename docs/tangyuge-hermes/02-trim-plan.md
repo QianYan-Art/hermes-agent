@@ -33,6 +33,27 @@ Runtime toolsets are limited to:
 
 `hermes tools list` should show only this retained set.
 
+## Retained Runtime Skills
+
+The repo and the 81 runtime retain exactly six project skills:
+
+- `grill-me`
+- `grok-search`
+- `hermes-md-locator`
+- `mail-vps-ops`
+- `paper-translation-to-docx`
+- `tangyuge-roleplay`
+
+The server runtime directory `/home/hermes/.hermes/skills` is a deployment
+mirror of this retained set, not a place for the upstream bundled skill catalog.
+Slash-command skill discovery should expose the same six names. Upstream
+general-purpose skills such as `humanizer` and `creative` are intentionally
+removed from the server checkout and runtime home.
+
+The 81 runtime keeps `/home/hermes/.hermes/.no-bundled-skills` as a guard file
+to prevent upstream bundled skill bootstrap code from repopulating the broad
+catalog after restarts or reinstalls.
+
 ## Retained Platforms
 
 Retained platform/runtime entries:
@@ -167,6 +188,18 @@ python -m hermes_cli.main proxy
 Searches for removed platform/tool paths should return no tracked files, and
 removed top-level commands should be rejected by argparse. `git ls-files
 README.zh-CN.md` should print nothing.
+
+Server runtime skill checks should show only the retained six skills:
+
+```bash
+find /home/hermes/.hermes/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
+  /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main skills list --enabled-only
+find /home/hermes/.hermes -path '*/humanizer' -o -path '*/creative'
+```
+
+The first two commands should list only the six retained names. The final search
+should print nothing.
 
 Retained-scope test runs should target QQBot/API-server/CLI/cron and retained
 toolsets only. Upstream tests for removed surfaces such as Signal platform

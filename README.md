@@ -97,6 +97,12 @@ during deploys:
 - Optional dependencies and helper scripts are trimmed to retained runtime
   surfaces. Removed upstream platform/migration extras and live-test/release
   scripts are not part of the Tangyuge-Hermes install profile.
+- Built-in skills are intentionally reduced to six retained server skills:
+  `grill-me`, `grok-search`, `hermes-md-locator`, `mail-vps-ops`,
+  `paper-translation-to-docx`, and `tangyuge-roleplay`. The 81 runtime
+  `~/.hermes/skills` directory and slash-command skill discovery should expose
+  only this set. Legacy upstream bundled skills such as `humanizer` and
+  `creative` are not part of this fork.
 
 ## Bot-Facing Documentation
 
@@ -188,9 +194,12 @@ cd /home/hermes/.hermes/hermes-agent
 git rev-parse --short HEAD
 git status --short
 git sparse-checkout list
+find /home/hermes/.hermes/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
 systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service --property=ExecStart --no-pager
 ```
 
 Expected service state: active, using
 `/home/hermes/.hermes/venvs/hermes-agent/bin/hermes gateway run`.
+Expected runtime skills: the six retained names listed above and no upstream
+catalog leftovers.

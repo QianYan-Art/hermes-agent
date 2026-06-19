@@ -95,6 +95,12 @@ Enabled built-in skills:
 - `paper-translation-to-docx`
 - `tangyuge-roleplay`
 
+The server runtime directory `/home/hermes/.hermes/skills` should contain only
+these six directories. Legacy upstream bundled skills such as `humanizer` and
+`creative` have been removed from the runtime and ignored server checkout. The
+guard file `/home/hermes/.hermes/.no-bundled-skills` prevents bootstrap code
+from repopulating the upstream bundled skill catalog.
+
 Supported platform surface is narrowed to QQBot, API server, CLI, and cron.
 Removed command/platform/tool surfaces should stay removed unless a later
 mission explicitly reintroduces them.
@@ -158,11 +164,17 @@ HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main plugins list --plain
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main skills list --enabled-only
+find /home/hermes/.hermes/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+test -f /home/hermes/.hermes/.no-bundled-skills
+find /home/hermes/.hermes -path '*/humanizer' -o -path '*/creative'
 grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOUL.md || true
 ```
 
 Expected service state is `active`. Expected `ExecStart` uses the external venv
-path, not a repo-local `venv`. The SOUL grep should print nothing.
+path, not a repo-local `venv`. The runtime skill list should be exactly the six
+retained names, the `.no-bundled-skills` guard should exist, and the
+`humanizer`/`creative` search should print nothing. The SOUL grep should print
+nothing.
 
 ## Session Cleanup Timer
 
@@ -233,6 +245,10 @@ After deployment or documentation changes:
 - Remove local and server `.bundle` deployment archives after successful use.
 - Keep server runtime data under `/home/hermes/.hermes/` intact; never replace
   `.env`, `config.yaml`, memories, sessions, media caches, or user documents.
+- Keep `/home/hermes/.hermes/skills` aligned to the six retained skills and
+  keep `/home/hermes/.hermes/.no-bundled-skills` in place. Preserve
+  server-local secret files such as skill `.env` files when resyncing skill
+  directories.
 - Keep `/home/hermes/.hermes/SOUL.md` as a clean style overlay when prompt or
   identity code changes; do not restore old upstream default identity text.
 - Remove obsolete home-directory lookup docs and old code backups when they are
