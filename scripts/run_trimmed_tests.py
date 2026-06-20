@@ -20,6 +20,7 @@ COMPILE_TARGETS = (
     "scripts",
     "hermes_cli",
     "providers",
+    "plugins/model-providers/custom",
     "plugins/image_gen/openai",
     "plugins/model-providers/minimax",
     "plugins/model-providers/deepseek",

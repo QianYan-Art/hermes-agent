@@ -1,7 +1,0 @@
-name: hybgzs
-version: 1.0.0
-description: "HYBGZS OpenAI-compatible chat image backend. Uses chat/completions and extracts returned data-URI images."
-author: local
-kind: backend
-requires_env:
-  - HYBGZS_IMAGE_API_KEY

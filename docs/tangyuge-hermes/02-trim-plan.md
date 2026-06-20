@@ -141,16 +141,19 @@ Bundled plugin discovery is allow-listed to retained capabilities:
 - `rtk-rewrite`
 - `security-guidance`
 
-Do not physically remove plugin packages solely because they are disabled on
-the 81 server. Some retained toolsets still import provider compatibility shims,
-for example:
+Do not physically remove retained provider shim packages solely because they
+are not standalone plugins. Some retained toolsets still import compatibility
+shims directly, for example:
 
 - `tools/web_tools.py` re-exports plugin-backed web providers.
 - `tools/browser_tool.py` re-exports plugin-backed browser providers.
 - image generation and model provider menus discover bundled plugin metadata.
 
 Safe plugin trimming means first proving no retained toolset/import path depends
-on that plugin. Until then, prefer runtime allow-listing over deleting files.
+on that plugin. The current tracked source physically removes non-retained model
+provider packages and non-OpenAI image provider packages, while keeping retained
+web/browser shims and the `image_gen/openai`, `rtk-rewrite`, `disk-cleanup`, and
+`security-guidance` packages.
 
 ## Provider Boundary
 
@@ -188,6 +191,17 @@ python -m hermes_cli.main proxy
 Searches for removed platform/tool paths should return no tracked files, and
 removed top-level commands should be rejected by argparse. `git ls-files
 README.zh-CN.md` should print nothing.
+
+Tracked plugin package checks should show only the retained model and image
+provider directories:
+
+```bash
+git ls-files 'plugins/model-providers/*/plugin.yaml' | cut -d/ -f3 | sort -u
+git ls-files 'plugins/image_gen/*/plugin.yaml' | cut -d/ -f3 | sort -u
+```
+
+The expected model providers are `custom`, `deepseek`, and `minimax`; the
+expected image provider is `openai`.
 
 Server runtime skill checks should show only the retained six skills:
 

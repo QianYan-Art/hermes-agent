@@ -1,6 +1,7 @@
 import importlib
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_tangyuge_bundled_provider_registry_is_narrow():
@@ -27,6 +28,24 @@ def test_tangyuge_bundled_plugin_list_is_narrow(tmp_path, monkeypatch):
     names = {entry[0] for entry in plugins_cmd._discover_all_plugins()}
 
     assert names == {"disk-cleanup", "rtk-rewrite", "security-guidance"}
+
+
+def test_tangyuge_tracked_provider_plugin_dirs_are_narrow():
+    root = Path(__file__).resolve().parents[2]
+
+    model_dirs = {
+        path.name
+        for path in (root / "plugins" / "model-providers").iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+    image_dirs = {
+        path.name
+        for path in (root / "plugins" / "image_gen").iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+
+    assert model_dirs == {"custom", "deepseek", "minimax"}
+    assert image_dirs == {"openai"}
 
 
 def test_tangyuge_removed_cli_command_fails_closed():

@@ -1127,16 +1127,19 @@ async def _send_signal(extra, chat_id, message, media_files=None):
     except ImportError:
         return {"error": "httpx not installed"}
 
-    from gateway.platforms.signal_rate_limit import (
-        SIGNAL_BATCH_PACING_NOTICE_THRESHOLD,
-        SIGNAL_MAX_ATTACHMENTS_PER_MSG,
-        SIGNAL_RATE_LIMIT_MAX_ATTEMPTS,
-        _extract_retry_after_seconds,
-        _format_wait,
-        _is_signal_rate_limit_error,
-        _signal_send_timeout,
-        get_scheduler,
-    )
+    try:
+        from gateway.platforms.signal_rate_limit import (
+            SIGNAL_BATCH_PACING_NOTICE_THRESHOLD,
+            SIGNAL_MAX_ATTACHMENTS_PER_MSG,
+            SIGNAL_RATE_LIMIT_MAX_ATTEMPTS,
+            _extract_retry_after_seconds,
+            _format_wait,
+            _is_signal_rate_limit_error,
+            _signal_send_timeout,
+            get_scheduler,
+        )
+    except ImportError:
+        return {"error": "Signal delivery is not available in this Hermes build"}
 
     try:
         http_url = extra.get("http_url", "http://127.0.0.1:8080").rstrip("/")

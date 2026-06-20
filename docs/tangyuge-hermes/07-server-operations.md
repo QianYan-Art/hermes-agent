@@ -146,10 +146,12 @@ Plugin policy:
   that the authorization request has expired or already been handled.
 - `hermes plugins list --plain` should list only `disk-cleanup`,
   `rtk-rewrite`, and `security-guidance`.
-- Disabled bundled plugin files may remain in the repo when retained toolsets
-  import their compatibility shims or provider metadata.
-- Prefer runtime allow-listing over deleting plugin code unless retained-scope
-  tests prove the plugin is no longer referenced.
+- Retained web/browser plugin shims may remain in the repo even though they are
+  not standalone plugins, because retained `web` and `browser` toolsets import
+  those provider modules directly.
+- Non-retained model provider packages and non-OpenAI image provider packages
+  are physically removed from the tracked source after retained-scope tests
+  prove they are no longer referenced.
 
 ## Runtime Data Boundary
 
@@ -182,6 +184,8 @@ systemctl is-active hermes-gateway.service
 systemctl show hermes-gateway.service -p ExecStart --value
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main plugins list --plain
+git ls-files 'plugins/model-providers/*/plugin.yaml' | cut -d/ -f3 | sort -u
+git ls-files 'plugins/image_gen/*/plugin.yaml' | cut -d/ -f3 | sort -u
 HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes \
   /home/hermes/.hermes/venvs/hermes-agent/bin/python -m hermes_cli.main skills list --enabled-only
 find /home/hermes/.hermes/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort

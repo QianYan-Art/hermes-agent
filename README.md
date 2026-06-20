@@ -91,6 +91,9 @@ during deploys:
   `image_gen/openai`, `rtk-rewrite`, `disk-cleanup`, and
   `security-guidance`. `hermes plugins list --plain` shows only retained
   standalone plugins: `disk-cleanup`, `rtk-rewrite`, and `security-guidance`.
+  Non-retained model provider packages and non-OpenAI image provider packages
+  are physically removed from the tracked source; retained web/browser provider
+  shims remain because the `web` and `browser` toolsets import them directly.
 - Removed top-level CLI command surfaces fail closed with an explicit
   Tangyuge-Hermes message. This includes `proxy`, `lsp`, `portal`, `kanban`,
   `curator`, `insights`, `claw`, `acp`, `profile`, `honcho`, `dashboard`,

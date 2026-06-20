@@ -39,3 +39,16 @@ def test_send_to_slack_without_slack_adapter_returns_clear_error():
     )
 
     assert result == {"error": "Slack adapter is not available in this Hermes build"}
+
+
+def test_send_to_signal_without_signal_adapter_returns_clear_error():
+    result = asyncio.run(
+        _send_to_platform(
+            Platform.SIGNAL,
+            SimpleNamespace(enabled=True, token="", extra={"account": "+10000000000"}),
+            "+10000000000",
+            "hello",
+        )
+    )
+
+    assert result == {"error": "Signal delivery is not available in this Hermes build"}
