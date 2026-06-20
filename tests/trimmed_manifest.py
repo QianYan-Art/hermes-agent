@@ -27,6 +27,7 @@ TRIMMED_TEST_TARGETS = (
     "tests/tools/test_image_generation.py",
     "tests/tools/test_image_generation_env.py",
     "tests/tools/test_image_generation_plugin_dispatch.py",
+    "tests/tools/test_send_message_trimmed.py",
     "tests/tools/test_tangyuge_builtin_skills.py",
     "tests/plugins/image_gen/test_openai_provider.py",
     "tests/plugins/model_providers/test_minimax_profile.py",
