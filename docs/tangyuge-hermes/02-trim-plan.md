@@ -206,5 +206,15 @@ toolsets only. Upstream tests for removed surfaces such as Signal platform
 delivery or FAL video-generation plugins are not part of this fork's passing
 baseline unless those surfaces are intentionally restored.
 
-The current trim boundary is covered by
-`tests/hermes_cli/test_tangyuge_trim_scope.py`.
+The current trim boundary and focused runtime regressions are covered by the
+canonical trimmed profile:
+
+```bash
+python scripts/run_trimmed_tests.py
+```
+
+The profile source is `tests/trimmed_manifest.py`. It includes
+`tests/hermes_cli/test_tangyuge_trim_scope.py` plus focused QQBot, approval,
+image generation, MiniMax/DeepSeek provider, async delegation, RTK, identity,
+and retained toolset checks. Do not treat unscoped `python -m pytest` as the
+trimmed release baseline while upstream residual tests remain in the tree.

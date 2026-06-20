@@ -166,26 +166,14 @@ If the server cannot fetch GitHub, create a local git bundle, copy it to
 Before release or deploy:
 
 ```bash
-python -m compileall -q agent gateway tools skills_builtin scripts tests hermes_cli providers
-python -m pytest \
-  tests/agent/test_prompt_builder.py \
-  tests/agent/test_system_prompt.py \
-  tests/agent/test_tangyuge_identity.py \
-  tests/agent/test_image_routing.py \
-  tests/gateway/test_session_model_reset.py \
-  tests/hermes_cli/test_tips.py \
-  tests/tools/test_tangyuge_builtin_skills.py \
-  tests/hermes_cli/test_context_window_command.py \
-  tests/hermes_cli/test_apply_model_switch_result_context.py \
-  tests/hermes_cli/test_custom_provider_context_length.py \
-  tests/hermes_cli/test_model_switch_context_display.py \
-  tests/gateway/test_media_extraction.py \
-  tests/gateway/test_run_tool_media_re.py \
-  tests/tools/test_async_delegation.py \
-  tests/hermes_cli/test_tools_config.py::test_configurable_toolsets_match_tangyuge_retained_scope \
-  tests/hermes_cli/test_tangyuge_trim_scope.py \
-  -q --timeout-method=thread
+python scripts/run_trimmed_tests.py
 ```
+
+`scripts/run_trimmed_tests.py` is the canonical local verification profile for
+this fork. It compiles retained runtime source and runs the curated test targets
+from `tests/trimmed_manifest.py`. Running `python -m pytest` without targets
+will still collect upstream residual tests for removed platforms/tools and is
+not the Tangyuge-Hermes release baseline.
 
 On the server:
 

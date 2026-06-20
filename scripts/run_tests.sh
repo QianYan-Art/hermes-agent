@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Canonical test runner for hermes-agent. Run this instead of calling
-# `pytest` directly to guarantee your local run matches CI behavior.
+# Test runner for Tangyuge-Hermes.
+#
+# With no arguments this runs the fork's trimmed verification profile
+# (`scripts/run_trimmed_tests.py`). Passing paths or pytest args keeps the
+# upstream per-file runner behavior for targeted investigations.
 #
 # What this script enforces:
 #   * Per-file isolation via scripts/run_tests_parallel.py — each test
@@ -14,8 +17,8 @@
 #   * Proper venv activation (probes .venv, venv, then ~/.hermes/...)
 #
 # Usage:
-#   scripts/run_tests.sh                            # full suite
-#   scripts/run_tests.sh -j 4                       # cap parallelism
+#   scripts/run_tests.sh                            # trimmed baseline
+#   scripts/run_tests.sh -j 4                       # targeted per-file runner; cap parallelism
 #   scripts/run_tests.sh tests/agent/               # discover only here
 #   scripts/run_tests.sh tests/agent/ tests/acp/    # multiple roots
 #   scripts/run_tests.sh tests/foo.py               # single file
@@ -61,7 +64,21 @@ fi
 # ── Run in hermetic env ──────────────────────────────────────────────────────
 # env -i: start with empty environment, opt-in only what we need.
 # No credential var can leak — you'd have to explicitly add it here.
-echo "▶ running per-file parallel test suite via run_tests_parallel.py"
+if [ "$#" -eq 0 ]; then
+  echo "▶ running Tangyuge-Hermes trimmed verification profile"
+  exec env -i \
+    PATH="$PATH" \
+    HOME="$HOME" \
+    TZ=UTC \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONHASHSEED=0 \
+    ${EXTRA_PYTHONPATH:+PYTHONPATH="$EXTRA_PYTHONPATH"} \
+    ${EXTRA_PYTEST_PLUGINS:+PYTEST_PLUGINS="$EXTRA_PYTEST_PLUGINS"} \
+    "$PYTHON" "$SCRIPT_DIR/run_trimmed_tests.py"
+fi
+
+echo "▶ running targeted per-file test suite via run_tests_parallel.py"
 echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)"
 
 cd "$REPO_ROOT"

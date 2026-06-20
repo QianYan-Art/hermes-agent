@@ -14,9 +14,10 @@ Hermetic-test invariants enforced here (see AGENTS.md for rationale):
 4. **No HERMES_SESSION_* inheritance** — the agent's current gateway
    session must not leak into tests.
 
-These invariants make the local test run match CI closely. Gaps that
-remain (CPU count, xdist worker count) are addressed by the canonical
-test runner at ``scripts/run_tests.sh``.
+These invariants make local test runs deterministic. The Tangyuge-Hermes
+release baseline is the trimmed profile at ``scripts/run_trimmed_tests.py``;
+``scripts/run_tests.sh`` delegates there by default and keeps the upstream
+per-file runner only for targeted investigations.
 """
 
 import asyncio

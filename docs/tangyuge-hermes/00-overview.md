@@ -82,7 +82,10 @@ Before release or deployment, verify the current commit and test evidence:
 
 ```bash
 git rev-parse --short HEAD
-python -m compileall -q agent gateway tools skills_builtin scripts tests
+python scripts/run_trimmed_tests.py
 ```
 
-The `main` branch is the validated deployment line for the 81 server.
+The `main` branch is the validated deployment line for the 81 server. The
+trimmed verification profile lives in `tests/trimmed_manifest.py`; unscoped
+`python -m pytest` is not the release baseline because it still discovers
+upstream residual tests for removed platforms and tools.
