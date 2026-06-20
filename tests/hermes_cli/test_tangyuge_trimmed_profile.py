@@ -22,8 +22,10 @@ REMOVED_SURFACE_TOKENS = {
 REQUIRED_TARGETS = {
     "tests/gateway/test_qqbot.py",
     "tests/gateway/test_approve_deny_commands.py",
+    "tests/gateway/test_auxmodel_command.py",
     "tests/tools/test_image_generation.py",
     "tests/tools/test_image_generation_plugin_dispatch.py",
+    "tests/agent/test_save_url_image.py",
     "tests/plugins/image_gen/test_openai_provider.py",
     "tests/plugins/model_providers/test_minimax_profile.py",
     "tests/plugins/model_providers/test_deepseek_profile.py",

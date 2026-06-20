@@ -11708,20 +11708,40 @@ class GatewayRunner:
             return slug, {}
 
         def _auth_summary(provider_name: str, provider_cfg: dict, section_cfg: dict | None, target: str) -> str:
+            section_cfg = section_cfg if isinstance(section_cfg, dict) else {}
             key_env = str(
                 provider_cfg.get("key_env")
                 or provider_cfg.get("api_key_env")
+                or section_cfg.get("key_env")
+                or section_cfg.get("api_key_env")
                 or ""
             ).strip()
-            if not key_env and target == "image" and _provider_slug(provider_name) == "hybgzs":
-                key_env = "HYBGZS_IMAGE_API_KEY"
+            slug = _provider_slug(provider_name)
+            if not key_env and target == "image":
+                if slug == "hybgzs":
+                    key_env = "HYBGZS_IMAGE_API_KEY"
+                elif slug == "openai":
+                    key_env = "OPENAI_IMAGE_API_KEY"
+            has_config_key = bool(
+                str(provider_cfg.get("api_key") or section_cfg.get("api_key") or "").strip()
+            )
             if not key_env:
+                if has_config_key:
+                    return "config api_key（已配置）"
                 return "无"
             keys = _split_keys(os.getenv(key_env, ""))
             if len(keys) > 1:
                 return f"{key_env}（轮询 {len(keys)} 个 key）"
             if len(keys) == 1:
                 return f"{key_env}（已设置）"
+            if has_config_key:
+                return f"{key_env}（未设置；config api_key 已配置）"
+            if target == "image" and slug == "openai":
+                fallback_keys = _split_keys(os.getenv("OPENAI_API_KEY", ""))
+                if len(fallback_keys) > 1:
+                    return f"{key_env}（未设置；OPENAI_API_KEY fallback 轮询 {len(fallback_keys)} 个 key）"
+                if len(fallback_keys) == 1:
+                    return f"{key_env}（未设置；OPENAI_API_KEY fallback 已设置）"
             return f"{key_env}（未设置）"
 
         def _endpoint_summary(provider_name: str, provider_cfg: dict, section_cfg: dict, target: str) -> str:

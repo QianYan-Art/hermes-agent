@@ -3,7 +3,7 @@
 The endpoint is OpenAI-compatible for ``/v1/chat/completions`` but does not
 implement ``/v1/images/generations``. Image models return markdown containing a
 ``data:image/...;base64,...`` URI, which this backend extracts and saves under
-``$HERMES_HOME/cache/images/``.
+the shared Hermes image cache directory.
 """
 
 from __future__ import annotations

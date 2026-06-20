@@ -10,8 +10,8 @@ three virtual model IDs so the ``hermes tools`` model picker and the
     gpt-image-2-high    ~2min  slowest, highest fidelity
 
 All three hit the same underlying API model (``gpt-image-2``) with a
-different ``quality`` parameter. Output is base64 JSON → saved under
-``$HERMES_HOME/cache/images/``.
+different ``quality`` parameter. Output is base64 JSON → saved under the
+shared Hermes image cache directory.
 
 Selection precedence (first hit wins):
 

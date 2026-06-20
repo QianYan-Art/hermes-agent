@@ -12,6 +12,7 @@ and the gateway 404'd at ``send_photo`` time.
 
 from __future__ import annotations
 
+import base64
 import http.server
 import socketserver
 import threading
@@ -102,10 +103,30 @@ class TestSaveUrlImage:
 
         assert path.exists()
         assert path.read_bytes() == PNG_1PX
-        # The cache directory must be under HERMES_HOME — gateway cleanup
-        # relies on this being the canonical location.
-        assert "cache/images" in str(path)
+        assert path.parent.name == "images"
+        assert path.parent.parent.name == "cache"
         assert path.suffix == ".png"
+
+    def test_existing_legacy_image_cache_is_preserved(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        legacy_cache = hermes_home / "image_cache"
+        legacy_cache.mkdir(parents=True)
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        import sys
+        for mod in list(sys.modules):
+            if mod.startswith("hermes_constants") or mod.startswith("agent.image_gen_provider"):
+                sys.modules.pop(mod, None)
+
+        from agent.image_gen_provider import save_b64_image
+
+        path = save_b64_image(
+            base64.b64encode(PNG_1PX).decode("ascii"),
+            prefix="legacy_test",
+        )
+
+        assert path.exists()
+        assert path.parent == legacy_cache
 
     def test_extension_inferred_from_content_type(self, http_server):
         base, _ = http_server
