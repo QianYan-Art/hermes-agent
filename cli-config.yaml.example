@@ -31,11 +31,13 @@ providers:
     model: qwen2.5vl:7b
 
 image_gen:
-  provider: hybgzs
-  model: gemini-3.1-flash-image
-  hybgzs:
-    base_url: https://ai.hybgzs.com/v1
-    model: gemini-3.1-flash-image
+  provider: openai
+  model: gpt-image-2-medium
+  openai:
+    # OpenAI-compatible Images API endpoint. Runtime secrets belong in
+    # OPENAI_IMAGE_API_KEY, never in this tracked example.
+    base_url: https://example.com/v1
+    model: gpt-image-2-medium
     timeout: 180
 
 tts:

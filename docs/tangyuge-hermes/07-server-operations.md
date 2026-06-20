@@ -122,8 +122,11 @@ Plugin policy:
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`,
   `browser/firecrawl`, `web/exa`, `web/firecrawl`, `web/parallel`,
-  `web/tavily`, `image_gen/hybgzs`, `rtk-rewrite`, `disk-cleanup`, and
+  `web/tavily`, `image_gen/openai`, `rtk-rewrite`, `disk-cleanup`, and
   `security-guidance`.
+- Image generation uses the `image_gen/openai` provider against an
+  OpenAI-compatible Images API endpoint. Keep endpoint URL in
+  `image_gen.openai.base_url`; keep the secret in `OPENAI_IMAGE_API_KEY`.
 - `hermes plugins list --plain` should list only `disk-cleanup`,
   `rtk-rewrite`, and `security-guidance`.
 - Disabled bundled plugin files may remain in the repo when retained toolsets

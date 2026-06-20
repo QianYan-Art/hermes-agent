@@ -19,6 +19,11 @@ Selection precedence (first hit wins):
 2. ``image_gen.openai.model`` in ``config.yaml``
 3. ``image_gen.model`` in ``config.yaml`` (when it's one of our tier IDs)
 4. :data:`DEFAULT_MODEL` — ``gpt-image-2-medium``
+
+OpenAI-compatible image gateways can be configured with
+``image_gen.openai.base_url`` / ``OPENAI_IMAGE_BASE_URL`` and an image-specific
+``OPENAI_IMAGE_API_KEY``. ``OPENAI_API_KEY`` remains the fallback for the
+official OpenAI API.
 """
 
 from __future__ import annotations
@@ -80,6 +85,14 @@ _SIZES = {
 }
 
 
+def _clean_str(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
 def _load_openai_config() -> Dict[str, Any]:
     """Read ``image_gen`` from config.yaml (returns {} on any failure)."""
     try:
@@ -93,6 +106,12 @@ def _load_openai_config() -> Dict[str, Any]:
         return {}
 
 
+def _openai_section() -> Dict[str, Any]:
+    cfg = _load_openai_config()
+    section = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
+    return section if isinstance(section, dict) else {}
+
+
 def _resolve_model() -> Tuple[str, Dict[str, Any]]:
     """Decide which tier to use and return ``(model_id, meta)``."""
     env_override = os.environ.get("OPENAI_IMAGE_MODEL")
@@ -101,20 +120,56 @@ def _resolve_model() -> Tuple[str, Dict[str, Any]]:
 
     cfg = _load_openai_config()
     openai_cfg = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
-    candidate: Optional[str] = None
+    selected_model: Optional[str] = None
     if isinstance(openai_cfg, dict):
         value = openai_cfg.get("model")
         if isinstance(value, str) and value in _MODELS:
-            candidate = value
-    if candidate is None:
+            selected_model = value
+    if selected_model is None:
         top = cfg.get("model")
         if isinstance(top, str) and top in _MODELS:
-            candidate = top
+            selected_model = top
 
-    if candidate is not None:
-        return candidate, _MODELS[candidate]
+    if selected_model is not None:
+        return selected_model, _MODELS[selected_model]
 
     return DEFAULT_MODEL, _MODELS[DEFAULT_MODEL]
+
+
+def _resolve_client_options() -> Dict[str, Any]:
+    """Resolve OpenAI SDK options for official or compatible image endpoints."""
+    openai_cfg = _openai_section()
+
+    api_key = (
+        _clean_str(os.getenv("OPENAI_IMAGE_API_KEY"))
+        or _clean_str(openai_cfg.get("api_key"))
+        or _clean_str(os.getenv("OPENAI_API_KEY"))
+    )
+    base_url = (
+        _clean_str(os.getenv("OPENAI_IMAGE_BASE_URL"))
+        or _clean_str(openai_cfg.get("base_url"))
+    )
+
+    timeout: Optional[float] = None
+    raw_timeout = os.getenv("OPENAI_IMAGE_TIMEOUT")
+    if raw_timeout is None:
+        raw_timeout = openai_cfg.get("timeout")
+    if raw_timeout is not None:
+        try:
+            parsed = float(raw_timeout)
+            if parsed > 0:
+                timeout = parsed
+        except (TypeError, ValueError):
+            logger.debug("Ignoring invalid OPENAI image timeout: %r", raw_timeout)
+
+    options: Dict[str, Any] = {}
+    if api_key:
+        options["api_key"] = api_key
+    if base_url:
+        options["base_url"] = base_url
+    if timeout is not None:
+        options["timeout"] = timeout
+    return options
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +189,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
         return "OpenAI"
 
     def is_available(self) -> bool:
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not _resolve_client_options().get("api_key"):
             return False
         try:
             import openai  # noqa: F401
@@ -164,9 +219,13 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "tag": "gpt-image-2 at low/medium/high quality tiers",
             "env_vars": [
                 {
-                    "key": "OPENAI_API_KEY",
-                    "prompt": "OpenAI API key",
+                    "key": "OPENAI_IMAGE_API_KEY",
+                    "prompt": "OpenAI-compatible image API key",
                     "url": "https://platform.openai.com/api-keys",
+                },
+                {
+                    "key": "OPENAI_IMAGE_BASE_URL",
+                    "prompt": "Optional OpenAI-compatible image base URL",
                 },
             ],
         }
@@ -188,12 +247,13 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        if not os.environ.get("OPENAI_API_KEY"):
+        client_options = _resolve_client_options()
+        if not client_options.get("api_key"):
             return error_response(
                 error=(
-                    "OPENAI_API_KEY not set. Run `hermes tools` → Image "
-                    "Generation → OpenAI to configure, or `hermes setup` "
-                    "to add the key."
+                    "OPENAI_IMAGE_API_KEY or OPENAI_API_KEY not set. Run "
+                    "`hermes tools` → Image Generation → OpenAI to configure, "
+                    "or set the key in the runtime environment."
                 ),
                 error_type="auth_required",
                 provider="openai",
@@ -224,7 +284,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
         }
 
         try:
-            client = openai.OpenAI()
+            client = openai.OpenAI(**client_options)
             response = client.images.generate(**payload)
         except Exception as exc:
             logger.debug("OpenAI image generation failed", exc_info=True)

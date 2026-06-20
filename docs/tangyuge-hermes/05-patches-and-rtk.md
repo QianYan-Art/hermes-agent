@@ -2,7 +2,7 @@
 
 常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、"/context"、
 "关闭自动记忆"、"自动总结skills"、"RTK"、"provider"、"模型路由"、
-"Tavily"、"HYBGZS"、"新旧行为差异"。
+"Tavily"、"OpenAI-compatible image"、"CPA生图旁路"、"新旧行为差异"。
 
 Tangyuge-Hermes keeps QianYan server patches from the frozen baseline and
 vendors the RTK rewrite plugin as a bundled plugin.
@@ -92,10 +92,11 @@ external patch files to replay:
   `gateway/run.py` can inject the result back into the originating session as a
   new turn. `delegation.max_async_children` caps concurrent background
   subagents; excess dispatches are rejected rather than queued.
-- API-key rotation, Tavily multi-key failover, HYBGZS image backend behavior,
-  mail-vps-ops, hermes-md-locator, and tangyuge-roleplay are retained as built-in
-  repo behavior or built-in skills. Secrets remain server-local and are never
-  stored in repo docs.
+- API-key rotation, Tavily multi-key failover, OpenAI-compatible image backend
+  behavior, mail-vps-ops, hermes-md-locator, and tangyuge-roleplay are retained
+  as built-in repo behavior or built-in skills. Image backend secrets remain
+  server-local in runtime environment variables and are never stored in repo
+  docs.
 
 ## Verification
 

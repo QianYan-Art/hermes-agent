@@ -60,7 +60,7 @@ during deploys:
 - Automatic memory and skill-review loops are disabled on the Tangyuge Codex
   runtime path. Explicit memory/tool actions remain available.
 - QianYan provider/model routing patches, auxiliary model behavior, Tavily
-  multi-key failover, HYBGZS image backend behavior, mail VPS operation,
+  multi-key failover, OpenAI-compatible image backend behavior, mail VPS operation,
   `hermes-md-locator`, and Tangyuge roleplay references are built-in repo
   behavior, not external patch files to replay.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
@@ -83,7 +83,7 @@ during deploys:
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`, `browser/firecrawl`,
   `web/exa`, `web/firecrawl`, `web/parallel`, `web/tavily`,
-  `image_gen/hybgzs`, `rtk-rewrite`, `disk-cleanup`, and
+  `image_gen/openai`, `rtk-rewrite`, `disk-cleanup`, and
   `security-guidance`. `hermes plugins list --plain` shows only retained
   standalone plugins: `disk-cleanup`, `rtk-rewrite`, and `security-guidance`.
 - Removed top-level CLI command surfaces fail closed with an explicit

@@ -130,7 +130,7 @@ Bundled plugin discovery is allow-listed to retained capabilities:
 - `web/firecrawl`
 - `web/parallel`
 - `web/tavily`
-- `image_gen/hybgzs`
+- `image_gen/openai`
 - `rtk-rewrite`
 - `disk-cleanup`
 - `security-guidance`

@@ -73,11 +73,17 @@ class TestMetadata:
 
 class TestAvailability:
     def test_no_api_key_unavailable(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_IMAGE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         assert openai_plugin.OpenAIImageGenProvider().is_available() is False
 
     def test_api_key_set_available(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "test")
+        assert openai_plugin.OpenAIImageGenProvider().is_available() is True
+
+    def test_image_api_key_set_available(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_IMAGE_API_KEY", "test")
         assert openai_plugin.OpenAIImageGenProvider().is_available() is True
 
 
@@ -131,10 +137,61 @@ class TestGenerate:
         assert result["error_type"] == "invalid_argument"
 
     def test_missing_api_key(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_IMAGE_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         result = openai_plugin.OpenAIImageGenProvider().generate("a cat")
         assert result["success"] is False
         assert result["error_type"] == "auth_required"
+
+    def test_client_uses_image_specific_env_options(self, provider, monkeypatch):
+        monkeypatch.setenv("OPENAI_IMAGE_API_KEY", "image-key")
+        monkeypatch.setenv("OPENAI_IMAGE_BASE_URL", "https://cpa.example/v1")
+        monkeypatch.setenv("OPENAI_IMAGE_TIMEOUT", "123")
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+        fake_openai = MagicMock()
+        fake_openai.OpenAI.return_value = fake_client
+
+        with patch.dict("sys.modules", {"openai": fake_openai}):
+            result = provider.generate("a cat")
+
+        assert result["success"] is True
+        assert fake_openai.OpenAI.call_args.kwargs == {
+            "api_key": "image-key",
+            "base_url": "https://cpa.example/v1",
+            "timeout": 123.0,
+        }
+
+    def test_client_uses_configured_compatible_endpoint(self, tmp_path, monkeypatch):
+        import yaml
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_IMAGE_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_IMAGE_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_IMAGE_TIMEOUT", raising=False)
+        (tmp_path / "config.yaml").write_text(yaml.safe_dump({
+            "image_gen": {
+                "openai": {
+                    "api_key": "config-key",
+                    "base_url": "https://cpa.example/v1",
+                    "timeout": 180,
+                },
+            },
+        }))
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+        fake_openai = MagicMock()
+        fake_openai.OpenAI.return_value = fake_client
+
+        with patch.dict("sys.modules", {"openai": fake_openai}):
+            result = openai_plugin.OpenAIImageGenProvider().generate("a cat")
+
+        assert result["success"] is True
+        assert fake_openai.OpenAI.call_args.kwargs == {
+            "api_key": "config-key",
+            "base_url": "https://cpa.example/v1",
+            "timeout": 180.0,
+        }
 
     def test_b64_saves_to_cache(self, provider, tmp_path):
         png_bytes = bytes.fromhex(_PNG_HEX)
@@ -228,7 +285,7 @@ class TestGenerate:
         assert result["success"] is False
         assert result["error_type"] == "empty_response"
 
-    def test_url_response_is_cached_locally(self, provider):
+    def test_url_response_is_cached_locally(self, provider, tmp_path):
         """OpenAI URL response (if API ever returns one) is cached locally.
 
         Pre-fix this asserted the bare URL passed through; symmetric to the
@@ -243,12 +300,12 @@ class TestGenerate:
 
         with _patched_openai(fake_client), patch(
             "plugins.image_gen.openai.save_url_image",
-            return_value=Path("/tmp/openai_gpt-image-2_20260524_000000_deadbeef.png"),
+            return_value=tmp_path / "openai_gpt-image-2_20260524_000000_deadbeef.png",
         ) as mock_save_url:
             result = provider.generate("a cat")
 
         assert result["success"] is True
-        assert result["image"].startswith("/")
+        assert Path(result["image"]).is_absolute()
         assert "example.com" not in result["image"]
         mock_save_url.assert_called_once()
 
