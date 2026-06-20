@@ -29,6 +29,17 @@ def _fake_response(*, b64=None, url=None, revised_prompt=None):
     return SimpleNamespace(data=[item])
 
 
+def _fake_multi_response(items):
+    return SimpleNamespace(data=[
+        SimpleNamespace(
+            b64_json=item.get("b64"),
+            url=item.get("url"),
+            revised_prompt=item.get("revised_prompt"),
+        )
+        for item in items
+    ])
+
+
 @pytest.fixture(autouse=True)
 def _tmp_hermes_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -219,6 +230,81 @@ class TestGenerate:
         assert call_kwargs["size"] == "1536x1024"
         # gpt-image-2 rejects response_format — we must NOT send it.
         assert "response_format" not in call_kwargs
+
+    def test_openai_compatible_options_are_forwarded(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate(
+                "a cat",
+                quality="high",
+                num_images=3,
+                output_format="webp",
+                background="transparent",
+                moderation="low",
+                output_compression=80,
+            )
+
+        assert result["success"] is True
+        assert result["model"] == "gpt-image-2-high"
+        assert result["quality"] == "high"
+        call_kwargs = fake_client.images.generate.call_args.kwargs
+        assert call_kwargs["model"] == "gpt-image-2"
+        assert call_kwargs["quality"] == "high"
+        assert call_kwargs["n"] == 3
+        assert call_kwargs["output_format"] == "webp"
+        assert call_kwargs["background"] == "transparent"
+        assert call_kwargs["moderation"] == "low"
+        assert call_kwargs["output_compression"] == 80
+
+    def test_multiple_images_are_all_cached(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_multi_response([
+            {"b64": _b64_png(), "revised_prompt": "one"},
+            {"b64": _b64_png(), "revised_prompt": "two"},
+        ])
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", num_images=2)
+
+        assert result["success"] is True
+        assert Path(result["image"]).exists()
+        assert len(result["images"]) == 2
+        assert all(Path(path).exists() for path in result["images"])
+        assert result["num_images"] == 2
+        assert result["revised_prompt"] == "one"
+        assert result["revised_prompts"] == ["one", "two"]
+
+    def test_url_data_uri_response_is_cached(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(
+            b64=None,
+            url=f"data:image/png;base64,{_b64_png()}",
+        )
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat")
+
+        assert result["success"] is True
+        assert result["image"].endswith(".png")
+        assert Path(result["image"]).exists()
+
+    @pytest.mark.parametrize("kwargs,error", [
+        ({"quality": "ultra"}, "quality must be one of"),
+        ({"num_images": 11}, "num_images must be <="),
+        ({"output_compression": -1}, "output_compression must be >="),
+        ({"output_compression": 101}, "output_compression must be <="),
+        (
+            {"output_format": "png", "output_compression": 80},
+            "output_compression requires output_format jpeg or webp",
+        ),
+    ])
+    def test_invalid_options_are_rejected(self, provider, kwargs, error):
+        result = provider.generate("a cat", **kwargs)
+        assert result["success"] is False
+        assert result["error_type"] == "invalid_argument"
+        assert error in result["error"]
 
     @pytest.mark.parametrize("tier,expected_quality", [
         ("gpt-image-2-low", "low"),

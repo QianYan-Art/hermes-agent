@@ -2,7 +2,8 @@
 
 常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、"/context"、
 "关闭自动记忆"、"自动总结skills"、"RTK"、"provider"、"模型路由"、
-"Tavily"、"OpenAI-compatible image"、"CPA生图旁路"、"新旧行为差异"。
+"Tavily"、"OpenAI-compatible image"、"CPA生图旁路"、"生图参数"、
+"QQ授权按钮"、"允许一次"、"始终允许"、"拒绝"、"新旧行为差异"。
 
 Tangyuge-Hermes keeps QianYan server patches from the frozen baseline and
 vendors the RTK rewrite plugin as a bundled plugin.
@@ -97,6 +98,25 @@ external patch files to replay:
   as built-in repo behavior or built-in skills. Image backend secrets remain
   server-local in runtime environment variables and are never stored in repo
   docs.
+- `image_generate` exposes controlled generation parameters to the agent while
+  keeping model selection in user/server config. The agent may pass
+  `quality`, `num_images`, `output_format`, `background`, `moderation`, and
+  `output_compression`; unsupported provider options are filtered or rejected
+  instead of silently changing the configured model. For the retained
+  OpenAI-compatible backend, Hermes always sends the underlying API model
+  `gpt-image-2`, maps the configured or requested quality tier to
+  `low`/`medium`/`high`, caches all returned images locally, and exposes the
+  first image as `image` plus the full list as `images` when more than one image
+  is returned. Do not expose `response_format` for this path because the gateway
+  returns cached local paths; do not expose `partial_images` until Hermes handles
+  streaming image events.
+- QQBot approval buttons map to the same gateway choices as text commands:
+  `允许一次` -> `once`, `始终允许` -> `always`, `拒绝` -> `deny`. DM/C2C clicks are
+  accepted only from the same user openid embedded in the session key; group
+  clicks are accepted only from the originating group member. If QQ delivers a
+  valid approval click after the pending approval has already expired or been
+  handled, the bot sends a short expiry notice instead of silently dropping the
+  click.
 
 ## Verification
 

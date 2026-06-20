@@ -84,6 +84,26 @@ _SIZES = {
     "portrait": "1024x1536",
 }
 
+_QUALITY_TO_TIER = {
+    "low": "gpt-image-2-low",
+    "medium": "gpt-image-2-medium",
+    "high": "gpt-image-2-high",
+}
+
+_OPTION_ENUMS = {
+    "output_format": {"png", "jpeg", "webp"},
+    "background": {"transparent", "opaque", "auto"},
+    "moderation": {"low", "auto"},
+}
+
+_DATA_URL_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
 
 def _clean_str(value: Any) -> Optional[str]:
     if isinstance(value, str):
@@ -136,6 +156,62 @@ def _resolve_model() -> Tuple[str, Dict[str, Any]]:
     return DEFAULT_MODEL, _MODELS[DEFAULT_MODEL]
 
 
+def _resolve_tier(kwargs: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Optional[str]]:
+    """Resolve the requested virtual model tier and validate quality override."""
+    tier_id, meta = _resolve_model()
+    requested_model = _clean_str(kwargs.get("model"))
+    if requested_model in _MODELS:
+        tier_id = requested_model
+        meta = _MODELS[tier_id]
+
+    requested_quality = _clean_str(kwargs.get("quality"))
+    if requested_quality:
+        quality = requested_quality.lower()
+        if quality not in _QUALITY_TO_TIER:
+            return tier_id, meta, "quality must be one of: low, medium, high"
+        tier_id = _QUALITY_TO_TIER[quality]
+        meta = _MODELS[tier_id]
+
+    return tier_id, meta, None
+
+
+def _int_option(
+    kwargs: Dict[str, Any],
+    key: str,
+    *,
+    minimum: Optional[int] = None,
+    maximum: Optional[int] = None,
+) -> Tuple[Optional[int], Optional[str]]:
+    value = kwargs.get(key)
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        return None, f"{key} must be an integer"
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, f"{key} must be an integer"
+    if minimum is not None and parsed < minimum:
+        return None, f"{key} must be >= {minimum}"
+    if maximum is not None and parsed > maximum:
+        return None, f"{key} must be <= {maximum}"
+    return parsed, None
+
+
+def _enum_option(
+    kwargs: Dict[str, Any],
+    key: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    value = _clean_str(kwargs.get(key))
+    if value is None:
+        return None, None
+    normalized = value.lower()
+    allowed = _OPTION_ENUMS[key]
+    if normalized not in allowed:
+        return None, f"{key} must be one of: {', '.join(sorted(allowed))}"
+    return normalized, None
+
+
 def _resolve_client_options() -> Dict[str, Any]:
     """Resolve OpenAI SDK options for official or compatible image endpoints."""
     openai_cfg = _openai_section()
@@ -170,6 +246,15 @@ def _resolve_client_options() -> Dict[str, Any]:
     if timeout is not None:
         options["timeout"] = timeout
     return options
+
+
+def _save_data_url_image(data_url: str, *, prefix: str) -> str:
+    header, sep, payload = data_url.partition(",")
+    if sep != "," or not header.lower().startswith("data:"):
+        raise ValueError("invalid data URL image")
+    media_type = header[5:].split(";", 1)[0].strip().lower()
+    extension = _DATA_URL_EXTENSIONS.get(media_type, "png")
+    return str(save_b64_image(payload, prefix=prefix, extension=extension))
 
 
 # ---------------------------------------------------------------------------
@@ -270,18 +355,78 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        tier_id, meta = _resolve_model()
+        tier_id, meta, option_error = _resolve_tier(kwargs)
+        if option_error:
+            return error_response(
+                error=option_error,
+                error_type="invalid_argument",
+                provider="openai",
+                aspect_ratio=aspect,
+            )
+
         size = _SIZES.get(aspect, _SIZES["square"])
 
-        # gpt-image-2 returns b64_json unconditionally and REJECTS
-        # ``response_format`` as an unknown parameter. Don't send it.
+        requested_count = kwargs.get("num_images")
+        if requested_count is None:
+            requested_count = kwargs.get("n")
+        count, option_error = _int_option(
+            {"num_images": requested_count}, "num_images", minimum=1, maximum=10,
+        )
+        if option_error:
+            return error_response(
+                error=option_error,
+                error_type="invalid_argument",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
         payload: Dict[str, Any] = {
             "model": API_MODEL,
             "prompt": prompt,
             "size": size,
-            "n": 1,
+            "n": count or 1,
             "quality": meta["quality"],
         }
+
+        for key in ("output_format", "background", "moderation"):
+            value, option_error = _enum_option(kwargs, key)
+            if option_error:
+                return error_response(
+                    error=option_error,
+                    error_type="invalid_argument",
+                    provider="openai",
+                    model=tier_id,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
+            if value is not None:
+                payload[key] = value
+
+        compression, option_error = _int_option(
+            kwargs, "output_compression", minimum=0, maximum=100,
+        )
+        if option_error:
+            return error_response(
+                error=option_error,
+                error_type="invalid_argument",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+        if compression is not None:
+            if payload.get("output_format") not in {"jpeg", "webp"}:
+                return error_response(
+                    error="output_compression requires output_format jpeg or webp",
+                    error_type="invalid_argument",
+                    provider="openai",
+                    model=tier_id,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
+            payload["output_compression"] = compression
 
         try:
             client = openai.OpenAI(**client_options)
@@ -308,41 +453,49 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        first = data[0]
-        b64 = getattr(first, "b64_json", None)
-        url = getattr(first, "url", None)
-        revised_prompt = getattr(first, "revised_prompt", None)
+        image_refs: List[str] = []
+        revised_prompts: List[str] = []
 
-        if b64:
-            try:
-                saved_path = save_b64_image(b64, prefix=f"openai_{tier_id}")
-            except Exception as exc:
-                return error_response(
-                    error=f"Could not save image to cache: {exc}",
-                    error_type="io_error",
-                    provider="openai",
-                    model=tier_id,
-                    prompt=prompt,
-                    aspect_ratio=aspect,
-                )
-            image_ref = str(saved_path)
-        elif url:
-            # Defensive — gpt-image-2 returns b64 today, but OpenAI's API
-            # has previously returned URLs.  Cache the bytes locally so the
-            # gateway never tries to fetch an ephemeral / signed URL after
-            # it expires — same rationale as the xAI provider (#26942).
-            try:
-                saved_path = save_url_image(url, prefix=f"openai_{tier_id}")
-            except Exception as exc:
-                logger.warning(
-                    "OpenAI image URL %s could not be cached (%s); falling back to bare URL.",
-                    url,
-                    exc,
-                )
-                image_ref = url
-            else:
-                image_ref = str(saved_path)
-        else:
+        for item in data:
+            b64 = getattr(item, "b64_json", None)
+            url = getattr(item, "url", None)
+            revised_prompt = getattr(item, "revised_prompt", None)
+            if revised_prompt:
+                revised_prompts.append(revised_prompt)
+
+            if b64:
+                try:
+                    saved_path = save_b64_image(b64, prefix=f"openai_{tier_id}")
+                except Exception as exc:
+                    return error_response(
+                        error=f"Could not save image to cache: {exc}",
+                        error_type="io_error",
+                        provider="openai",
+                        model=tier_id,
+                        prompt=prompt,
+                        aspect_ratio=aspect,
+                    )
+                image_refs.append(str(saved_path))
+            elif url:
+                # Defensive: cache URL/data-URL output locally so the gateway
+                # always receives a stable path when possible.
+                try:
+                    if str(url).startswith("data:"):
+                        image_refs.append(
+                            _save_data_url_image(str(url), prefix=f"openai_{tier_id}")
+                        )
+                    else:
+                        saved_path = save_url_image(url, prefix=f"openai_{tier_id}")
+                        image_refs.append(str(saved_path))
+                except Exception as exc:
+                    logger.warning(
+                        "OpenAI image URL %s could not be cached (%s); falling back to bare URL.",
+                        url,
+                        exc,
+                    )
+                    image_refs.append(str(url))
+
+        if not image_refs:
             return error_response(
                 error="OpenAI response contained neither b64_json nor URL",
                 error_type="empty_response",
@@ -352,12 +505,28 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        extra: Dict[str, Any] = {"size": size, "quality": meta["quality"]}
-        if revised_prompt:
-            extra["revised_prompt"] = revised_prompt
+        extra: Dict[str, Any] = {
+            "size": size,
+            "quality": meta["quality"],
+            "num_images": len(image_refs),
+        }
+        if len(image_refs) > 1:
+            extra["images"] = image_refs
+        if revised_prompts:
+            extra["revised_prompt"] = revised_prompts[0]
+            if len(revised_prompts) > 1:
+                extra["revised_prompts"] = revised_prompts
+        for key in (
+            "output_format",
+            "background",
+            "moderation",
+            "output_compression",
+        ):
+            if key in payload:
+                extra[key] = payload[key]
 
         return success_response(
-            image=image_ref,
+            image=image_refs[0],
             model=tier_id,
             prompt=prompt,
             aspect_ratio=aspect,

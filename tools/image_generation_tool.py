@@ -614,13 +614,16 @@ def image_generate_tool(
     num_images: Optional[int] = None,
     output_format: Optional[str] = None,
     seed: Optional[int] = None,
+    quality: Optional[str] = None,
+    background: Optional[str] = None,
+    moderation: Optional[str] = None,
+    output_compression: Optional[int] = None,
 ) -> str:
     """Generate an image from a text prompt using the configured FAL model.
 
-    The agent-facing schema exposes only ``prompt`` and ``aspect_ratio``; the
-    remaining kwargs are overrides for direct Python callers and are filtered
-    per-model via the ``supports`` whitelist (unsupported overrides are
-    silently dropped so legacy callers don't break when switching models).
+    Backend-specific options are filtered per provider. Unsupported FAL
+    overrides are silently dropped so legacy callers don't break when switching
+    models.
 
     Returns a JSON string with ``{"success": bool, "image": url | None,
     "error": str, "error_type": str}``.
@@ -637,6 +640,10 @@ def image_generate_tool(
             "num_images": num_images,
             "output_format": output_format,
             "seed": seed,
+            "quality": quality,
+            "background": background,
+            "moderation": moderation,
+            "output_compression": output_compression,
         },
         "error": None,
         "success": False,
@@ -670,6 +677,14 @@ def image_generate_tool(
             overrides["num_images"] = num_images
         if output_format is not None:
             overrides["output_format"] = output_format
+        if quality is not None:
+            overrides["quality"] = quality
+        if background is not None:
+            overrides["background"] = background
+        if moderation is not None:
+            overrides["moderation"] = moderation
+        if output_compression is not None:
+            overrides["output_compression"] = output_compression
 
         arguments = _build_fal_payload(
             model_id, prompt, aspect_lc, seed=seed, overrides=overrides,
@@ -906,6 +921,39 @@ IMAGE_GENERATE_SCHEMA = {
                 "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
                 "default": DEFAULT_ASPECT_RATIO,
             },
+            "quality": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "Optional image quality tier for OpenAI-compatible backends. Use low for quick drafts, medium for normal use, high for best fidelity.",
+            },
+            "num_images": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "Number of images to request when the backend supports it.",
+                "default": 1,
+            },
+            "output_format": {
+                "type": "string",
+                "enum": ["png", "jpeg", "webp"],
+                "description": "Optional output file format for OpenAI-compatible backends.",
+            },
+            "background": {
+                "type": "string",
+                "enum": ["transparent", "opaque", "auto"],
+                "description": "Optional background mode for OpenAI-compatible backends.",
+            },
+            "moderation": {
+                "type": "string",
+                "enum": ["low", "auto"],
+                "description": "Optional moderation strictness for OpenAI-compatible backends.",
+            },
+            "output_compression": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Optional output compression for jpeg/webp output on compatible backends.",
+            },
         },
         "required": ["prompt"],
     },
@@ -951,7 +999,11 @@ def _read_configured_image_provider():
     return None
 
 
-def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
+def _dispatch_to_plugin_provider(
+    prompt: str,
+    aspect_ratio: str,
+    options: Optional[Dict[str, Any]] = None,
+):
     """Route the call to a plugin-registered provider when one is selected.
 
     Returns a JSON string on dispatch, or ``None`` to fall through to the
@@ -1008,6 +1060,8 @@ def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
         kwargs = {"prompt": prompt, "aspect_ratio": aspect_ratio}
         if configured_model:
             kwargs["model"] = configured_model
+        if options:
+            kwargs.update({k: v for k, v in options.items() if v is not None})
         result = provider.generate(**kwargs)
     except Exception as exc:
         logger.warning(
@@ -1035,16 +1089,25 @@ def _handle_image_generate(args, **kw):
     if not prompt:
         return tool_error("prompt is required for image generation")
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
+    options = {
+        "num_images": args.get("num_images"),
+        "quality": args.get("quality"),
+        "output_format": args.get("output_format"),
+        "background": args.get("background"),
+        "moderation": args.get("moderation"),
+        "output_compression": args.get("output_compression"),
+    }
 
     # Route to a plugin-registered provider if one is active (and it's
     # not the in-tree FAL path).
-    dispatched = _dispatch_to_plugin_provider(prompt, aspect_ratio)
+    dispatched = _dispatch_to_plugin_provider(prompt, aspect_ratio, options)
     if dispatched is not None:
         return dispatched
 
     return image_generate_tool(
         prompt=prompt,
         aspect_ratio=aspect_ratio,
+        **{k: v for k, v in options.items() if v is not None},
     )
 
 

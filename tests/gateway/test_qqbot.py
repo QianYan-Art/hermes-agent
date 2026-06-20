@@ -1656,6 +1656,35 @@ class TestDefaultInteractionDispatch:
 
         assert resolve_calls == [("agent:main:qqbot:c2c:u", "deny", False)]
 
+    @pytest.mark.asyncio
+    async def test_approval_click_with_no_pending_request_sends_notice(self):
+        adapter = self._make_adapter()
+        notices = []
+
+        async def fake_send(chat_id, content, reply_to=None, metadata=None):
+            notices.append((chat_id, content))
+            from gateway.platform import SendResult
+            return SendResult(success=True)
+
+        def fake_resolve(session_key, choice, resolve_all=False):
+            return 0
+
+        adapter.send = fake_send  # type: ignore[assignment]
+
+        import tools.approval
+        orig = tools.approval.resolve_gateway_approval
+        tools.approval.resolve_gateway_approval = fake_resolve
+        try:
+            from gateway.platforms.qqbot.keyboards import parse_interaction_event
+            event = parse_interaction_event({
+                "id": "i", "chat_type": 2, "user_openid": "u",
+                "data": {"resolved": {"button_data": "approve:agent:main:qqbot:c2c:u:allow-once"}},
+            })
+            await adapter._default_interaction_dispatch(event)
+        finally:
+            tools.approval.resolve_gateway_approval = orig
+
+        assert notices == [("u", "这条授权请求已失效或已被处理，请重新发起操作。")]
 
     @pytest.mark.asyncio
     async def test_approval_click_rejects_unauthorized_operator(self):

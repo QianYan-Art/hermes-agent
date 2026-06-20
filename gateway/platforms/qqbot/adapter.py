@@ -1098,6 +1098,31 @@ class QQAdapter(BasePlatformAdapter):
 
         return False
 
+    async def _send_approval_interaction_notice(
+            self,
+            session_key: str,
+            content: str,
+    ) -> None:
+        """Best-effort notice for expired or already-resolved approval buttons."""
+        parsed = self._parse_gateway_session_key(session_key)
+        if not parsed or parsed.get("platform") != "qqbot":
+            return
+        chat_id = str(parsed.get("chat_id", "")).strip()
+        chat_type = str(parsed.get("chat_type", "")).strip()
+        if not chat_id:
+            return
+        if chat_type == "dm":
+            chat_type = "c2c"
+        if chat_type in {"c2c", "group", "guild"}:
+            self._chat_type_map.setdefault(chat_id, chat_type)
+        try:
+            await self.send(chat_id, content)
+        except Exception as exc:
+            logger.debug(
+                "[%s] Could not send approval interaction notice: %s",
+                self._log_tag, exc,
+            )
+
     async def _default_interaction_dispatch(
             self,
             event: InteractionEvent,
@@ -1149,6 +1174,11 @@ class QQAdapter(BasePlatformAdapter):
                     self._log_tag, count, session_key, choice,
                     event.operator_openid,
                 )
+                if count == 0:
+                    await self._send_approval_interaction_notice(
+                        session_key,
+                        "这条授权请求已失效或已被处理，请重新发起操作。",
+                    )
             except Exception as exc:
                 logger.error(
                     "[%s] resolve_gateway_approval failed for session %s: %s",

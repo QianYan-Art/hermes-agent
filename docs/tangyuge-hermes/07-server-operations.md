@@ -127,6 +127,19 @@ Plugin policy:
 - Image generation uses the `image_gen/openai` provider against an
   OpenAI-compatible Images API endpoint. Keep endpoint URL in
   `image_gen.openai.base_url`; keep the secret in `OPENAI_IMAGE_API_KEY`.
+  The active API model sent to the endpoint is `gpt-image-2`; the visible
+  `gpt-image-2-low`, `gpt-image-2-medium`, and `gpt-image-2-high` names are
+  Hermes quality tiers. The `image_generate` tool can control `quality`,
+  `num_images`, `output_format`, `background`, `moderation`, and
+  `output_compression` when the active provider supports those fields.
+  `output_compression` is valid only with `output_format=jpeg` or
+  `output_format=webp`; the current bot-facing tool does not expose streaming
+  partial image events.
+- QQBot approval buttons are active for dangerous command approvals. `允许一次`
+  resolves the current pending approval only, `始终允许` persists the approval
+  through the normal permanent allowlist path, and `拒绝` denies it. If a
+  clicked button no longer has a pending approval to resolve, the bot replies
+  that the authorization request has expired or already been handled.
 - `hermes plugins list --plain` should list only `disk-cleanup`,
   `rtk-rewrite`, and `security-guidance`.
 - Disabled bundled plugin files may remain in the repo when retained toolsets
