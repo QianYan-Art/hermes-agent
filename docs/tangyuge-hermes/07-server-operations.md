@@ -129,11 +129,13 @@ Plugin policy:
   `image_gen.openai.base_url`; on the 81 runtime this is
   `https://suyuan.4071253.xyz/v1`. Keep the secret in
   `OPENAI_IMAGE_API_KEY`.
-  The active API model sent to the endpoint is `gpt-image-2`; the visible
+  The default API model sent to the endpoint is `gpt-image-2`. The visible
   `gpt-image-2-low`, `gpt-image-2-medium`, and `gpt-image-2-high` names are
-  Hermes quality tiers. The `image_generate` tool can control `quality`,
-  `num_images`, `output_format`, `background`, `moderation`, and
-  `output_compression` when the active provider supports those fields.
+  Hermes quality tiers; a non-tier `/auxmodel image <model>` value is treated
+  as the actual Images API model sent to the endpoint. The `image_generate`
+  tool can control `quality`, `num_images`, `output_format`, `background`,
+  `moderation`, `output_compression`, and a non-tier `model` / explicit
+  `api_model` override when the active provider supports those fields.
   `output_compression` is valid only with `output_format=jpeg` or
   `output_format=webp`; the current bot-facing tool does not expose streaming
   partial image events.

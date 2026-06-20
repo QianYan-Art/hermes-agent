@@ -1,23 +1,34 @@
 """OpenAI image generation backend.
 
-Exposes OpenAI's ``gpt-image-2`` model at three quality tiers as an
-:class:`ImageGenProvider` implementation. The tiers are implemented as
-three virtual model IDs so the ``hermes tools`` model picker and the
-``image_gen.model`` config key behave like any other multi-model backend:
+Exposes an OpenAI-compatible Images API as an :class:`ImageGenProvider`
+implementation. The default API model is ``gpt-image-2``. Hermes also exposes
+three virtual model IDs for quality control so the ``hermes tools`` model
+picker and the ``image_gen.model`` config key behave like any other
+multi-model backend:
 
     gpt-image-2-low     ~15s   fastest, good for iteration
     gpt-image-2-medium  ~40s   default — balanced
     gpt-image-2-high    ~2min  slowest, highest fidelity
 
-All three hit the same underlying API model (``gpt-image-2``) with a
-different ``quality`` parameter. Output is base64 JSON → saved under the
-shared Hermes image cache directory.
+Those three IDs hit the configured API model with a different ``quality``
+parameter. Output is base64 JSON → saved under the shared Hermes image cache
+directory. A non-tier ``model`` value is treated as the actual API model sent
+to the compatible endpoint.
 
 Selection precedence (first hit wins):
 
-1. ``OPENAI_IMAGE_MODEL`` env var (escape hatch for scripts / tests)
-2. ``image_gen.openai.model`` in ``config.yaml``
-3. ``image_gen.model`` in ``config.yaml`` (when it's one of our tier IDs)
+1. Runtime ``api_model`` / non-tier ``model`` tool argument
+2. ``OPENAI_IMAGE_API_MODEL`` env var
+3. ``image_gen.openai.api_model`` / ``image_gen.api_model`` in ``config.yaml``
+4. Non-tier ``OPENAI_IMAGE_MODEL`` / ``image_gen.openai.model`` /
+   ``image_gen.model`` value
+5. :data:`DEFAULT_API_MODEL` — ``gpt-image-2``
+
+Quality-tier precedence (first hit wins):
+
+1. ``quality`` tool argument
+2. Tier ``model`` tool argument or ``OPENAI_IMAGE_MODEL`` env var
+3. Tier ``image_gen.openai.model`` / ``image_gen.model`` in ``config.yaml``
 4. :data:`DEFAULT_MODEL` — ``gpt-image-2-medium``
 
 OpenAI-compatible image gateways can be configured with
@@ -49,11 +60,12 @@ logger = logging.getLogger(__name__)
 # Model catalog
 # ---------------------------------------------------------------------------
 #
-# All three IDs resolve to the same underlying API model with a different
-# ``quality`` setting. ``api_model`` is what gets sent to OpenAI;
+# All three IDs resolve to the configured underlying API model with a
+# different ``quality`` setting. ``api_model`` is what gets sent to OpenAI;
 # ``quality`` is the knob that changes generation time and output fidelity.
 
-API_MODEL = "gpt-image-2"
+DEFAULT_API_MODEL = "gpt-image-2"
+API_MODEL = DEFAULT_API_MODEL
 
 _MODELS: Dict[str, Dict[str, Any]] = {
     "gpt-image-2-low": {
@@ -132,28 +144,63 @@ def _openai_section() -> Dict[str, Any]:
     return section if isinstance(section, dict) else {}
 
 
+def _configured_model_value(cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    env_override = _clean_str(os.environ.get("OPENAI_IMAGE_MODEL"))
+    if env_override:
+        return env_override
+
+    cfg = cfg if isinstance(cfg, dict) else _load_openai_config()
+    openai_cfg = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
+    if isinstance(openai_cfg, dict):
+        value = _clean_str(openai_cfg.get("model"))
+        if value:
+            return value
+    return _clean_str(cfg.get("model"))
+
+
 def _resolve_model() -> Tuple[str, Dict[str, Any]]:
     """Decide which tier to use and return ``(model_id, meta)``."""
-    env_override = os.environ.get("OPENAI_IMAGE_MODEL")
-    if env_override and env_override in _MODELS:
-        return env_override, _MODELS[env_override]
-
     cfg = _load_openai_config()
-    openai_cfg = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
-    selected_model: Optional[str] = None
-    if isinstance(openai_cfg, dict):
-        value = openai_cfg.get("model")
-        if isinstance(value, str) and value in _MODELS:
-            selected_model = value
-    if selected_model is None:
-        top = cfg.get("model")
-        if isinstance(top, str) and top in _MODELS:
-            selected_model = top
-
-    if selected_model is not None:
+    selected_model = _configured_model_value(cfg)
+    if selected_model in _MODELS:
         return selected_model, _MODELS[selected_model]
 
     return DEFAULT_MODEL, _MODELS[DEFAULT_MODEL]
+
+
+def _resolve_api_model(kwargs: Dict[str, Any]) -> str:
+    """Resolve the actual Images API ``model`` value to send."""
+    explicit_model = (
+        _clean_str(kwargs.get("api_model"))
+        or _clean_str(kwargs.get("image_model"))
+    )
+    if explicit_model:
+        return explicit_model
+
+    requested_model = _clean_str(kwargs.get("model"))
+    if requested_model and requested_model not in _MODELS:
+        return requested_model
+
+    env_api_model = _clean_str(os.environ.get("OPENAI_IMAGE_API_MODEL"))
+    if env_api_model:
+        return env_api_model
+
+    cfg = _load_openai_config()
+    openai_cfg = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
+    if isinstance(openai_cfg, dict):
+        config_api_model = _clean_str(openai_cfg.get("api_model"))
+        if config_api_model:
+            return config_api_model
+
+    top_api_model = _clean_str(cfg.get("api_model"))
+    if top_api_model:
+        return top_api_model
+
+    configured_model = _configured_model_value(cfg)
+    if configured_model and configured_model not in _MODELS:
+        return configured_model
+
+    return DEFAULT_API_MODEL
 
 
 def _resolve_tier(kwargs: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Optional[str]]:
@@ -301,7 +348,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
         return {
             "name": "OpenAI",
             "badge": "paid",
-            "tag": "gpt-image-2 at low/medium/high quality tiers",
+            "tag": "OpenAI-compatible Images API with configurable model and quality tiers",
             "env_vars": [
                 {
                     "key": "OPENAI_IMAGE_API_KEY",
@@ -364,6 +411,8 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
+        api_model = _resolve_api_model(kwargs)
+        result_model = tier_id if api_model == DEFAULT_API_MODEL else api_model
         size = _SIZES.get(aspect, _SIZES["square"])
 
         requested_count = kwargs.get("num_images")
@@ -383,7 +432,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
             )
 
         payload: Dict[str, Any] = {
-            "model": API_MODEL,
+            "model": api_model,
             "prompt": prompt,
             "size": size,
             "n": count or 1,
@@ -437,7 +486,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 error=f"OpenAI image generation failed: {exc}",
                 error_type="api_error",
                 provider="openai",
-                model=tier_id,
+                model=result_model,
                 prompt=prompt,
                 aspect_ratio=aspect,
             )
@@ -448,7 +497,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 error="OpenAI returned no image data",
                 error_type="empty_response",
                 provider="openai",
-                model=tier_id,
+                model=result_model,
                 prompt=prompt,
                 aspect_ratio=aspect,
             )
@@ -471,7 +520,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
                         error=f"Could not save image to cache: {exc}",
                         error_type="io_error",
                         provider="openai",
-                        model=tier_id,
+                        model=result_model,
                         prompt=prompt,
                         aspect_ratio=aspect,
                     )
@@ -500,12 +549,14 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 error="OpenAI response contained neither b64_json nor URL",
                 error_type="empty_response",
                 provider="openai",
-                model=tier_id,
+                model=result_model,
                 prompt=prompt,
                 aspect_ratio=aspect,
             )
 
         extra: Dict[str, Any] = {
+            "api_model": api_model,
+            "quality_tier": tier_id,
             "size": size,
             "quality": meta["quality"],
             "num_images": len(image_refs),
@@ -527,7 +578,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
 
         return success_response(
             image=image_refs[0],
-            model=tier_id,
+            model=result_model,
             prompt=prompt,
             aspect_ratio=aspect,
             provider="openai",

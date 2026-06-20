@@ -101,16 +101,17 @@ external patch files to replay:
   endpoint `https://suyuan.4071253.xyz/v1`; keep the endpoint URL in docs and
   keep the key in `OPENAI_IMAGE_API_KEY`.
 - `image_generate` exposes controlled generation parameters to the agent while
-  keeping model selection in user/server config. The agent may pass
-  `quality`, `num_images`, `output_format`, `background`, `moderation`, and
-  `output_compression`; unsupported provider options are filtered or rejected
-  instead of silently changing the configured model. For the retained
-  OpenAI-compatible backend, Hermes always sends the underlying API model
-  `gpt-image-2`, maps the configured or requested quality tier to
-  `low`/`medium`/`high`, caches all returned images locally, and exposes the
-  first image as `image` plus the full list as `images` when more than one image
-  is returned. Do not expose `response_format` for this path because the gateway
-  returns cached local paths; do not expose `partial_images` until Hermes handles
+  keeping provider, endpoint URL, and credentials in user/server config. The
+  agent may pass `quality`, `num_images`, `output_format`, `background`,
+  `moderation`, `output_compression`, and a non-tier `model` / explicit
+  `api_model` override; unsupported provider options are filtered or rejected.
+  For the retained OpenAI-compatible backend, Hermes defaults to the underlying
+  API model `gpt-image-2`, maps the configured or requested quality tier to
+  `low`/`medium`/`high`, treats a non-tier model name as the actual Images API
+  model, caches all returned images locally, and exposes the first image as
+  `image` plus the full list as `images` when more than one image is returned.
+  Do not expose `response_format` for this path because the gateway returns
+  cached local paths; do not expose `partial_images` until Hermes handles
   streaming image events.
 - QQBot approval buttons map to the same gateway choices as text commands:
   `允许一次` -> `once`, `始终允许` -> `always`, `拒绝` -> `deny`. DM/C2C clicks are

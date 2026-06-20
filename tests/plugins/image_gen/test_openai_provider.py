@@ -117,6 +117,7 @@ class TestModelResolution:
         monkeypatch.setenv("OPENAI_IMAGE_MODEL", "bogus-tier")
         model_id, _ = openai_plugin._resolve_model()
         assert model_id == openai_plugin.DEFAULT_MODEL
+        assert openai_plugin._resolve_api_model({}) == "bogus-tier"
 
     def test_config_openai_model(self, tmp_path):
         import yaml
@@ -136,6 +137,35 @@ class TestModelResolution:
         model_id, meta = openai_plugin._resolve_model()
         assert model_id == "gpt-image-2-high"
         assert meta["quality"] == "high"
+
+    def test_config_non_tier_model_is_api_model(self, tmp_path):
+        import yaml
+        (tmp_path / "config.yaml").write_text(
+            yaml.safe_dump({"image_gen": {"openai": {"model": "custom-image-model"}}})
+        )
+
+        model_id, meta = openai_plugin._resolve_model()
+
+        assert model_id == "gpt-image-2-medium"
+        assert meta["quality"] == "medium"
+        assert openai_plugin._resolve_api_model({}) == "custom-image-model"
+
+    def test_config_api_model_field_wins_over_tier_model(self, tmp_path):
+        import yaml
+        (tmp_path / "config.yaml").write_text(
+            yaml.safe_dump({
+                "image_gen": {
+                    "model": "gpt-image-2-high",
+                    "openai": {"api_model": "custom-api-model"},
+                },
+            })
+        )
+
+        model_id, meta = openai_plugin._resolve_model()
+
+        assert model_id == "gpt-image-2-high"
+        assert meta["quality"] == "high"
+        assert openai_plugin._resolve_api_model({}) == "custom-api-model"
 
 
 # ── Generate ────────────────────────────────────────────────────────────────
@@ -261,6 +291,38 @@ class TestGenerate:
         assert call_kwargs["background"] == "transparent"
         assert call_kwargs["moderation"] == "low"
         assert call_kwargs["output_compression"] == 80
+
+    def test_non_tier_model_argument_controls_api_model(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", model="custom-image-model", quality="high")
+
+        assert result["success"] is True
+        assert result["model"] == "custom-image-model"
+        assert result["api_model"] == "custom-image-model"
+        assert result["quality_tier"] == "gpt-image-2-high"
+        assert result["quality"] == "high"
+        call_kwargs = fake_client.images.generate.call_args.kwargs
+        assert call_kwargs["model"] == "custom-image-model"
+        assert call_kwargs["quality"] == "high"
+
+    def test_api_model_argument_controls_api_model(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", model="gpt-image-2-low", api_model="custom-api-model")
+
+        assert result["success"] is True
+        assert result["model"] == "custom-api-model"
+        assert result["api_model"] == "custom-api-model"
+        assert result["quality_tier"] == "gpt-image-2-low"
+        assert result["quality"] == "low"
+        call_kwargs = fake_client.images.generate.call_args.kwargs
+        assert call_kwargs["model"] == "custom-api-model"
+        assert call_kwargs["quality"] == "low"
 
     def test_multiple_images_are_all_cached(self, provider):
         fake_client = MagicMock()

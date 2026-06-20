@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
@@ -50,3 +51,36 @@ async def test_auxmodel_openai_image_auth_uses_default_image_key_env(tmp_path, m
     assert "  provider: openai" in result
     assert "  endpoint: https://suyuan.4071253.xyz/v1" in result
     assert "  auth: OPENAI_IMAGE_API_KEY（已设置）" in result
+
+
+@pytest.mark.asyncio
+async def test_auxmodel_image_can_write_non_tier_api_model(tmp_path, monkeypatch):
+    hermes_home = tmp_path / ".hermes"
+    hermes_home.mkdir()
+    config_path = hermes_home / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "image_gen:",
+                "  provider: openai",
+                "  model: gpt-image-2-medium",
+                "  openai:",
+                "    base_url: https://suyuan.4071253.xyz/v1",
+                "    model: gpt-image-2-medium",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+    from gateway.run import GatewayRunner
+
+    runner = object.__new__(GatewayRunner)
+    result = await runner._handle_auxmodel_command(
+        _event("/auxmodel image custom-image-model")
+    )
+    saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    assert "新模型: custom-image-model" in result
+    assert saved["image_gen"]["model"] == "custom-image-model"
+    assert saved["image_gen"]["openai"]["model"] == "custom-image-model"

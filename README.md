@@ -63,6 +63,11 @@ during deploys:
   multi-key failover, OpenAI-compatible image backend behavior, mail VPS operation,
   `hermes-md-locator`, and Tangyuge roleplay references are built-in repo
   behavior, not external patch files to replay.
+- The OpenAI-compatible image backend defaults to `gpt-image-2` at
+  `low`/`medium`/`high` quality tiers, but `/auxmodel image <model>` and the
+  `image_generate` tool's non-tier `model` / explicit `api_model` override can
+  switch the actual Images API model without changing provider, endpoint URL,
+  or API key.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a
