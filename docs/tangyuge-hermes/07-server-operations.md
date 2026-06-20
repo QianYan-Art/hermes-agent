@@ -126,7 +126,9 @@ Plugin policy:
   `security-guidance`.
 - Image generation uses the `image_gen/openai` provider against an
   OpenAI-compatible Images API endpoint. Keep endpoint URL in
-  `image_gen.openai.base_url`; keep the secret in `OPENAI_IMAGE_API_KEY`.
+  `image_gen.openai.base_url`; on the 81 runtime this is
+  `https://suyuan.4071253.xyz/v1`. Keep the secret in
+  `OPENAI_IMAGE_API_KEY`.
   The active API model sent to the endpoint is `gpt-image-2`; the visible
   `gpt-image-2-low`, `gpt-image-2-medium`, and `gpt-image-2-high` names are
   Hermes quality tiers. The `image_generate` tool can control `quality`,

@@ -97,7 +97,9 @@ external patch files to replay:
   behavior, mail-vps-ops, hermes-md-locator, and tangyuge-roleplay are retained
   as built-in repo behavior or built-in skills. Image backend secrets remain
   server-local in runtime environment variables and are never stored in repo
-  docs.
+  docs. The 81 runtime image backend uses the user CPA/OpenAI-compatible
+  endpoint `https://suyuan.4071253.xyz/v1`; keep the endpoint URL in docs and
+  keep the key in `OPENAI_IMAGE_API_KEY`.
 - `image_generate` exposes controlled generation parameters to the agent while
   keeping model selection in user/server config. The agent may pass
   `quality`, `num_images`, `output_format`, `background`, `moderation`, and
