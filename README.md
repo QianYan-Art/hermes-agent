@@ -79,6 +79,10 @@ during deploys:
   Cached local image results include a `MEDIA:<path>` tag in the tool result;
   gateway auto-appends that tag and QQBot sends the image through its live
   adapter's native upload path.
+  When `image_gen.provider` is explicitly configured, `image_generate` stays
+  visible in the model tool list even if the provider is temporarily missing
+  credentials; the tool call returns the provider/auth error directly instead
+  of encouraging manual curl/Python/heredoc workarounds.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a

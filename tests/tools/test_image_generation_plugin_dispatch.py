@@ -31,7 +31,80 @@ class _FakeCodexProvider(ImageGenProvider):
         }
 
 
+class _UnavailableCodexProvider(_FakeCodexProvider):
+    def is_available(self) -> bool:
+        return False
+
+
 class TestPluginDispatch:
+    def test_requirements_keep_configured_provider_visible(self, monkeypatch):
+        import model_tools
+        from tools import image_generation_tool
+        from tools.registry import invalidate_check_fn_cache
+        from agent import image_gen_registry as registry_module
+        from hermes_cli import plugins as plugins_module
+
+        provider = _UnavailableCodexProvider()
+
+        monkeypatch.setattr(image_generation_tool, "check_fal_api_key", lambda: False)
+        monkeypatch.setattr(
+            image_generation_tool,
+            "_read_configured_image_provider",
+            lambda: "codex",
+        )
+        monkeypatch.setattr(
+            plugins_module,
+            "_ensure_plugins_discovered",
+            lambda force=False: None,
+        )
+        monkeypatch.setattr(
+            registry_module,
+            "get_provider",
+            lambda name: provider if name == "codex" else None,
+        )
+        monkeypatch.setattr(registry_module, "list_providers", lambda: [provider])
+
+        invalidate_check_fn_cache()
+        model_tools._clear_tool_defs_cache()
+
+        assert image_generation_tool.check_image_generation_requirements() is True
+
+        definitions = model_tools.get_tool_definitions(
+            enabled_toolsets=["image_gen"],
+            quiet_mode=True,
+        )
+        assert [d["function"]["name"] for d in definitions] == ["image_generate"]
+        properties = definitions[0]["function"]["parameters"]["properties"]
+        assert "input_image" in properties
+        assert "input_images" in properties
+        assert "mask" in properties
+        assert "api_model" in properties
+
+    def test_requirements_hide_unconfigured_unavailable_provider(self, monkeypatch):
+        from tools import image_generation_tool
+        from tools.registry import invalidate_check_fn_cache
+        from agent import image_gen_registry as registry_module
+        from hermes_cli import plugins as plugins_module
+
+        provider = _UnavailableCodexProvider()
+
+        monkeypatch.setattr(image_generation_tool, "check_fal_api_key", lambda: False)
+        monkeypatch.setattr(
+            image_generation_tool,
+            "_read_configured_image_provider",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            plugins_module,
+            "_ensure_plugins_discovered",
+            lambda force=False: None,
+        )
+        monkeypatch.setattr(registry_module, "list_providers", lambda: [provider])
+
+        invalidate_check_fn_cache()
+
+        assert image_generation_tool.check_image_generation_requirements() is False
+
     def test_dispatch_routes_to_codex_provider(self, monkeypatch, tmp_path):
         from tools import image_generation_tool
         from agent import image_gen_registry as registry_module

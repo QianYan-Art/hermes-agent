@@ -114,6 +114,11 @@ external patch files to replay:
   filtered or rejected.
   User requests such as "生图" must call `image_generate` directly; agents
   should not hand-write curl/Python/heredoc calls to external image endpoints.
+  If `image_gen.provider` is explicitly configured, `image_generate` remains
+  visible in the model tool list even when that provider is temporarily
+  unavailable or lacks credentials; the call path returns the exact
+  provider/auth error, so the model must not infer that image generation is
+  unavailable and must not replace the tool with manual shell/API scripts.
   For the retained OpenAI-compatible backend, Hermes defaults to the underlying
   API model `gpt-image-2`, maps the configured or requested quality tier to
   `low`/`medium`/`high`, treats a non-tier model name as the actual Images API

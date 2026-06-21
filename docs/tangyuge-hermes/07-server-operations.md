@@ -143,6 +143,12 @@ Plugin policy:
   `output_compression` is valid only with `output_format=jpeg` or
   `output_format=webp`; the current bot-facing tool does not expose streaming
   partial image events.
+  Because this runtime explicitly sets `image_gen.provider: openai`,
+  `image_generate` must appear in the model-visible tool list even if the
+  provider has a transient credential or dependency problem. Those failures
+  belong in the tool result as `auth_required`, `provider_not_registered`, or
+  provider-specific errors; the model should still call `image_generate`
+  directly instead of creating curl/Python/heredoc scripts.
 - Bot image-generation requests should use `image_generate` directly. The tool
   returns cached local image paths with `media_tag` (`MEDIA:<path>`), and
   `gateway/run.py` auto-appends current-turn `image_generate` media tags when

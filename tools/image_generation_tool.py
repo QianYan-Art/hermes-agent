@@ -851,12 +851,14 @@ def check_image_generation_requirements() -> bool:
     Providers are considered in this order:
 
     1. The in-tree FAL backend (FAL_KEY or managed gateway).
-    2. Any plugin-registered provider whose ``is_available()`` returns True.
+    2. The explicitly configured plugin provider, when ``image_gen.provider``
+       is set.
+    3. Any plugin-registered provider whose ``is_available()`` returns True.
 
-    Plugins win only when the in-tree FAL path is NOT ready, which matches
-    the historical behavior: shipping hermes with a FAL key configured
-    should still expose the tool. The active selection among ready
-    providers is resolved per-call by ``image_gen.provider``.
+    Explicit provider configuration keeps the tool visible even when the
+    provider currently lacks credentials. That lets the model call
+    ``image_generate`` and receive a precise provider/auth error instead of
+    falling back to heredoc/curl workarounds because the tool was hidden.
     """
     try:
         if check_fal_api_key():
@@ -871,10 +873,24 @@ def check_image_generation_requirements() -> bool:
 
     # Probe plugin providers. Discovery is idempotent and cheap.
     try:
-        from agent.image_gen_registry import list_providers
+        from agent.image_gen_registry import get_provider, list_providers
         from hermes_cli.plugins import _ensure_plugins_discovered
 
+        configured = _read_configured_image_provider()
         _ensure_plugins_discovered()
+        if configured:
+            provider = get_provider(configured)
+            if provider is None:
+                try:
+                    _ensure_plugins_discovered(force=True)
+                    provider = get_provider(configured)
+                except Exception:
+                    provider = None
+            # Explicit config is enough to expose the tool. If the provider
+            # is unavailable or missing, dispatch returns the actionable error
+            # with the configured provider name.
+            return True
+
         for provider in list_providers():
             try:
                 if provider.is_available():
@@ -882,7 +898,8 @@ def check_image_generation_requirements() -> bool:
             except Exception:
                 continue
     except Exception:
-        pass
+        if _read_configured_image_provider():
+            return True
 
     return False
 
