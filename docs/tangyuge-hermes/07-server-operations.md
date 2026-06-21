@@ -146,6 +146,13 @@ Plugin policy:
   running QQBot adapter's native upload path; without that live adapter, the
   tool returns an explicit text-only REST-path error instead of dropping the
   attachment.
+- QQBot daily expression supports two practical paths: Unicode emoji directly
+  in text, or existing local sticker/image files under
+  `/home/hermes/.hermes/emojis/` sent with `MEDIA:/absolute/path`. Bracketed
+  placeholders such as `[害羞/比心]` are plain text on QQ and should not be used
+  as a sticker-sending mechanism. The current QQBot adapter sends text,
+  markdown, and native media files; it does not expose QQ native face-ID
+  sending.
 - QQBot approval buttons are active for dangerous command approvals. `允许一次`
   resolves the current pending approval only, `始终允许` persists the approval
   through the normal permanent allowlist path, and `拒绝` denies it. If a

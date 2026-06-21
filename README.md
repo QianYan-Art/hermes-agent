@@ -45,6 +45,10 @@ during deploys:
   fixed UI blocks, numeric meters, relationship/mood tables, HTML folding
   blocks, or per-turn recap blocks unless the user explicitly asks for
   structured output in that turn.
+- QQBot daily expression should use Unicode emoji directly in text or send
+  existing sticker images from `/home/hermes/.hermes/emojis/` with
+  `MEDIA:/absolute/path`. Bracketed placeholders such as `[害羞/比心]` are plain
+  text on QQ and are not a sticker-sending mechanism.
 - `SOUL.md` is a style overlay only. Legacy default SOUL files that still say
   `You are Hermes Agent` are normalized to the style-only overlay at load time,
   and the 81 runtime file must not redefine identity.

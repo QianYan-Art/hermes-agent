@@ -589,9 +589,13 @@ PLATFORM_HINTS = {
     ),
     "qqbot": (
         "You are on QQ, a popular Chinese messaging platform. QQ supports markdown formatting "
-        "and emoji. You can send media files natively: include MEDIA:/absolute/path/to/file in "
-        "your response. Images are sent as native photos, and other files arrive as downloadable "
-        "documents."
+        "and Unicode emoji in normal text. For casual emotional reactions, either use Unicode "
+        "emoji directly in the message or send one existing local sticker image from "
+        "/home/hermes/.hermes/emojis/ by including MEDIA:/absolute/path/to/file in your response. "
+        "Images are sent as native photos, and other files arrive as downloadable documents. "
+        "Do not output bracketed sticker placeholders such as [害羞/比心]; on QQ they render as "
+        "plain text, not stickers. Do not invent QQ native face IDs; this adapter sends text, "
+        "markdown, and native media files."
     ),
     "yuanbao": (
         "You are on Yuanbao (腾讯元宝), a Chinese AI assistant platform. "

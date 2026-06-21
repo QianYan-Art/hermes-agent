@@ -27,6 +27,10 @@ chat prose. SillyTavern-style helper UI must not leak into normal replies:
 no status bars, summary panels, inner-thought panels, affection meters, mood
 tables, HTML folding blocks, fixed templates, or per-turn summaries unless the
 user explicitly asks for structured output in that turn.
+For daily emotional expression, use Unicode emoji directly in text or send an
+existing sticker image from `/home/hermes/.hermes/emojis/` with
+`MEDIA:/absolute/path`. Do not output bracketed placeholders such as
+`[害羞/比心]` or `[捧着星星/偷偷看]`; QQ renders them as plain text.
 
 ## Runtime Sources
 

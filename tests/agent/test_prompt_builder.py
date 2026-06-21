@@ -845,6 +845,14 @@ class TestPromptBuilderConstants:
         assert "MEDIA:" in hint
         assert "Markdown" in hint
 
+    def test_platform_hints_qqbot_sticker_guidance(self):
+        hint = PLATFORM_HINTS["qqbot"]
+        assert "Unicode emoji" in hint
+        assert "/home/hermes/.hermes/emojis/" in hint
+        assert "MEDIA:/absolute/path/to/file" in hint
+        assert "bracketed sticker placeholders" in hint
+        assert "QQ native face IDs" in hint
+
     def test_platform_hints_webui(self):
         hint = PLATFORM_HINTS["webui"]
         assert "WebUI" in hint
