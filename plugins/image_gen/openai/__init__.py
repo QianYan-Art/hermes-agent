@@ -39,9 +39,15 @@ official OpenAI API.
 
 from __future__ import annotations
 
+import base64
+from contextlib import ExitStack
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+import tempfile
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import unquote, urlparse
+from urllib.request import Request, urlopen
 
 from agent.image_gen_provider import (
     DEFAULT_ASPECT_RATIO,
@@ -106,6 +112,8 @@ _OPTION_ENUMS = {
     "output_format": {"png", "jpeg", "webp"},
     "background": {"transparent", "opaque", "auto"},
     "moderation": {"low", "auto"},
+    "style": {"vivid", "natural"},
+    "input_fidelity": {"high", "low"},
 }
 
 _DATA_URL_EXTENSIONS = {
@@ -304,6 +312,100 @@ def _save_data_url_image(data_url: str, *, prefix: str) -> str:
     return str(save_b64_image(payload, prefix=prefix, extension=extension))
 
 
+def _coerce_image_inputs(kwargs: Dict[str, Any]) -> List[str]:
+    values: List[str] = []
+    for key in ("input_image", "image", "reference_image"):
+        value = kwargs.get(key)
+        if value is not None:
+            values.append(value)
+    value = kwargs.get("input_images")
+    if value is not None:
+        values.append(value)
+
+    flattened: List[str] = []
+    for value in values:
+        if isinstance(value, str):
+            cleaned = _clean_str(value)
+            if cleaned:
+                flattened.append(cleaned)
+        elif isinstance(value, Iterable):
+            for item in value:
+                cleaned = _clean_str(item)
+                if cleaned:
+                    flattened.append(cleaned)
+    return flattened
+
+
+def _extension_from_content_type(value: Optional[str]) -> str:
+    if not value:
+        return "png"
+    media_type = value.split(";", 1)[0].strip().lower()
+    return _DATA_URL_EXTENSIONS.get(media_type, "png")
+
+
+def _extension_from_ref(ref: str, *, fallback: str = "png") -> str:
+    parsed = urlparse(ref)
+    path = parsed.path if parsed.scheme else ref
+    suffix = Path(path).suffix.lower().lstrip(".")
+    if suffix in {"png", "jpg", "jpeg", "webp", "gif"}:
+        return "jpg" if suffix == "jpeg" else suffix
+    return fallback
+
+
+def _write_data_url_to_temp(data_url: str, temp_dir: Path, index: int) -> Path:
+    header, sep, payload = data_url.partition(",")
+    if sep != "," or not header.lower().startswith("data:"):
+        raise ValueError("invalid data URL image")
+    media_type = header[5:].split(";", 1)[0].strip().lower()
+    extension = _DATA_URL_EXTENSIONS.get(media_type, "png")
+    path = temp_dir / f"input_{index}.{extension}"
+    path.write_bytes(base64.b64decode(payload))
+    return path
+
+
+def _download_image_to_temp(ref: str, temp_dir: Path, index: int) -> Path:
+    request = Request(ref, headers={"User-Agent": "Tangyuge-Hermes image_generate"})
+    with urlopen(request, timeout=60) as response:
+        content = response.read()
+        content_type = response.headers.get("content-type")
+    extension = _extension_from_ref(ref, fallback=_extension_from_content_type(content_type))
+    path = temp_dir / f"input_{index}.{extension}"
+    path.write_bytes(content)
+    return path
+
+
+def _path_from_file_url(ref: str) -> Path:
+    parsed = urlparse(ref)
+    if parsed.scheme != "file":
+        raise ValueError("not a file URL")
+    return Path(unquote(parsed.path))
+
+
+def _prepare_upload_files(
+    refs: List[str],
+    stack: ExitStack,
+    *,
+    label: str,
+) -> List[Any]:
+    temp_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="hermes_image_edit_")))
+    handles: List[Any] = []
+    for index, ref in enumerate(refs, start=1):
+        parsed = urlparse(ref)
+        if ref.lower().startswith("data:"):
+            path = _write_data_url_to_temp(ref, temp_dir, index)
+        elif parsed.scheme in {"http", "https"}:
+            path = _download_image_to_temp(ref, temp_dir, index)
+        elif parsed.scheme == "file":
+            path = _path_from_file_url(ref)
+        else:
+            path = Path(ref).expanduser()
+
+        if not path.is_file():
+            raise ValueError(f"{label} file not found: {ref}")
+        handles.append(stack.enter_context(path.open("rb")))
+    return handles
+
+
 # ---------------------------------------------------------------------------
 # Provider
 # ---------------------------------------------------------------------------
@@ -414,6 +516,28 @@ class OpenAIImageGenProvider(ImageGenProvider):
         api_model = _resolve_api_model(kwargs)
         result_model = tier_id if api_model == DEFAULT_API_MODEL else api_model
         size = _SIZES.get(aspect, _SIZES["square"])
+        input_images = _coerce_image_inputs(kwargs)
+        mask_ref = _clean_str(kwargs.get("mask"))
+        is_edit = bool(input_images)
+
+        if mask_ref and not is_edit:
+            return error_response(
+                error="mask requires input_image",
+                error_type="invalid_argument",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+        if not is_edit and _clean_str(kwargs.get("input_fidelity")):
+            return error_response(
+                error="input_fidelity requires input_image",
+                error_type="invalid_argument",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
 
         requested_count = kwargs.get("num_images")
         if requested_count is None:
@@ -439,7 +563,8 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "quality": meta["quality"],
         }
 
-        for key in ("output_format", "background", "moderation"):
+        shared_enum_keys = ("output_format", "background")
+        for key in shared_enum_keys:
             value, option_error = _enum_option(kwargs, key)
             if option_error:
                 return error_response(
@@ -452,6 +577,34 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 )
             if value is not None:
                 payload[key] = value
+
+        if is_edit:
+            value, option_error = _enum_option(kwargs, "input_fidelity")
+            if option_error:
+                return error_response(
+                    error=option_error,
+                    error_type="invalid_argument",
+                    provider="openai",
+                    model=tier_id,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
+            if value is not None:
+                payload["input_fidelity"] = value
+        else:
+            for key in ("moderation", "style"):
+                value, option_error = _enum_option(kwargs, key)
+                if option_error:
+                    return error_response(
+                        error=option_error,
+                        error_type="invalid_argument",
+                        provider="openai",
+                        model=tier_id,
+                        prompt=prompt,
+                        aspect_ratio=aspect,
+                    )
+                if value is not None:
+                    payload[key] = value
 
         compression, option_error = _int_option(
             kwargs, "output_compression", minimum=0, maximum=100,
@@ -479,11 +632,26 @@ class OpenAIImageGenProvider(ImageGenProvider):
 
         try:
             client = openai.OpenAI(**client_options)
-            response = client.images.generate(**payload)
+            if is_edit:
+                with ExitStack() as stack:
+                    image_files = _prepare_upload_files(
+                        input_images,
+                        stack,
+                        label="input_image",
+                    )
+                    edit_payload = dict(payload)
+                    edit_payload["image"] = image_files[0] if len(image_files) == 1 else image_files
+                    if mask_ref:
+                        mask_files = _prepare_upload_files([mask_ref], stack, label="mask")
+                        edit_payload["mask"] = mask_files[0]
+                    response = client.images.edit(**edit_payload)
+            else:
+                response = client.images.generate(**payload)
         except Exception as exc:
-            logger.debug("OpenAI image generation failed", exc_info=True)
+            operation = "edit" if is_edit else "generation"
+            logger.debug("OpenAI image %s failed", operation, exc_info=True)
             return error_response(
-                error=f"OpenAI image generation failed: {exc}",
+                error=f"OpenAI image {operation} failed: {exc}",
                 error_type="api_error",
                 provider="openai",
                 model=result_model,
@@ -504,6 +672,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
 
         image_refs: List[str] = []
         revised_prompts: List[str] = []
+        cache_prefix = f"openai_{'edit_' if is_edit else ''}{tier_id}"
 
         for item in data:
             b64 = getattr(item, "b64_json", None)
@@ -514,7 +683,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
 
             if b64:
                 try:
-                    saved_path = save_b64_image(b64, prefix=f"openai_{tier_id}")
+                    saved_path = save_b64_image(b64, prefix=cache_prefix)
                 except Exception as exc:
                     return error_response(
                         error=f"Could not save image to cache: {exc}",
@@ -531,10 +700,10 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 try:
                     if str(url).startswith("data:"):
                         image_refs.append(
-                            _save_data_url_image(str(url), prefix=f"openai_{tier_id}")
+                            _save_data_url_image(str(url), prefix=cache_prefix)
                         )
                     else:
-                        saved_path = save_url_image(url, prefix=f"openai_{tier_id}")
+                        saved_path = save_url_image(url, prefix=cache_prefix)
                         image_refs.append(str(saved_path))
                 except Exception as exc:
                     logger.warning(
@@ -560,7 +729,11 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "size": size,
             "quality": meta["quality"],
             "num_images": len(image_refs),
+            "operation": "edit" if is_edit else "generate",
         }
+        if is_edit:
+            extra["input_image_count"] = len(input_images)
+            extra["has_mask"] = bool(mask_ref)
         if len(image_refs) > 1:
             extra["images"] = image_refs
         if revised_prompts:
@@ -572,6 +745,8 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "background",
             "moderation",
             "output_compression",
+            "style",
+            "input_fidelity",
         ):
             if key in payload:
                 extra[key] = payload[key]

@@ -278,6 +278,7 @@ class TestGenerate:
                 background="transparent",
                 moderation="low",
                 output_compression=80,
+                style="natural",
             )
 
         assert result["success"] is True
@@ -291,6 +292,7 @@ class TestGenerate:
         assert call_kwargs["background"] == "transparent"
         assert call_kwargs["moderation"] == "low"
         assert call_kwargs["output_compression"] == 80
+        assert call_kwargs["style"] == "natural"
 
     def test_non_tier_model_argument_controls_api_model(self, provider):
         fake_client = MagicMock()
@@ -356,11 +358,90 @@ class TestGenerate:
         assert result["image"].endswith(".png")
         assert Path(result["image"]).exists()
 
+    def test_input_image_uses_edit_endpoint(self, provider, tmp_path):
+        source = tmp_path / "source.png"
+        source.write_bytes(bytes.fromhex(_PNG_HEX))
+        fake_client = MagicMock()
+        fake_client.images.edit.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate(
+                "make it brighter",
+                aspect_ratio="square",
+                input_image=str(source),
+                input_fidelity="high",
+            )
+
+        assert result["success"] is True
+        assert result["operation"] == "edit"
+        assert result["input_image_count"] == 1
+        assert result["has_mask"] is False
+        assert result["media_tag"].startswith("MEDIA:")
+        fake_client.images.generate.assert_not_called()
+        call_kwargs = fake_client.images.edit.call_args.kwargs
+        assert call_kwargs["model"] == "gpt-image-2"
+        assert call_kwargs["prompt"] == "make it brighter"
+        assert call_kwargs["size"] == "1024x1024"
+        assert call_kwargs["quality"] == "medium"
+        assert call_kwargs["input_fidelity"] == "high"
+        assert call_kwargs["image"].name == str(source)
+
+    def test_input_images_and_mask_are_forwarded_to_edit(self, provider, tmp_path):
+        source_one = tmp_path / "source-one.png"
+        source_two = tmp_path / "source-two.png"
+        mask = tmp_path / "mask.png"
+        for path in (source_one, source_two, mask):
+            path.write_bytes(bytes.fromhex(_PNG_HEX))
+        fake_client = MagicMock()
+        fake_client.images.edit.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate(
+                "replace the background",
+                input_images=[str(source_one), str(source_two)],
+                mask=str(mask),
+                quality="high",
+                output_format="webp",
+                output_compression=70,
+            )
+
+        assert result["success"] is True
+        assert result["operation"] == "edit"
+        assert result["input_image_count"] == 2
+        assert result["has_mask"] is True
+        call_kwargs = fake_client.images.edit.call_args.kwargs
+        assert [handle.name for handle in call_kwargs["image"]] == [
+            str(source_one),
+            str(source_two),
+        ]
+        assert call_kwargs["mask"].name == str(mask)
+        assert call_kwargs["quality"] == "high"
+        assert call_kwargs["output_format"] == "webp"
+        assert call_kwargs["output_compression"] == 70
+
+    def test_mask_without_input_image_is_rejected(self, provider, tmp_path):
+        mask = tmp_path / "mask.png"
+        mask.write_bytes(bytes.fromhex(_PNG_HEX))
+
+        result = provider.generate("replace the background", mask=str(mask))
+
+        assert result["success"] is False
+        assert result["error_type"] == "invalid_argument"
+        assert result["error"] == "mask requires input_image"
+
+    def test_input_fidelity_without_input_image_is_rejected(self, provider):
+        result = provider.generate("make it sharper", input_fidelity="high")
+
+        assert result["success"] is False
+        assert result["error_type"] == "invalid_argument"
+        assert result["error"] == "input_fidelity requires input_image"
+
     @pytest.mark.parametrize("kwargs,error", [
         ({"quality": "ultra"}, "quality must be one of"),
         ({"num_images": 11}, "num_images must be <="),
         ({"output_compression": -1}, "output_compression must be >="),
         ({"output_compression": 101}, "output_compression must be <="),
+        ({"style": "cinematic"}, "style must be one of"),
         (
             {"output_format": "png", "output_compression": 80},
             "output_compression requires output_format jpeg or webp",

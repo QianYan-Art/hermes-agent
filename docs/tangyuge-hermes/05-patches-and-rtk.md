@@ -103,15 +103,24 @@ external patch files to replay:
 - `image_generate` exposes controlled generation parameters to the agent while
   keeping provider, endpoint URL, and credentials in user/server config. The
   agent may pass `quality`, `num_images`, `output_format`, `background`,
-  `moderation`, `output_compression`, and a non-tier `model` / explicit
-  `api_model` override; unsupported provider options are filtered or rejected.
+  `moderation`, `output_compression`, `style`, and a non-tier `model` /
+  explicit `api_model` override for text-to-image. For image editing, the
+  agent may pass `input_image` (single source), `input_images` (multiple
+  sources), `mask` (local inpainting), `input_fidelity`, plus the shared
+  quality/format/background/compression/model controls supported by the active
+  OpenAI-compatible endpoint. Source and mask values may be local paths,
+  `file://` URLs, HTTP(S) URLs, or data URLs; Hermes normalizes them to SDK
+  upload files before calling `images.edit`. Unsupported provider options are
+  filtered or rejected.
   User requests such as "生图" must call `image_generate` directly; agents
   should not hand-write curl/Python/heredoc calls to external image endpoints.
   For the retained OpenAI-compatible backend, Hermes defaults to the underlying
   API model `gpt-image-2`, maps the configured or requested quality tier to
   `low`/`medium`/`high`, treats a non-tier model name as the actual Images API
-  model, caches all returned images locally, and exposes the first image as
-  `image` plus the full list as `images` when more than one image is returned.
+  model, calls `images.generate` when no source image is supplied, calls
+  `images.edit` when `input_image` / `input_images` is supplied, caches all
+  returned images locally, and exposes the first image as `image` plus the full
+  list as `images` when more than one image is returned.
   Local cached image results also include `media_tag` (`MEDIA:<path>`); gateway
   auto-appends `image_generate` media tags when the final model reply omits
   them, so QQBot can deliver generated images natively.

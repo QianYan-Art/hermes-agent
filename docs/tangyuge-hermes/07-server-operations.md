@@ -134,8 +134,12 @@ Plugin policy:
   Hermes quality tiers; a non-tier `/auxmodel image <model>` value is treated
   as the actual Images API model sent to the endpoint. The `image_generate`
   tool can control `quality`, `num_images`, `output_format`, `background`,
-  `moderation`, `output_compression`, and a non-tier `model` / explicit
-  `api_model` override when the active provider supports those fields.
+  `moderation`, `output_compression`, `style`, and a non-tier `model` /
+  explicit `api_model` override for text-to-image when the active provider
+  supports those fields. It also supports image-to-image and local edits via
+  `input_image`, `input_images`, `mask`, and `input_fidelity`; local paths,
+  `file://` URLs, HTTP(S) URLs, and data URLs are accepted for source/mask
+  images and are uploaded through the OpenAI SDK `images.edit` path.
   `output_compression` is valid only with `output_format=jpeg` or
   `output_format=webp`; the current bot-facing tool does not expose streaming
   partial image events.

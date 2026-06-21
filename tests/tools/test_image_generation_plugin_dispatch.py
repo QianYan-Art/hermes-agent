@@ -76,6 +76,11 @@ class TestPluginDispatch:
                 "background": "transparent",
                 "moderation": "low",
                 "output_compression": 80,
+                "style": "natural",
+                "input_image": "/tmp/source.png",
+                "mask": "/tmp/mask.png",
+                "input_fidelity": "high",
+                "api_model": "custom-image-model",
             },
         )
         payload = json.loads(dispatched)
@@ -88,6 +93,11 @@ class TestPluginDispatch:
             "background": "transparent",
             "moderation": "low",
             "output_compression": 80,
+            "style": "natural",
+            "input_image": "/tmp/source.png",
+            "mask": "/tmp/mask.png",
+            "input_fidelity": "high",
+            "api_model": "custom-image-model",
         }
 
     def test_dispatch_reports_missing_registered_provider(self, monkeypatch, tmp_path):

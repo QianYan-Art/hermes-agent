@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“生图旁路”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -43,7 +43,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "唐语歌人格", "角色卡", "bot内核", "内核提示词", "提示词注入内容", "身份歧义", "Hermes身份噪音", "SOUL", "SOUL文档", "通用SOUL文档", "Hermes SOUL", "QQBot变体", "SOUL_QQBOT", "SOUL_QQBOT_DM", "SOUL_QQBOT_GROUP", "私聊SOUL", "群聊SOUL", "身份注入", "角色怎么插入项目", "角色卡界面", "固定UI块", "每轮复盘", "状态栏", "好感度", "情绪表", "表情包", "Unicode emoji", "QQ表情", "方括号表情占位符", "害羞/比心" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "tangyuge-roleplay", "角色扮演skill", "陪聊skill", "唐语歌skill", "角色卡和skill关系", "角色卡输出格式", "QQ回复格式" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "内置skills", "skills列表", "有哪些skill", "六个skill", "只保留六个skill", "humanizer", "creative", "no-bundled-skills", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
-| "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "异步subagent", "后台subagent", "delegate_task background", "background=true", "max_async_children", "RTK", "provider", "模型路由", "Tavily", "OpenAI-compatible image", "CPA生图旁路", "suyuan.4071253.xyz", "生图", "生图旁路", "生图参数", "image_generate", "image_generate参数", "media_tag", "MEDIA:<path>", "QQBot发图", "QQBot图片发送", "图片发不出去", "quality", "num_images", "output_format", "background", "moderation", "output_compression", "api_model", "/auxmodel image", "非档位生图模型", "OPENAI_IMAGE_API_KEY", "QQ授权按钮", "允许一次", "始终允许", "拒绝", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
+| "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "异步subagent", "后台subagent", "delegate_task background", "background=true", "max_async_children", "RTK", "provider", "模型路由", "Tavily", "OpenAI-compatible image", "CPA生图旁路", "suyuan.4071253.xyz", "生图", "生图旁路", "生图参数", "图生图", "改图", "局部重绘", "inpaint", "image-to-image", "images.edit", "image_generate", "image_generate参数", "input_image", "input_images", "mask", "input_fidelity", "style", "media_tag", "MEDIA:<path>", "QQBot发图", "QQBot图片发送", "图片发不出去", "quality", "num_images", "output_format", "background", "moderation", "output_compression", "api_model", "/auxmodel image", "非档位生图模型", "OPENAI_IMAGE_API_KEY", "QQ授权按钮", "允许一次", "始终允许", "拒绝", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "MiniMax", "minimax-m3", "视频链路", "视频阈值", "45 MiB", "图片识别", "媒体路由", "native video", "视频直传", "视频预算" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
 | "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
@@ -59,7 +59,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "README留几个、README.zh-CN、为什么只有 README.md"：读 `02-trim-plan.md`。
 - "CLI裁剪、removed commands、honcho/acp/proxy/lsp/kanban/profile、provider白名单、bundled provider、插件白名单、插件要不要删、物理插件清理、optional deps、依赖精简、scripts删除、google_meet、teams_pipeline、disabled plugin 为什么还在仓库、精简版测试、测试基线、run_trimmed_tests、trimmed_manifest、上游残留测试"：读 `02-trim-plan.md` 和 `07-server-operations.md`。
 - "我的patch是否内置、/new和/reset差异、/view、/context、上下文窗口、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
-- "生图、生图旁路、image_generate、media_tag、MEDIA 图片发送、QQBot 发图、图片发不出去"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；执行生图时直接调用 `image_generate`，不要手写 curl/Python/heredoc。
+- "生图、图生图、改图、局部重绘、mask、images.edit、image_generate、media_tag、MEDIA 图片发送、QQBot 发图、图片发不出去"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；执行生图/改图时直接调用 `image_generate`，不要手写 curl/Python/heredoc。
 - "内置skills、skills列表、六个skill、humanizer、creative、no-bundled-skills、上游skill残留"：读 `04-built-in-skills.md`；涉及服务器现场状态再读 `07-server-operations.md`。
 - "异步 subagent、后台 subagent、delegate_task background、background=true、max_async_children"：读 `05-patches-and-rtk.md`；只问当前服务器是否启用或默认并发时再读 `07-server-operations.md`。
 - "/new 或 /reset 出现随机 tip、Telegram webhook tip、tips 从哪里来"：读 `05-patches-and-rtk.md`。
@@ -83,7 +83,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “tangyuge-roleplay”“角色扮演skill”“陪聊skill”“唐语歌skill”“角色卡和skill关系”“角色卡输出格式”“QQ回复格式”
 - “内置skills”“skills列表”“有哪些skill”“六个skill”“只保留六个skill”“humanizer”“creative”“no-bundled-skills”“locator技能”“技能怎么内置”
 - “patch记录”“二开patch”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“自动总结skills”“异步subagent”“后台subagent”“delegate_task background”“background=true”“max_async_children”“RTK”
-- “生图”“生图旁路”“image_generate”“media_tag”“MEDIA图片发送”“QQBot发图”“QQBot图片发送”“图片发不出去”
+- “生图”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate”“input_image”“input_images”“input_fidelity”“style”“media_tag”“MEDIA图片发送”“QQBot发图”“QQBot图片发送”“图片发不出去”
 - “MiniMax”“minimax-m3”“视频链路”“视频阈值”“45 MiB”“图片识别”“媒体路由”“native video”“视频直传”“视频预算”
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
 - “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”

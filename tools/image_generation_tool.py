@@ -619,6 +619,13 @@ def image_generate_tool(
     background: Optional[str] = None,
     moderation: Optional[str] = None,
     output_compression: Optional[int] = None,
+    style: Optional[str] = None,
+    input_image: Optional[str] = None,
+    input_images: Optional[list] = None,
+    mask: Optional[str] = None,
+    input_fidelity: Optional[str] = None,
+    model: Optional[str] = None,
+    api_model: Optional[str] = None,
 ) -> str:
     """Generate an image from a text prompt using the configured image backend.
 
@@ -645,6 +652,13 @@ def image_generate_tool(
             "background": background,
             "moderation": moderation,
             "output_compression": output_compression,
+            "style": style,
+            "input_image": input_image,
+            "input_images": input_images,
+            "mask": mask,
+            "input_fidelity": input_fidelity,
+            "model": model,
+            "api_model": api_model,
         },
         "error": None,
         "success": False,
@@ -657,6 +671,11 @@ def image_generate_tool(
     try:
         if not prompt or not isinstance(prompt, str) or len(prompt.strip()) == 0:
             raise ValueError("Prompt is required and must be a non-empty string")
+        if input_image is not None or input_images is not None or mask is not None:
+            raise ValueError(
+                "input_image and mask require a configured image_gen provider "
+                "that supports image editing"
+            )
 
         if not (fal_key_is_configured() or _resolve_managed_fal_gateway()):
             raise ValueError(_build_no_backend_setup_message())
@@ -686,6 +705,14 @@ def image_generate_tool(
             overrides["moderation"] = moderation
         if output_compression is not None:
             overrides["output_compression"] = output_compression
+        if style is not None:
+            overrides["style"] = style
+        if input_fidelity is not None:
+            overrides["input_fidelity"] = input_fidelity
+        if model is not None:
+            overrides["model"] = model
+        if api_model is not None:
+            overrides["api_model"] = api_model
 
         arguments = _build_fal_payload(
             model_id, prompt, aspect_lc, seed=seed, overrides=overrides,
@@ -903,12 +930,13 @@ from tools.registry import registry, tool_error
 IMAGE_GENERATE_SCHEMA = {
     "name": "image_generate",
     "description": (
-        "Generate images from text prompts. Use this tool for user image "
-        "requests; do not hand-write curl, Python, heredoc scripts, or call "
-        "external image APIs directly. The underlying backend and model are "
-        "user-configured in image_gen.provider/image_gen.model. When the "
-        "backend returns a local cache path, the result includes media_tag "
-        "(`MEDIA:<path>`) so messaging gateways can send the image natively."
+        "Generate or edit images from prompts. Use this tool for user image "
+        "requests, image-to-image requests, and local inpainting edits; do "
+        "not hand-write curl, Python, heredoc scripts, or call external image "
+        "APIs directly. The underlying backend and model are user-configured "
+        "in image_gen.provider/image_gen.model. When the backend returns a "
+        "local cache path, the result includes media_tag (`MEDIA:<path>`) so "
+        "messaging gateways can send the image natively."
     ),
     "parameters": {
         "type": "object",
@@ -955,6 +983,39 @@ IMAGE_GENERATE_SCHEMA = {
                 "minimum": 0,
                 "maximum": 100,
                 "description": "Optional output compression for jpeg/webp output on compatible backends.",
+            },
+            "style": {
+                "type": "string",
+                "enum": ["vivid", "natural"],
+                "description": "Optional style hint for compatible text-to-image backends.",
+            },
+            "input_image": {
+                "type": "string",
+                "description": "Optional source image path, file URL, HTTP(S) URL, or data URL. When provided, compatible backends perform image editing/image-to-image instead of pure text-to-image generation.",
+            },
+            "input_images": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 10,
+                "description": "Optional multiple source images for compatible image editing backends. Items may be local paths, file URLs, HTTP(S) URLs, or data URLs.",
+            },
+            "mask": {
+                "type": "string",
+                "description": "Optional mask image path, file URL, HTTP(S) URL, or data URL for local inpainting. Requires input_image or input_images.",
+            },
+            "input_fidelity": {
+                "type": "string",
+                "enum": ["high", "low"],
+                "description": "Optional fidelity control for compatible image editing backends.",
+            },
+            "model": {
+                "type": "string",
+                "description": "Optional backend model override. For the OpenAI-compatible backend, non-tier model names are sent as the actual Images API model.",
+            },
+            "api_model": {
+                "type": "string",
+                "description": "Optional explicit Images API model override for compatible backends.",
             },
         },
         "required": ["prompt"],
@@ -1098,6 +1159,13 @@ def _handle_image_generate(args, **kw):
         "background": args.get("background"),
         "moderation": args.get("moderation"),
         "output_compression": args.get("output_compression"),
+        "style": args.get("style"),
+        "input_image": args.get("input_image"),
+        "input_images": args.get("input_images"),
+        "mask": args.get("mask"),
+        "input_fidelity": args.get("input_fidelity"),
+        "model": args.get("model"),
+        "api_model": args.get("api_model"),
     }
 
     # Route to a plugin-registered provider if one is active (and it's

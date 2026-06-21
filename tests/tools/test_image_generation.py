@@ -375,11 +375,20 @@ class TestRegistryIntegration:
             "background",
             "moderation",
             "output_compression",
+            "style",
+            "input_image",
+            "input_images",
+            "mask",
+            "input_fidelity",
+            "model",
+            "api_model",
         }
         assert props["quality"]["enum"] == ["low", "medium", "high"]
         assert props["num_images"]["minimum"] == 1
         assert props["num_images"]["maximum"] == 10
         assert props["output_compression"]["maximum"] == 100
+        assert props["style"]["enum"] == ["vivid", "natural"]
+        assert props["input_fidelity"]["enum"] == ["high", "low"]
 
     def test_aspect_ratio_enum_is_three_values(self, image_tool):
         enum = image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["properties"]["aspect_ratio"]["enum"]

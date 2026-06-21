@@ -74,9 +74,11 @@ during deploys:
   or API key.
 - User image-generation requests should go through the built-in
   `image_generate` tool, not ad-hoc curl/Python/heredoc calls to external image
-  APIs. OpenAI-compatible image results cached to local files include a
-  `MEDIA:<path>` tag in the tool result; gateway auto-appends that tag and
-  QQBot sends the image through its live adapter's native upload path.
+  APIs. The OpenAI-compatible backend supports text-to-image, image-to-image,
+  and mask-based local edits through `input_image` / `input_images` / `mask`.
+  Cached local image results include a `MEDIA:<path>` tag in the tool result;
+  gateway auto-appends that tag and QQBot sends the image through its live
+  adapter's native upload path.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a
