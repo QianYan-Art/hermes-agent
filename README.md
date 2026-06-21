@@ -68,6 +68,11 @@ during deploys:
   `image_generate` tool's non-tier `model` / explicit `api_model` override can
   switch the actual Images API model without changing provider, endpoint URL,
   or API key.
+- User image-generation requests should go through the built-in
+  `image_generate` tool, not ad-hoc curl/Python/heredoc calls to external image
+  APIs. OpenAI-compatible image results cached to local files include a
+  `MEDIA:<path>` tag in the tool result; gateway auto-appends that tag and
+  QQBot sends the image through its live adapter's native upload path.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a

@@ -1,6 +1,34 @@
 """FAL_KEY env var normalization (whitespace-only treated as unset)."""
 
 
+def test_image_success_response_adds_media_tag_for_local_paths():
+    from agent.image_gen_provider import success_response
+
+    result = success_response(
+        image="/tmp/hermes-image.png",
+        model="gpt-image-2",
+        prompt="a cat",
+        aspect_ratio="square",
+        provider="openai",
+    )
+
+    assert result["media_tag"] == "MEDIA:/tmp/hermes-image.png"
+
+
+def test_image_success_response_does_not_media_tag_urls():
+    from agent.image_gen_provider import success_response
+
+    result = success_response(
+        image="https://example.test/hermes-image.png",
+        model="gpt-image-2",
+        prompt="a cat",
+        aspect_ratio="square",
+        provider="openai",
+    )
+
+    assert "media_tag" not in result
+
+
 def test_fal_key_whitespace_is_unset(monkeypatch):
     # Whitespace-only FAL_KEY must NOT register as configured, and the managed
     # gateway fallback must be disabled for this assertion to be meaningful.

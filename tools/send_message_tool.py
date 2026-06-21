@@ -668,6 +668,26 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     if platform == Platform.WEIXIN:
         return await _send_weixin(pconfig, chat_id, message, media_files=media_files)
 
+    # --- QQBot: native media attachment support via running gateway adapter ---
+    if platform == Platform.QQBOT and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            if is_last:
+                result = await _send_qqbot_via_adapter(
+                    chat_id,
+                    chunk,
+                    media_files=media_files,
+                    thread_id=thread_id,
+                    force_document=force_document,
+                )
+            else:
+                result = await _send_qqbot(pconfig, chat_id, chunk)
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
     # --- Discord: chunked delivery via the registry's standalone_sender_fn.
     # The plugin's ``_standalone_send`` (registered in
     # plugins/platforms/discord/adapter.py) handles forum channels, threads,
@@ -764,7 +784,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     if media_files and not message.strip():
         return {
             "error": (
-                f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao and feishu; "
+                f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, qqbot, signal, yuanbao and feishu; "
                 f"target {platform.value} had only media attachments"
             )
         }
@@ -772,7 +792,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     if media_files:
         warning = (
             f"MEDIA attachments were omitted for {platform.value}; "
-            "native send_message media delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao and feishu"
+            "native send_message media delivery is currently only supported for telegram, discord, matrix, weixin, qqbot, signal, yuanbao and feishu"
         )
 
     last_result = None
@@ -1488,6 +1508,89 @@ async def _send_matrix_via_adapter(pconfig, chat_id, message, media_files=None, 
             await adapter.disconnect()
         except Exception:
             pass
+
+
+async def _send_qqbot_via_adapter(chat_id, message, media_files=None, thread_id=None, force_document=False):
+    """Send QQBot media through the live gateway adapter.
+
+    QQBot local-file upload needs the connected adapter's token and HTTP
+    client. The standalone REST text sender intentionally stays text-only.
+    """
+    media_files = media_files or []
+    if not media_files:
+        return _error("QQBot media sender was called without media files")
+
+    try:
+        from gateway.config import Platform
+        from gateway.run import _gateway_runner_ref
+
+        runner = _gateway_runner_ref()
+        adapter = None
+        if runner is not None:
+            adapter = runner.adapters.get(Platform.QQBOT) or runner.adapters.get("qqbot")
+    except Exception:
+        adapter = None
+
+    if adapter is None:
+        return _error(
+            "QQBot media delivery requires the running gateway QQBot adapter; "
+            "the standalone QQBot REST sender supports text only."
+        )
+
+    metadata = {"thread_id": thread_id} if thread_id else None
+    caption = message.strip()
+    last_result = None
+
+    for index, (media_path, is_voice) in enumerate(media_files):
+        if not os.path.exists(media_path):
+            return _error(f"Media file not found: {media_path}")
+
+        ext = os.path.splitext(media_path)[1].lower()
+        media_caption = caption if index == 0 else None
+
+        if force_document:
+            send_fn = getattr(adapter, "send_document", None)
+            kwargs = {"file_path": media_path, "caption": media_caption}
+        elif ext in _IMAGE_EXTS:
+            send_fn = getattr(adapter, "send_image_file", None)
+            kwargs = {"image_path": media_path, "caption": media_caption}
+        elif ext in _VIDEO_EXTS:
+            send_fn = getattr(adapter, "send_video", None)
+            kwargs = {"video_path": media_path, "caption": media_caption}
+        elif ext in _VOICE_EXTS and is_voice:
+            send_fn = getattr(adapter, "send_voice", None)
+            kwargs = {"audio_path": media_path, "caption": media_caption}
+        elif ext in _AUDIO_EXTS:
+            send_fn = getattr(adapter, "send_voice", None)
+            kwargs = {"audio_path": media_path, "caption": media_caption}
+        else:
+            send_fn = getattr(adapter, "send_document", None)
+            kwargs = {"file_path": media_path, "caption": media_caption}
+
+        if send_fn is None:
+            return _error(f"QQBot adapter cannot send media type: {ext or media_path}")
+
+        try:
+            last_result = await send_fn(chat_id=chat_id, metadata=metadata, **kwargs)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return _error(f"QQBot media send failed: {exc}")
+
+        if not getattr(last_result, "success", False):
+            return _error(
+                f"QQBot media send failed: {getattr(last_result, 'error', 'unknown error')}"
+            )
+
+    if last_result is None:
+        return {"error": "No deliverable media remained after processing MEDIA tags"}
+
+    return {
+        "success": True,
+        "platform": "qqbot",
+        "chat_id": chat_id,
+        "message_id": getattr(last_result, "message_id", None),
+    }
 
 
 async def _send_homeassistant(token, extra, chat_id, message):

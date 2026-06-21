@@ -673,7 +673,12 @@ def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
 # ordinary outputs. Only tools that intentionally create deliverable media
 # artifacts should be eligible for automatic append when the model omits them
 # from the final gateway reply.
-_AUTO_APPEND_MEDIA_TOOL_NAMES = {"text_to_speech", "text_to_speech_tool"}
+_AUTO_APPEND_MEDIA_TOOL_NAMES = {
+    "text_to_speech",
+    "text_to_speech_tool",
+    "image_generate",
+    "image_generate_tool",
+}
 
 
 # Extension-anchored MEDIA: matcher for tool results. Mirrors the dispatch-site
@@ -699,7 +704,7 @@ def _collect_auto_append_media_tags(
     Two layered guards keep stale/example MEDIA: strings out of the reply:
 
     1. Producer-tool allowlist: only tools that intentionally emit deliverable
-       artifacts (TTS) are eligible. Documentation, logs, and search results can
+       artifacts (TTS / image generation) are eligible. Documentation, logs, and search results can
        contain example strings such as MEDIA:/absolute/path/to/file, which must
        never be delivered as attachments. (Fixes the original report behind #16721.)
     2. Current-turn isolation: only messages produced this turn are scanned, so a

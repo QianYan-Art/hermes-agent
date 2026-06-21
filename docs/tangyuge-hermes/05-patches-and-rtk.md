@@ -105,14 +105,24 @@ external patch files to replay:
   agent may pass `quality`, `num_images`, `output_format`, `background`,
   `moderation`, `output_compression`, and a non-tier `model` / explicit
   `api_model` override; unsupported provider options are filtered or rejected.
+  User requests such as "生图" must call `image_generate` directly; agents
+  should not hand-write curl/Python/heredoc calls to external image endpoints.
   For the retained OpenAI-compatible backend, Hermes defaults to the underlying
   API model `gpt-image-2`, maps the configured or requested quality tier to
   `low`/`medium`/`high`, treats a non-tier model name as the actual Images API
   model, caches all returned images locally, and exposes the first image as
   `image` plus the full list as `images` when more than one image is returned.
+  Local cached image results also include `media_tag` (`MEDIA:<path>`); gateway
+  auto-appends `image_generate` media tags when the final model reply omits
+  them, so QQBot can deliver generated images natively.
   Do not expose `response_format` for this path because the gateway returns
   cached local paths; do not expose `partial_images` until Hermes handles
   streaming image events.
+- `send_message` now supports QQBot `MEDIA:<path>` image/file delivery through
+  the running QQBot gateway adapter. This path requires the live adapter because
+  local-file upload depends on the adapter's connected token and HTTP client;
+  the standalone QQBot REST sender remains text-only and returns an explicit
+  error instead of silently omitting attachments.
 - QQBot approval buttons map to the same gateway choices as text commands:
   `允许一次` -> `once`, `始终允许` -> `always`, `拒绝` -> `deny`. DM/C2C clicks are
   accepted only from the same user openid embedded in the session key; group

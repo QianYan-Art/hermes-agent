@@ -2,9 +2,10 @@
 """
 Image Generation Tools Module
 
-Provides image generation via FAL.ai. Multiple FAL models are supported and
-selectable via ``hermes tools`` → Image Generation; the active model is
-persisted to ``image_gen.model`` in ``config.yaml``.
+Provides the ``image_generate`` tool. User-facing image requests should use
+this tool instead of ad-hoc curl/Python calls to external image APIs. The active
+backend and model are selected from ``image_gen.provider`` / ``image_gen.model``
+in ``config.yaml``; the in-tree FAL path remains as the legacy fallback.
 
 Architecture:
 - ``FAL_MODELS`` is a catalog of supported models with per-model metadata
@@ -619,9 +620,9 @@ def image_generate_tool(
     moderation: Optional[str] = None,
     output_compression: Optional[int] = None,
 ) -> str:
-    """Generate an image from a text prompt using the configured FAL model.
+    """Generate an image from a text prompt using the configured image backend.
 
-    Backend-specific options are filtered per provider. Unsupported FAL
+    Backend-specific options are filtered per provider. Unsupported
     overrides are silently dropped so legacy callers don't break when switching
     models.
 
@@ -902,11 +903,12 @@ from tools.registry import registry, tool_error
 IMAGE_GENERATE_SCHEMA = {
     "name": "image_generate",
     "description": (
-        "Generate high-quality images from text prompts. The underlying "
-        "backend (FAL, OpenAI, etc.) and model are user-configured and not "
-        "selectable by the agent. Returns either a URL or an absolute file "
-        "path in the `image` field; display it with markdown "
-        "![description](url-or-path) and the gateway will deliver it."
+        "Generate images from text prompts. Use this tool for user image "
+        "requests; do not hand-write curl, Python, heredoc scripts, or call "
+        "external image APIs directly. The underlying backend and model are "
+        "user-configured in image_gen.provider/image_gen.model. When the "
+        "backend returns a local cache path, the result includes media_tag "
+        "(`MEDIA:<path>`) so messaging gateways can send the image natively."
     ),
     "parameters": {
         "type": "object",

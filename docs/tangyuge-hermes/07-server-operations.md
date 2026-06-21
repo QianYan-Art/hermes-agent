@@ -139,6 +139,13 @@ Plugin policy:
   `output_compression` is valid only with `output_format=jpeg` or
   `output_format=webp`; the current bot-facing tool does not expose streaming
   partial image events.
+- Bot image-generation requests should use `image_generate` directly. The tool
+  returns cached local image paths with `media_tag` (`MEDIA:<path>`), and
+  `gateway/run.py` auto-appends current-turn `image_generate` media tags when
+  the final reply omits them. QQBot `send_message` media delivery uses the
+  running QQBot adapter's native upload path; without that live adapter, the
+  tool returns an explicit text-only REST-path error instead of dropping the
+  attachment.
 - QQBot approval buttons are active for dangerous command approvals. `允许一次`
   resolves the current pending approval only, `始终允许` persists the approval
   through the normal permanent allowlist path, and `拒绝` denies it. If a

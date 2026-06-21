@@ -22,6 +22,7 @@ produce. The tool wrapper JSON-serializes it. Keys:
     prompt         str              echoed prompt
     aspect_ratio   str              "landscape" | "square" | "portrait"
     provider       str              provider name (for diagnostics)
+    media_tag      str              optional MEDIA:<path> tag for local files
     error          str              only when success=False
     error_type     str              only when success=False
 """
@@ -296,10 +297,24 @@ def success_response(
         "aspect_ratio": aspect_ratio,
         "provider": provider,
     }
+    if _looks_like_local_absolute_path(image):
+        payload["media_tag"] = f"MEDIA:{image}"
     if extra:
         for k, v in extra.items():
             payload.setdefault(k, v)
     return payload
+
+
+def _looks_like_local_absolute_path(value: str) -> bool:
+    """Return True when ``value`` is an absolute local path, not a URL."""
+    if not value or "://" in value or value.startswith("data:"):
+        return False
+    if value.startswith(("/", "~/")):
+        return True
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return True
+    return len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
 
 
 def error_response(

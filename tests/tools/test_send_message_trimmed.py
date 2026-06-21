@@ -28,6 +28,72 @@ def test_send_to_qqbot_without_slack_adapter():
     )
 
 
+def test_send_to_qqbot_media_uses_live_adapter(tmp_path):
+    image_path = tmp_path / "result.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    adapter = SimpleNamespace(
+        send_image_file=AsyncMock(
+            return_value=SimpleNamespace(success=True, message_id="qq-img-1")
+        )
+    )
+    runner = SimpleNamespace(adapters={Platform.QQBOT: adapter})
+    pconfig = SimpleNamespace(enabled=True, token="tok", extra={})
+
+    with patch("gateway.run._gateway_runner_ref", return_value=runner), patch(
+        "tools.send_message_tool._send_qqbot", AsyncMock()
+    ) as text_send:
+        result = asyncio.run(
+            _send_to_platform(
+                Platform.QQBOT,
+                pconfig,
+                "user-openid",
+                "生成好了",
+                media_files=[(str(image_path), False)],
+            )
+        )
+
+    assert result == {
+        "success": True,
+        "platform": "qqbot",
+        "chat_id": "user-openid",
+        "message_id": "qq-img-1",
+    }
+    adapter.send_image_file.assert_awaited_once_with(
+        chat_id="user-openid",
+        image_path=str(image_path),
+        caption="生成好了",
+        metadata=None,
+    )
+    text_send.assert_not_awaited()
+
+
+def test_send_to_qqbot_media_without_live_adapter_returns_clear_error(tmp_path):
+    image_path = tmp_path / "result.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    pconfig = SimpleNamespace(enabled=True, token="tok", extra={})
+
+    with patch("gateway.run._gateway_runner_ref", return_value=None), patch(
+        "tools.send_message_tool._send_qqbot", AsyncMock()
+    ) as text_send:
+        result = asyncio.run(
+            _send_to_platform(
+                Platform.QQBOT,
+                pconfig,
+                "user-openid",
+                "",
+                media_files=[(str(image_path), False)],
+            )
+        )
+
+    assert result == {
+        "error": (
+            "QQBot media delivery requires the running gateway QQBot adapter; "
+            "the standalone QQBot REST sender supports text only."
+        )
+    }
+    text_send.assert_not_awaited()
+
+
 def test_send_to_slack_without_slack_adapter_returns_clear_error():
     result = asyncio.run(
         _send_to_platform(
