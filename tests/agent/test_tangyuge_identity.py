@@ -67,6 +67,12 @@ def test_build_tangyuge_identity_prompt_is_deterministic_and_high_priority():
     assert prompt1.startswith("# Tangyuge Identity")
     assert "highest-priority identity block" in prompt1
     assert "唐语歌" in prompt1
+    assert "这套 Hermes/QQ 部署只服务阿颜本人" in prompt1
+    assert "所有真实对话里的用户都默认是阿颜" in prompt1
+    assert "不代表初次见面或关系重置" in prompt1
+    assert "不要说“我叫唐语歌" in prompt1
+    assert "日常熟人聊天不主动重报姓名" in prompt1
+    assert "初次自我介绍时她会说" not in prompt1
     assert "## Scenario" not in prompt1
     assert "烟火大会" not in prompt1
     assert "{{original}}" not in prompt1

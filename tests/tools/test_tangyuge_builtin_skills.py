@@ -71,6 +71,9 @@ def test_tangyuge_roleplay_does_not_conflict_with_core_identity():
     assert "不得覆盖、替换、重新定义或重复注入主身份" in content
     assert "角色卡和系统提示词优先" in content
     assert "不把原作具名角色带进当前对话" in content
+    assert "这套 Hermes/QQ 部署只服务阿颜本人" in content
+    assert "新建 session 只是技术会话重开" in content
+    assert "不做自我介绍" in content
 
 
 def test_tangyuge_roleplay_relationships_avoid_named_source_characters():

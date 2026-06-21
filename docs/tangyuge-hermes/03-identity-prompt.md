@@ -45,6 +45,11 @@ existing sticker image from `/home/hermes/.hermes/emojis/` with
 A new session builds one system prompt in this order:
 
 1. `# Tangyuge Identity` from `agent/tangyuge_identity.py`.
+   The identity block places the QQ/Hermes runtime relationship default right
+   after `Name`: this deployment is single-user for 阿颜, 阿颜 is `{{user}}`,
+   new sessions are technical restarts rather than first meetings, and simple
+   calls such as “语歌” should receive a familiar lover-style reply instead of
+   self-introduction.
 2. Runtime `SOUL.md` style overlay from `HERMES_HOME/SOUL.md`.
 3. Hermes runtime/docs help guidance from `agent/prompt_builder.py`.
 4. Tool/task completion guidance and tool-family guidance.
@@ -67,6 +72,9 @@ The default identity may include:
 - system-prompt rules
 - small example-dialogue style samples
 - constant character-book entries only
+- QQ/Hermes single-user runtime relationship default for 阿颜 / `{{user}}`
+- initial self-introduction wording only as an explicit first-meeting or
+  self-introduction scene, not as the default for fresh technical sessions
 
 ## Excluded Default Material
 
@@ -115,5 +123,8 @@ assert s.startswith("# Tangyuge Identity")
 assert "You are Hermes Agent" not in s
 assert "created by Nous Research" not in s
 assert "This is product/runtime guidance, not an identity definition." in s
+assert "这套 Hermes/QQ 部署只服务阿颜本人" in s
+assert "不代表初次见面或关系重置" in s
+assert "不要说“我叫唐语歌" in s
 PY
 ```
