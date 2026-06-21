@@ -48,6 +48,24 @@ def test_tangyuge_tracked_provider_plugin_dirs_are_narrow():
     assert image_dirs == {"openai"}
 
 
+def test_tangyuge_openai_image_backend_autoloads_under_trim_allowlist():
+    from agent import image_gen_registry
+    from hermes_cli.plugins import PluginManager
+
+    image_gen_registry._reset_for_tests()
+    try:
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        loaded = mgr._plugins.get("image_gen/openai")
+        assert loaded is not None
+        assert loaded.manifest.kind == "backend"
+        assert loaded.enabled is True, loaded.error
+        assert image_gen_registry.get_provider("openai") is not None
+    finally:
+        image_gen_registry._reset_for_tests()
+
+
 def test_tangyuge_removed_cli_command_fails_closed():
     result = subprocess.run(
         [sys.executable, "-m", "hermes_cli.main", "proxy"],

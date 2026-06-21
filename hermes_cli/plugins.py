@@ -235,7 +235,7 @@ _TANGYUGE_RETAINED_BUNDLED_PLUGIN_KEYS: Set[str] = {
     "browser/browserbase",
     "browser/firecrawl",
     "disk-cleanup",
-    "image_gen/hybgzs",
+    "image_gen/openai",
     "rtk-rewrite",
     "security-guidance",
     "web/exa",

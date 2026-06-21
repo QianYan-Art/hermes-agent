@@ -33,6 +33,16 @@ _providers: Dict[str, ImageGenProvider] = {}
 _lock = threading.Lock()
 
 
+def _is_provider_instance(provider: object) -> bool:
+    if isinstance(provider, ImageGenProvider):
+        return True
+    try:
+        from agent import image_gen_provider as provider_module
+    except Exception:
+        return False
+    return isinstance(provider, provider_module.ImageGenProvider)
+
+
 def register_provider(provider: ImageGenProvider) -> None:
     """Register an image generation provider.
 
@@ -40,7 +50,7 @@ def register_provider(provider: ImageGenProvider) -> None:
     a debug message — this makes hot-reload scenarios (tests, dev loops)
     behave predictably.
     """
-    if not isinstance(provider, ImageGenProvider):
+    if not _is_provider_instance(provider):
         raise TypeError(
             f"register_provider() expects an ImageGenProvider instance, "
             f"got {type(provider).__name__}"
