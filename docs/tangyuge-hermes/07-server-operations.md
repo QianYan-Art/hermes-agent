@@ -105,6 +105,11 @@ Supported platform surface is narrowed to QQBot, API server, CLI, and cron.
 Removed command/platform/tool surfaces should stay removed unless a later
 mission explicitly reintroduces them.
 
+QQBot gateway WebSocket support depends on the repo's core `aiohttp` pin. The
+adapter imports `aiohttp` directly for `ClientSession`, WebSocket message types,
+and proxy-aware `ws_connect`; a clean 81-style install must not depend on an
+old server-local package left in the venv.
+
 Removed top-level CLI commands fail closed with a Tangyuge-Hermes message:
 `proxy`, `lsp`, `portal`, `kanban`, `curator`, `insights`, `claw`, `acp`,
 `profile`, `honcho`, `dashboard`, `desktop`, and `gui`. The `memory` command is

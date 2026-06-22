@@ -46,6 +46,9 @@ dependencies = [
   "python-dotenv==1.2.2",
   "fire==0.7.1",
   "httpx[socks]==0.28.1",
+  # QQBot gateway WebSocket runtime 会直接使用 aiohttp；核心 pin 需和
+  # uv.lock 以及 GitHub advisory 修复线保持一致。
+  "aiohttp==3.14.1",
   "rich==14.3.3",
   "tenacity==9.1.4",
   "pyyaml==6.0.3",
@@ -72,7 +75,7 @@ dependencies = [
   # it out of the lazy-install path that exists only for the heavy matrix deps.
   "Markdown==3.10.2",
   # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
-  "PyJWT[crypto]==2.12.1",  # CVE-2026-32597
+  "PyJWT[crypto]==2.13.0",  # CVE-2026-48522/48523/48524/48525/48526
   # Windows has no IANA tzdata shipped with the OS, so Python's ``zoneinfo``
   # (PEP 615) raises ``ZoneInfoNotFoundError`` for every non-UTC timezone
   # out of the box.  ``tzdata`` ships the Olson database as a data package
@@ -105,7 +108,7 @@ firecrawl = ["firecrawl-py==4.17.0"]
 parallel-web = ["parallel-web==0.4.2"]
 # Edge TTS remains optional; Tangyuge runtime normally uses remote_gptsovits.
 edge-tts = ["edge-tts==7.2.7"]
-dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-timeout==2.4.0", "mcp==1.26.0", "starlette==1.0.1", "ty==0.0.21", "ruff==0.15.10", "setuptools==82.0.1"]  # starlette: CVE-2026-48710
+dev = ["debugpy==1.8.20", "pytest==9.0.3", "pytest-asyncio==1.3.0", "pytest-timeout==2.4.0", "mcp==1.26.0", "starlette==1.3.1", "ty==0.0.21", "ruff==0.15.10", "setuptools==82.0.1"]  # starlette: CVE-2026-48817/48818/54282/54283
 cron = []  # croniter is now a core dependency; this extra kept for back-compat
 cli = ["simple-term-menu==1.6.6"]
 pty = [
@@ -122,14 +125,12 @@ pty = [
 # Declared here so packagers (Nix, Homebrew) ship it with [all] and so
 # `pip install hermes-agent[vision]` / the lazy-install path can resolve it.
 vision = ["Pillow==12.2.0"]
-# CVE-2026-48710 (BadHost): Starlette is pulled transitively by mcp's
-# sse-starlette / HTTP-SSE stack (and by fastapi in the `web` extra). Before
-# 1.0.1, a malformed Host header makes `request.url.path` desync from the path
-# the ASGI router actually dispatched, so middleware/endpoints that gate on
-# `request.url` can be bypassed. We pin a patched Starlette directly in every
-# extra that exposes a Starlette-backed server surface so pip/uv can't resolve
-# a vulnerable pre-1.0.1 transitive. Bump in lockstep with uv.lock.
-mcp = ["mcp==1.26.0", "starlette==1.0.1"]  # starlette: CVE-2026-48710
+# Starlette 会由 mcp 的 sse-starlette / HTTP-SSE 链路拉入，也会由 FastAPI
+# 服务器面拉入。CVE-2026-48710 及后续 2026 advisories 都影响这类
+# Starlette-backed server surface，因此在暴露该服务面的 extra 里直接 pin
+# 到已修复版本，避免 pip/uv 解析回存在漏洞的 transitive。改这里时要同步刷新
+# uv.lock。
+mcp = ["mcp==1.26.0", "starlette==1.3.1"]  # starlette: CVE-2026-48817/48818/54282/54283
 all = [
   # Tangyuge server install profile. Provider/platform SDKs stay lazy or
   # operator-installed; [all] is intentionally small.

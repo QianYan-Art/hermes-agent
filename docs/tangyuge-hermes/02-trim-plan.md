@@ -177,6 +177,12 @@ HomeAssistant, SMS, Google/YouTube, premium TTS, voice/STT, Bedrock, Azure,
 Termux, DingTalk, Feishu, FAL, and non-retained messaging stacks are outside the
 current install profile.
 
+`aiohttp` is a core dependency, not an optional web/TTS dependency, because the
+retained QQBot gateway WebSocket adapter imports `aiohttp` directly for
+`ClientSession`, WebSocket receive types, and proxy-aware connection handling.
+Keep the direct pin aligned with `uv.lock` and current GitHub advisory fixed
+ranges so fresh 81-style installs do not rely on leftover server packages.
+
 ## Verification
 
 ```bash

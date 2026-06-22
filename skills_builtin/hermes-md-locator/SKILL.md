@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate看不到”“工具清单”“schema”“heredoc”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“aiohttp”“QQBot WebSocket依赖”“core dependency”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate看不到”“工具清单”“schema”“heredoc”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -39,7 +39,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | --- | --- |
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
 | "部署", "部署文档", "81部署", "81服务器部署", "服务器怎么部署", "靠什么部署", "main分支部署", "服务命令", "旧版本还保留吗", "sparse checkout", "服务器瘦身" | `docs/tangyuge-hermes/01-deployment-81.md` and `docs/tangyuge-hermes/02-trim-plan.md` |
-| "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪", "README留几个", "README.zh-CN", "CLI裁剪", "removed commands", "honcho/acp/proxy/lsp/kanban/profile", "provider白名单", "bundled provider", "插件白名单", "插件要不要删", "物理插件清理", "optional deps", "依赖精简", "scripts删除", "google_meet", "teams_pipeline", "精简版测试", "测试基线", "run_trimmed_tests", "trimmed_manifest", "上游残留测试" | `docs/tangyuge-hermes/02-trim-plan.md` |
+| "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪", "README留几个", "README.zh-CN", "CLI裁剪", "removed commands", "honcho/acp/proxy/lsp/kanban/profile", "provider白名单", "bundled provider", "插件白名单", "插件要不要删", "物理插件清理", "optional deps", "依赖精简", "aiohttp", "QQBot WebSocket依赖", "core dependency", "scripts删除", "google_meet", "teams_pipeline", "精简版测试", "测试基线", "run_trimmed_tests", "trimmed_manifest", "上游残留测试" | `docs/tangyuge-hermes/02-trim-plan.md` |
 | "唐语歌人格", "角色卡", "bot内核", "内核提示词", "提示词注入内容", "身份歧义", "Hermes身份噪音", "SOUL", "SOUL文档", "通用SOUL文档", "Hermes SOUL", "QQBot变体", "SOUL_QQBOT", "SOUL_QQBOT_DM", "SOUL_QQBOT_GROUP", "私聊SOUL", "群聊SOUL", "身份注入", "角色怎么插入项目", "角色卡界面", "固定UI块", "每轮复盘", "状态栏", "好感度", "情绪表", "表情包", "Unicode emoji", "QQ表情", "方括号表情占位符", "害羞/比心" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "tangyuge-roleplay", "角色扮演skill", "陪聊skill", "唐语歌skill", "角色卡和skill关系", "角色卡输出格式", "QQ回复格式" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "内置skills", "skills列表", "有哪些skill", "六个skill", "只保留六个skill", "humanizer", "creative", "no-bundled-skills", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
@@ -57,7 +57,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
 - "服务器瘦身、sparse checkout、为什么服务器没有 tests"：读 `01-deployment-81.md` 和 `02-trim-plan.md`。
 - "README留几个、README.zh-CN、为什么只有 README.md"：读 `02-trim-plan.md`。
-- "CLI裁剪、removed commands、honcho/acp/proxy/lsp/kanban/profile、provider白名单、bundled provider、插件白名单、插件要不要删、物理插件清理、optional deps、依赖精简、scripts删除、google_meet、teams_pipeline、disabled plugin 为什么还在仓库、精简版测试、测试基线、run_trimmed_tests、trimmed_manifest、上游残留测试"：读 `02-trim-plan.md` 和 `07-server-operations.md`。
+- "CLI裁剪、removed commands、honcho/acp/proxy/lsp/kanban/profile、provider白名单、bundled provider、插件白名单、插件要不要删、物理插件清理、optional deps、依赖精简、aiohttp、QQBot WebSocket依赖、core dependency、scripts删除、google_meet、teams_pipeline、disabled plugin 为什么还在仓库、精简版测试、测试基线、run_trimmed_tests、trimmed_manifest、上游残留测试"：读 `02-trim-plan.md` 和 `07-server-operations.md`。
 - "我的patch是否内置、/new和/reset差异、/view、/context、上下文窗口、自动记忆/skills总结关闭"：读 `05-patches-and-rtk.md`；涉及技能清单再读 `04-built-in-skills.md`。
 - "生图、图生图、改图、局部重绘、mask、images.edit、image_generate、image_generate看不到、工具清单、模型工具列表、schema、heredoc、media_tag、MEDIA 图片发送、QQBot 发图、图片发不出去"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；执行生图/改图时直接调用 `image_generate`，不要手写 curl/Python/heredoc。
 - "内置skills、skills列表、六个skill、humanizer、creative、no-bundled-skills、上游skill残留"：读 `04-built-in-skills.md`；涉及服务器现场状态再读 `07-server-operations.md`。
@@ -78,7 +78,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “总览”“项目总览”“整体情况”“二开项目”“文档目录”
 - “部署文档”“81部署”“81服务器部署”“服务器怎么部署”“靠什么部署”
 - “旧版本还保留吗”“main分支部署”“服务命令”
-- “精简方案”“删了什么”“保留什么”“项目裁剪”“服务器瘦身”“sparse checkout”“README留几个”“README.zh-CN”“CLI裁剪”“removed commands”“honcho/acp/proxy/lsp/kanban/profile”“provider白名单”“bundled provider”“插件白名单”“插件要不要删”“物理插件清理”“optional deps”“依赖精简”“scripts删除”“google_meet”“teams_pipeline”“精简版测试”“测试基线”“run_trimmed_tests”“trimmed_manifest”“上游残留测试”
+- “精简方案”“删了什么”“保留什么”“项目裁剪”“服务器瘦身”“sparse checkout”“README留几个”“README.zh-CN”“CLI裁剪”“removed commands”“honcho/acp/proxy/lsp/kanban/profile”“provider白名单”“bundled provider”“插件白名单”“插件要不要删”“物理插件清理”“optional deps”“依赖精简”“aiohttp”“QQBot WebSocket依赖”“core dependency”“scripts删除”“google_meet”“teams_pipeline”“精简版测试”“测试基线”“run_trimmed_tests”“trimmed_manifest”“上游残留测试”
 - “角色卡”“唐语歌人格”“bot内核”“内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“SOUL”“SOUL文档”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“SOUL_QQBOT_DM”“SOUL_QQBOT_GROUP”“私聊SOUL”“群聊SOUL”“身份注入”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”
 - “tangyuge-roleplay”“角色扮演skill”“陪聊skill”“唐语歌skill”“角色卡和skill关系”“角色卡输出格式”“QQ回复格式”
 - “内置skills”“skills列表”“有哪些skill”“六个skill”“只保留六个skill”“humanizer”“creative”“no-bundled-skills”“locator技能”“技能怎么内置”

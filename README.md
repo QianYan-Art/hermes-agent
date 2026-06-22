@@ -119,7 +119,9 @@ during deploys:
   not retain.
 - Optional dependencies and helper scripts are trimmed to retained runtime
   surfaces. Removed upstream platform/migration extras and live-test/release
-  scripts are not part of the Tangyuge-Hermes install profile.
+  scripts are not part of the Tangyuge-Hermes install profile. `aiohttp` is a
+  core dependency because the retained QQBot gateway WebSocket adapter imports
+  it directly; do not move it back behind optional web/TTS extras.
 - Built-in skills are intentionally reduced to six retained server skills:
   `grill-me`, `grok-search`, `hermes-md-locator`, `mail-vps-ops`,
   `paper-translation-to-docx`, and `tangyuge-roleplay`. The 81 runtime
