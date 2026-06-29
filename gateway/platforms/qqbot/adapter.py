@@ -2946,6 +2946,12 @@ class QQAdapter(BasePlatformAdapter):
                 error="Guild media send not supported via this path",
             )
 
+        # QQ C2C media sends behave like passive replies more often than plain
+        # text sends; when we have a recent inbound anchor, reuse it so native
+        # uploads do not fail just because the caller omitted reply_to.
+        if reply_to is None and chat_type == "c2c":
+            reply_to = self._last_msg_id.get(chat_id)
+
         try:
             if self._is_url(media_source):
                 # URL upload — let the platform fetch it directly.

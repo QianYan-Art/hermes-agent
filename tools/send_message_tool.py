@@ -14,6 +14,7 @@ import ssl
 import time
 from email.utils import formatdate
 
+from agent.async_utils import safe_schedule_threadsafe
 from agent.redact import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,36 @@ def _sanitize_error_text(text) -> str:
 def _error(message: str) -> dict:
     """Build a standardized error payload with redacted content."""
     return {"error": _sanitize_error_text(message)}
+
+
+async def _await_live_adapter_coro(coro, runner, *, error_context: str):
+    """Await a live gateway-adapter coroutine on the adapter's owning loop.
+
+    Tool handlers often run on model_tools' worker loop, while gateway adapters
+    own long-lived async clients created on the gateway loop. Reusing those
+    clients from the worker loop triggers cross-loop runtime errors such as
+    "... is bound to a different event loop". When the gateway loop is known
+    and differs from the current loop, schedule onto it and await the bridged
+    future from the tool loop.
+    """
+    gateway_loop = getattr(runner, "_gateway_loop", None)
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if gateway_loop is None or gateway_loop is current_loop:
+        return await coro
+
+    future = safe_schedule_threadsafe(
+        coro,
+        gateway_loop,
+        logger=logger,
+        log_message=f"{error_context} scheduling error",
+    )
+    if future is None:
+        raise RuntimeError(f"{error_context}: gateway loop unavailable")
+    return await asyncio.wrap_future(future)
 
 
 def _telegram_retry_delay(exc: Exception, attempt: int) -> float | None:
@@ -502,6 +533,7 @@ async def _send_via_adapter(
          the runner weakref is ``None``).
       3. A descriptive error explaining both options.
     """
+    platform_name = platform.value if hasattr(platform, "value") else str(platform)
     runner = None
     try:
         from gateway.run import _gateway_runner_ref
@@ -517,7 +549,11 @@ async def _send_via_adapter(
         if adapter is not None:
             try:
                 metadata = {"thread_id": thread_id} if thread_id else None
-                result = await adapter.send(chat_id=chat_id, content=chunk, metadata=metadata)
+                result = await _await_live_adapter_coro(
+                    adapter.send(chat_id=chat_id, content=chunk, metadata=metadata),
+                    runner,
+                    error_context=f"{platform_name} live adapter send",
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -526,7 +562,6 @@ async def _send_via_adapter(
                 return {"success": True, "message_id": result.message_id}
             return {"error": f"Adapter send failed: {result.error}"}
 
-    platform_name = platform.value if hasattr(platform, "value") else str(platform)
     entry = None
     try:
         from gateway.platform_registry import platform_registry
@@ -1571,7 +1606,11 @@ async def _send_qqbot_via_adapter(chat_id, message, media_files=None, thread_id=
             return _error(f"QQBot adapter cannot send media type: {ext or media_path}")
 
         try:
-            last_result = await send_fn(chat_id=chat_id, metadata=metadata, **kwargs)
+            last_result = await _await_live_adapter_coro(
+                send_fn(chat_id=chat_id, metadata=metadata, **kwargs),
+                runner,
+                error_context="QQBot media send",
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

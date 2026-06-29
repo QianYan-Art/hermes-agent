@@ -628,6 +628,96 @@ class TestWaitForReconnection:
         assert result.retryable is True
         assert "Not connected" in result.error
 
+    @pytest.mark.asyncio
+    async def test_send_media_c2c_uses_cached_last_msg_id_when_reply_missing(self):
+        """C2C media sends should reuse the latest inbound msg_id when available."""
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+        adapter._last_msg_id["user-openid"] = "inbound-42"
+        adapter._upload_media = mock.AsyncMock(return_value={"file_info": "file-info-1"})
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["method"] = method
+            seen["path"] = path
+            seen["body"] = body
+            return {"id": "msg_media_1"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter._send_media(
+            "user-openid",
+            "https://example.com/demo.png",
+            1,
+            "image",
+            caption="hello",
+        )
+
+        assert result.success
+        assert result.message_id == "msg_media_1"
+        assert seen["method"] == "POST"
+        assert seen["path"] == "/v2/users/user-openid/messages"
+        assert seen["body"]["msg_id"] == "inbound-42"
+        assert seen["body"]["content"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_send_media_explicit_reply_to_overrides_cached_last_msg_id(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+        adapter._last_msg_id["user-openid"] = "inbound-42"
+        adapter._upload_media = mock.AsyncMock(return_value={"file_info": "file-info-1"})
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["body"] = body
+            return {"id": "msg_media_2"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter._send_media(
+            "user-openid",
+            "https://example.com/demo.png",
+            1,
+            "image",
+            reply_to="explicit-msg",
+        )
+
+        assert result.success
+        assert seen["body"]["msg_id"] == "explicit-msg"
+
+    @pytest.mark.asyncio
+    async def test_send_media_group_does_not_inject_c2c_last_msg_id(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+        adapter._chat_type_map["group-openid"] = "group"
+        adapter._last_msg_id["group-openid"] = "group-inbound-99"
+        adapter._upload_media = mock.AsyncMock(return_value={"file_info": "file-info-1"})
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["path"] = path
+            seen["body"] = body
+            return {"id": "msg_media_3"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter._send_media(
+            "group-openid",
+            "https://example.com/demo.png",
+            1,
+            "image",
+        )
+
+        assert result.success
+        assert seen["path"] == "/v2/groups/group-openid/messages"
+        assert "msg_id" not in seen["body"]
+
 
 # ---------------------------------------------------------------------------
 # ChunkedUploader

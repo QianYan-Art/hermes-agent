@@ -78,7 +78,10 @@ during deploys:
   and mask-based local edits through `input_image` / `input_images` / `mask`.
   Cached local image results include a `MEDIA:<path>` tag in the tool result;
   gateway auto-appends that tag and QQBot sends the image through its live
-  adapter's native upload path.
+  adapter's native upload path. Live-adapter sends are bridged back onto the
+  gateway event loop so they do not trip cross-loop `is bound to a different
+  event loop` errors, and QQ C2C native media sends reuse the latest inbound
+  message ID when no explicit `reply_to` is provided.
   When `image_gen.provider` is explicitly configured, `image_generate` stays
   visible in the model tool list even if the provider is temporarily missing
   credentials; the tool call returns the provider/auth error directly instead

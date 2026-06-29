@@ -160,7 +160,11 @@ Plugin policy:
   the final reply omits them. QQBot `send_message` media delivery uses the
   running QQBot adapter's native upload path; without that live adapter, the
   tool returns an explicit text-only REST-path error instead of dropping the
-  attachment.
+  attachment. Live adapter uploads and generic live-adapter `send()` calls are
+  scheduled back onto the gateway-owned event loop so they do not fail with
+  cross-loop `is bound to a different event loop` errors. QQ C2C native media
+  sends also reuse the latest inbound message ID when no explicit `reply_to` is
+  provided, keeping passive media replies anchored to a valid inbound message.
 - QQBot daily expression supports two practical paths: Unicode emoji directly
   in text, or existing local sticker/image files under
   `/home/hermes/.hermes/emojis/` sent with `MEDIA:/absolute/path`. Bracketed

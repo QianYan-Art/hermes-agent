@@ -134,9 +134,19 @@ external patch files to replay:
   streaming image events.
 - `send_message` now supports QQBot `MEDIA:<path>` image/file delivery through
   the running QQBot gateway adapter. This path requires the live adapter because
-  local-file upload depends on the adapter's connected token and HTTP client;
-  the standalone QQBot REST sender remains text-only and returns an explicit
+  local-file upload depends on the adapter's connected token and HTTP client.
+  Both the QQBot media path and the generic live-adapter `send()` path now
+  schedule those coroutines back onto the gateway-owned event loop so uploads
+  and live adapter sends do not fail with cross-loop
+  `is bound to a different event loop` errors. For QQ C2C native media sends,
+  the adapter also reuses the latest inbound `_last_msg_id` when no explicit
+  `reply_to` is provided, so passive media replies keep a valid message anchor.
+  The standalone QQBot REST sender remains text-only and returns an explicit
   error instead of silently omitting attachments.
+- Focused regression coverage for that live-loop bridge lives in
+  `tests/tools/test_send_message_tool_live_loop_bridge.py`.
+- QQ C2C media-anchor regression coverage lives in
+  `tests/gateway/test_qqbot.py`.
 - QQBot approval buttons map to the same gateway choices as text commands:
   `允许一次` -> `once`, `始终允许` -> `always`, `拒绝` -> `deny`. DM/C2C clicks are
   accepted only from the same user openid embedded in the session key; group
@@ -149,6 +159,8 @@ external patch files to replay:
 
 ```bash
 pytest tests/plugins/test_rtk_rewrite_plugin.py -q
+pytest tests/tools/test_send_message_tool_live_loop_bridge.py -q
+pytest tests/gateway/test_qqbot.py -q -k "send_media_"
 python -m compileall -q plugins/rtk-rewrite hermes_cli/plugins.py
 ```
 
