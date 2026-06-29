@@ -30,9 +30,15 @@ during deploys:
 - `/home/hermes/.hermes/emojis/`
 - `/home/hermes/.hermes/audio_cache/`
 - `/home/hermes/.hermes/image_cache/`
+- `/home/hermes/.hermes/cache/`
 - `/home/hermes/.hermes/state.db`
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`
+
+On the current 81 runtime, active generated-image and TTS files still land in
+`image_cache/` and `audio_cache/` because those legacy directories already
+exist on that host. `cache/documents/` remains active for document uploads and
+the current QQ inbound video temp path.
 
 ## Core Fork Behavior
 
@@ -78,10 +84,10 @@ during deploys:
   and mask-based local edits through `input_image` / `input_images` / `mask`.
   Cached local image results include a `MEDIA:<path>` tag in the tool result;
   gateway auto-appends that tag and QQBot sends the image through its live
-  adapter's native upload path. Live-adapter sends are bridged back onto the
-  gateway event loop so they do not trip cross-loop `is bound to a different
-  event loop` errors, and QQ C2C native media sends reuse the latest inbound
-  message ID when no explicit `reply_to` is provided.
+  adapter's native HTTP `POST` upload path. Live-adapter sends are bridged back
+  onto the gateway event loop so they do not trip cross-loop
+  `is bound to a different event loop` errors, and QQ C2C native media sends
+  reuse the latest inbound message ID when no explicit `reply_to` is provided.
   When `image_gen.provider` is explicitly configured, `image_generate` stays
   visible in the model tool list even if the provider is temporarily missing
   credentials; the tool call returns the provider/auth error directly instead

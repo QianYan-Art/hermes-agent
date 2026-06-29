@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“aiohttp”“QQBot WebSocket依赖”“core dependency”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate看不到”“工具清单”“schema”“heredoc”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
+description: 当用户用简单话要求找 Tangyuge-Hermes 文档时必须使用本技能，包括“全局状态”“当前状态”“维护手册”“重启网关命令”“自动清理session任务”“session清理timer”“部署文档”“81服务器”“项目总览”“二开方案”“精简方案”“服务器瘦身”“sparse checkout”“README留几个”“CLI裁剪”“removed commands”“provider白名单”“bundled provider”“插件白名单”“optional deps”“依赖精简”“aiohttp”“QQBot WebSocket依赖”“core dependency”“scripts删除”“google_meet”“teams_pipeline”“honcho/acp/proxy/lsp/kanban/profile”“角色卡/唐语歌人格/内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”“tangyuge-roleplay”“角色扮演skill”“陪聊skill”“内置skills”“skills列表”“六个skill”“humanizer/creative”“no-bundled-skills”“locator技能”“patch记录”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“关闭自动记忆”“异步subagent”“后台subagent”“delegate_task background”“RTK”“MiniMax”“视频链路”“视频阈值”“图片识别”“媒体路由”“缓存目录”“image_cache”“audio_cache”“video_cache”“document_cache”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate看不到”“工具清单”“schema”“heredoc”“QQBot发图”“MEDIA图片发送”“升级冻结”“邮件文档”“邮箱文档”“验证码/附件/发信”等。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -46,13 +46,14 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "关闭自动记忆", "自动总结skills", "异步subagent", "后台subagent", "delegate_task background", "background=true", "max_async_children", "RTK", "provider", "模型路由", "Tavily", "OpenAI-compatible image", "CPA生图旁路", "suyuan.4071253.xyz", "生图", "生图旁路", "生图参数", "图生图", "改图", "局部重绘", "inpaint", "image-to-image", "images.edit", "image_generate", "image_generate参数", "image_generate看不到", "工具清单", "模型工具列表", "schema", "heredoc", "input_image", "input_images", "mask", "input_fidelity", "style", "media_tag", "MEDIA:<path>", "QQBot发图", "QQBot图片发送", "图片发不出去", "quality", "num_images", "output_format", "background", "moderation", "output_compression", "api_model", "/auxmodel image", "非档位生图模型", "OPENAI_IMAGE_API_KEY", "QQ授权按钮", "允许一次", "始终允许", "拒绝", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "MiniMax", "minimax-m3", "视频链路", "视频阈值", "45 MiB", "图片识别", "媒体路由", "native video", "视频直传", "视频预算" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
-| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
+| "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "缓存目录", "cache目录", "image_cache", "audio_cache", "video_cache", "document_cache", "cache/documents", "邮件缓存", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
 
 - "全局状态"、"服务器状态"、"当前状态"：先读 `07-server-operations.md`；涉及部署版本或服务来源时再读 `01-deployment-81.md`。
 - "维护手册里查重启网关命令"、"重启网关"：读 `07-server-operations.md` 的 Chat-side restart / Chinese operator phrasing。
+- "缓存目录"、"cache目录"、"image_cache"、"audio_cache"、"video_cache"、"document_cache"：读 `07-server-operations.md`；涉及部署时哪些目录不该覆盖，再读 `01-deployment-81.md`。
 - "自动清理session任务"、"session清理timer"、"retention cleanup"：读 `07-server-operations.md` 的 Session Cleanup Timer。
 - "服务器怎么部署、旧版本还在不在、靠什么启动"：读 `01-deployment-81.md` 和 `07-server-operations.md`。
 - "服务器瘦身、sparse checkout、为什么服务器没有 tests"：读 `01-deployment-81.md` 和 `02-trim-plan.md`。

@@ -31,11 +31,17 @@ Server runtime data must stay outside the repository and must not be overwritten
 - `/home/hermes/.hermes/sessions/`
 - `/home/hermes/.hermes/audio_cache/`
 - `/home/hermes/.hermes/image_cache/`
+- `/home/hermes/.hermes/cache/`
 - `/home/hermes/.hermes/state.db`
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`
 
 Deployments should use the `main` branch and `git reset`/forced checkout for code updates. The recommended virtual environment path is outside the repo at `/home/hermes/.hermes/venvs/hermes-agent` so dependency installation does not mix with runtime state or tracked source files.
+
+On the current 81 host, active generated-image and TTS files still land in the
+top-level `image_cache/` and `audio_cache/` directories because those legacy
+paths already exist. `cache/documents/` stays active for document uploads and
+the current QQ inbound video temp path.
 
 ## Documentation Layout
 

@@ -12,6 +12,9 @@ vendors the RTK rewrite plugin as a bundled plugin.
 
 - Bundled path: `plugins/rtk-rewrite/`
 - Server-local historical path: `/home/hermes/.hermes/plugins/rtk-rewrite/`
+- Current 81 runtime baseline uses the bundled plugin directly; the old
+  server-local override was byte-identical to the bundled copy and was removed
+  on 2026-06-29 so future repo updates naturally reach runtime.
 - The RTK binary is not vendored by default.
 - No real secrets are stored in the repo.
 - The plugin must fail open: missing binary, timeout, or rewrite failure must
@@ -134,7 +137,9 @@ external patch files to replay:
   streaming image events.
 - `send_message` now supports QQBot `MEDIA:<path>` image/file delivery through
   the running QQBot gateway adapter. This path requires the live adapter because
-  local-file upload depends on the adapter's connected token and HTTP client.
+  local-file upload depends on the adapter's connected token and HTTP client,
+  and the native QQBot media upload itself still goes through HTTP `POST`
+  endpoints owned by that adapter.
   Both the QQBot media path and the generic live-adapter `send()` path now
   schedule those coroutines back onto the gateway-owned event loop so uploads
   and live adapter sends do not fail with cross-loop

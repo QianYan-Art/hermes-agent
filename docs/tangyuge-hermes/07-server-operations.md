@@ -123,7 +123,10 @@ README policy:
 
 Plugin policy:
 
-- The 81 runtime enables `rtk-rewrite` in `plugins.enabled`.
+- The 81 runtime enables `rtk-rewrite` in `plugins.enabled`, and the active
+  runtime plugin now resolves to the bundled `plugins/rtk-rewrite/` copy. The
+  old `/home/hermes/.hermes/plugins/rtk-rewrite/` user override was removed
+  after verifying it was byte-identical to the bundled plugin.
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`,
   `browser/firecrawl`, `web/exa`, `web/firecrawl`, `web/parallel`,
@@ -158,13 +161,20 @@ Plugin policy:
   returns cached local image paths with `media_tag` (`MEDIA:<path>`), and
   `gateway/run.py` auto-appends current-turn `image_generate` media tags when
   the final reply omits them. QQBot `send_message` media delivery uses the
-  running QQBot adapter's native upload path; without that live adapter, the
-  tool returns an explicit text-only REST-path error instead of dropping the
-  attachment. Live adapter uploads and generic live-adapter `send()` calls are
-  scheduled back onto the gateway-owned event loop so they do not fail with
-  cross-loop `is bound to a different event loop` errors. QQ C2C native media
-  sends also reuse the latest inbound message ID when no explicit `reply_to` is
-  provided, keeping passive media replies anchored to a valid inbound message.
+  running QQBot adapter's native HTTP `POST` upload path; without that live
+  adapter, the tool returns an explicit text-only REST-path error instead of
+  dropping the attachment. Live adapter uploads and generic live-adapter
+  `send()` calls are scheduled back onto the gateway-owned event loop so they
+  do not fail with cross-loop `is bound to a different event loop` errors. QQ
+  C2C native media sends also reuse the latest inbound message ID when no
+  explicit `reply_to` is provided, keeping passive media replies anchored to a
+  valid inbound message.
+- On the current 81 runtime, active generated-image and TTS files still land in
+  `/home/hermes/.hermes/image_cache/` and `/home/hermes/.hermes/audio_cache/`
+  because those legacy directories already exist on that host. The shared
+  `/home/hermes/.hermes/cache/` tree remains active for `cache/documents/`,
+  mail-skill caches, and the current QQ inbound video temp path. `video_cache/`
+  exists in code but is not the current QQ inbound attachment path on 81.
 - QQBot daily expression supports two practical paths: Unicode emoji directly
   in text, or existing local sticker/image files under
   `/home/hermes/.hermes/emojis/` sent with `MEDIA:/absolute/path`. Bracketed
@@ -197,6 +207,7 @@ Never overwrite or commit server runtime data:
 - `/home/hermes/.hermes/sessions/`
 - `/home/hermes/.hermes/audio_cache/`
 - `/home/hermes/.hermes/image_cache/`
+- `/home/hermes/.hermes/cache/`
 - `/home/hermes/.hermes/state.db`
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`

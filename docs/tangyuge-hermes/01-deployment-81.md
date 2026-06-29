@@ -25,6 +25,7 @@ overwritten by deploy:
 - `sessions/`
 - `audio_cache/`
 - `image_cache/`
+- `cache/`
 - `state.db`
 - `pairing/`
 - `auth.json`
@@ -33,6 +34,11 @@ overwritten by deploy:
 only. It must not contain `You are Hermes Agent`, `created by Nous Research`, or
 any other identity definition. Code also normalizes the old default SOUL identity
 template at load time, but the deployed runtime file should still be kept clean.
+
+On the current 81 host, active generated-image and TTS files still land in the
+top-level `image_cache/` and `audio_cache/` directories because those legacy
+paths already exist. `cache/documents/` stays active for document uploads and
+the current QQ inbound video temp path.
 
 ## Sparse Server Checkout
 
