@@ -143,15 +143,24 @@ external patch files to replay:
   Both the QQBot media path and the generic live-adapter `send()` path now
   schedule those coroutines back onto the gateway-owned event loop so uploads
   and live adapter sends do not fail with cross-loop
-  `is bound to a different event loop` errors. For QQ C2C native media sends,
-  the adapter also reuses the latest inbound `_last_msg_id` when no explicit
-  `reply_to` is provided, so passive media replies keep a valid message anchor.
+  `is bound to a different event loop` errors. For QQ text/media sends, the
+  adapter now also resolves explicit event-based send context through
+  `qq_event_id`, and QQ C2C sends can request `qq_is_wakeup`. Those explicit
+  event-based paths win over the older passive-media fallback that reuses the
+  latest inbound `_last_msg_id` when no explicit `reply_to` is provided.
   The standalone QQBot REST sender remains text-only and returns an explicit
   error instead of silently omitting attachments.
+- The QQ adapter now tracks the latest official QQ proactive-message and
+  relationship events needed for active-send maintenance:
+  `FRIEND_ADD`, `FRIEND_DEL`, `C2C_MSG_RECEIVE`, `C2C_MSG_REJECT`,
+  `GROUP_ADD_ROBOT`, `GROUP_DEL_ROBOT`, `GROUP_MSG_RECEIVE`, and
+  `GROUP_MSG_REJECT`. These events refresh per-chat `event_id` state and the
+  cached proactive-enable flag used by later QQ text/media sends when no
+  passive `msg_id` reply anchor is present.
 - Focused regression coverage for that live-loop bridge lives in
   `tests/tools/test_send_message_tool_live_loop_bridge.py`.
-- QQ C2C media-anchor regression coverage lives in
-  `tests/gateway/test_qqbot.py`.
+- QQ proactive-event maintenance plus text/media send-context regression
+  coverage lives in `tests/gateway/test_qqbot.py`.
 - QQBot approval buttons map to the same gateway choices as text commands:
   `允许一次` -> `once`, `始终允许` -> `always`, `拒绝` -> `deny`. DM/C2C clicks are
   accepted only from the same user openid embedded in the session key; group
@@ -165,8 +174,8 @@ external patch files to replay:
 ```bash
 pytest tests/plugins/test_rtk_rewrite_plugin.py -q
 pytest tests/tools/test_send_message_tool_live_loop_bridge.py -q
-pytest tests/gateway/test_qqbot.py -q -k "send_media_"
-python -m compileall -q plugins/rtk-rewrite hermes_cli/plugins.py
+pytest -o addopts='' tests/gateway/test_qqbot.py -q
+python -m compileall -q gateway/platforms/qqbot plugins/rtk-rewrite hermes_cli/plugins.py
 ```
 
 These tests prove fail-open behavior for absent/error paths. They do not prove a

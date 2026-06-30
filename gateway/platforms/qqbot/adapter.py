@@ -159,6 +159,10 @@ class QQAdapter(BasePlatformAdapter):
     MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH
     _TYPING_INPUT_SECONDS = 60  # input_notify duration reported to QQ
     _TYPING_DEBOUNCE_SECONDS = 50  # refresh before it expires
+    _C2C_PROACTIVE_ENABLE_EVENTS = frozenset({"FRIEND_ADD", "C2C_MSG_RECEIVE"})
+    _C2C_PROACTIVE_DISABLE_EVENTS = frozenset({"FRIEND_DEL", "C2C_MSG_REJECT"})
+    _GROUP_PROACTIVE_ENABLE_EVENTS = frozenset({"GROUP_ADD_ROBOT", "GROUP_MSG_RECEIVE"})
+    _GROUP_PROACTIVE_DISABLE_EVENTS = frozenset({"GROUP_DEL_ROBOT", "GROUP_MSG_REJECT"})
 
     @property
     def _log_tag(self) -> str:
@@ -236,6 +240,8 @@ class QQAdapter(BasePlatformAdapter):
         self._last_msg_id: Dict[str, str] = {}
         # Typing debounce: chat_id → last send_typing timestamp
         self._typing_sent_at: Dict[str, float] = {}
+        self._last_event_id: Dict[str, str] = {}
+        self._proactive_message_enabled: Dict[str, bool] = {}
 
         # Token cache
         self._access_token: Optional[str] = None
@@ -807,6 +813,7 @@ class QQAdapter(BasePlatformAdapter):
         t = payload.get("t")
         s = payload.get("s")
         d = payload.get("d")
+        event_id = str(payload.get("id", "") or "")
         if isinstance(s, int) and (self._last_seq is None or s > self._last_seq):
             self._last_seq = s
 
@@ -846,6 +853,13 @@ class QQAdapter(BasePlatformAdapter):
                 asyncio.create_task(self._on_message(t, d))
             elif t == "INTERACTION_CREATE":
                 self._create_task(self._on_interaction(d))
+            elif t in (
+                self._C2C_PROACTIVE_ENABLE_EVENTS
+                | self._C2C_PROACTIVE_DISABLE_EVENTS
+                | self._GROUP_PROACTIVE_ENABLE_EVENTS
+                | self._GROUP_PROACTIVE_DISABLE_EVENTS
+            ):
+                self._handle_proactive_message_event(t, d, event_id=event_id)
             else:
                 logger.debug("[%s] Unhandled dispatch: %s", self._log_tag, t)
             return
@@ -917,6 +931,127 @@ class QQAdapter(BasePlatformAdapter):
         if event.message_id and event.source.chat_id:
             self._last_msg_id[event.source.chat_id] = event.message_id
         await super().handle_message(event)
+
+    def _handle_proactive_message_event(
+        self,
+        event_type: str,
+        d: Any,
+        *,
+        event_id: str = "",
+    ) -> None:
+        """Track QQ proactive-message permission events for C2C/group chats."""
+        if not isinstance(d, dict):
+            return
+
+        chat_id = ""
+        chat_type = ""
+        enabled: Optional[bool] = None
+
+        if event_type in (
+            self._C2C_PROACTIVE_ENABLE_EVENTS | self._C2C_PROACTIVE_DISABLE_EVENTS
+        ):
+            chat_id = str(d.get("openid", "") or "")
+            chat_type = "c2c"
+            if event_type in self._C2C_PROACTIVE_ENABLE_EVENTS:
+                enabled = True
+            elif event_type in self._C2C_PROACTIVE_DISABLE_EVENTS:
+                enabled = False
+        elif event_type in (
+            self._GROUP_PROACTIVE_ENABLE_EVENTS | self._GROUP_PROACTIVE_DISABLE_EVENTS
+        ):
+            chat_id = str(d.get("group_openid", "") or "")
+            chat_type = "group"
+            if event_type in self._GROUP_PROACTIVE_ENABLE_EVENTS:
+                enabled = True
+            elif event_type in self._GROUP_PROACTIVE_DISABLE_EVENTS:
+                enabled = False
+
+        if not chat_id or not chat_type:
+            logger.debug(
+                "[%s] Proactive event %s missing chat id: %r",
+                self._log_tag,
+                event_type,
+                d,
+            )
+            return
+
+        self._chat_type_map[chat_id] = chat_type
+        if event_id:
+            self._last_event_id[chat_id] = event_id
+
+        if enabled is not None:
+            self._proactive_message_enabled[chat_id] = enabled
+
+        if event_type in {"FRIEND_DEL", "GROUP_DEL_ROBOT"}:
+            self._last_msg_id.pop(chat_id, None)
+            self._last_event_id.pop(chat_id, None)
+
+        logger.info(
+            "[%s] QQ proactive state: event=%s chat_type=%s chat_id=%s enabled=%s",
+            self._log_tag,
+            event_type,
+            chat_type,
+            chat_id,
+            enabled,
+        )
+
+    @staticmethod
+    def _metadata_str(metadata: Optional[Dict[str, Any]], *keys: str) -> Optional[str]:
+        if not isinstance(metadata, dict):
+            return None
+        for key in keys:
+            raw = metadata.get(key)
+            if raw is None:
+                continue
+            value = str(raw).strip()
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _metadata_bool(metadata: Optional[Dict[str, Any]], *keys: str) -> bool:
+        if not isinstance(metadata, dict):
+            return False
+        for key in keys:
+            raw = metadata.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, bool):
+                return raw
+            if isinstance(raw, (int, float)):
+                return bool(raw)
+            if isinstance(raw, str):
+                value = raw.strip().lower()
+                if value in {"1", "true", "yes", "on"}:
+                    return True
+                if value in {"0", "false", "no", "off"}:
+                    return False
+        return False
+
+    def _resolve_send_context(
+        self,
+        chat_id: str,
+        chat_type: str,
+        reply_to: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+    ) -> Tuple[Optional[str], bool]:
+        """Resolve QQ event-based send context from metadata + cached state."""
+        if reply_to:
+            return None, False
+
+        is_wakeup = self._metadata_bool(metadata, "qq_is_wakeup", "is_wakeup")
+        if chat_type != "c2c":
+            is_wakeup = False
+
+        explicit_event_id = self._metadata_str(metadata, "qq_event_id", "event_id")
+        if is_wakeup:
+            return None, True
+        if explicit_event_id:
+            return explicit_event_id, False
+
+        if not self._proactive_message_enabled.get(chat_id):
+            return None, False
+        return self._last_event_id.get(chat_id), False
 
     async def _on_message(self, event_type: str, d: Any) -> None:
         """Process an inbound QQ Bot message event."""
@@ -2515,8 +2650,6 @@ class QQAdapter(BasePlatformAdapter):
         Applies format_message(), splits long messages via truncate_message(),
         and retries transient failures with exponential backoff.
         """
-        del metadata
-
         if not self.is_connected:
             if not await self._wait_for_reconnection():
                 return SendResult(success=False, error="Not connected", retryable=True)
@@ -2529,11 +2662,14 @@ class QQAdapter(BasePlatformAdapter):
 
         last_result = SendResult(success=False, error="No chunks")
         for chunk in chunks:
-            last_result = await self._send_chunk(chat_id, chunk, reply_to)
+            last_result = await self._send_chunk(
+                chat_id, chunk, reply_to, metadata=metadata
+            )
             if not last_result.success:
                 return last_result
             # Only reply_to the first chunk
             reply_to = None
+            metadata = None
         return last_result
 
     async def _send_chunk(
@@ -2541,6 +2677,7 @@ class QQAdapter(BasePlatformAdapter):
             chat_id: str,
             content: str,
             reply_to: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send a single chunk with retry + exponential backoff."""
         last_exc: Optional[Exception] = None
@@ -2549,9 +2686,13 @@ class QQAdapter(BasePlatformAdapter):
         for attempt in range(3):
             try:
                 if chat_type == "c2c":
-                    return await self._send_c2c_text(chat_id, content, reply_to)
+                    return await self._send_c2c_text(
+                        chat_id, content, reply_to, metadata=metadata
+                    )
                 elif chat_type == "group":
-                    return await self._send_group_text(chat_id, content, reply_to)
+                    return await self._send_group_text(
+                        chat_id, content, reply_to, metadata=metadata
+                    )
                 elif chat_type == "guild":
                     return await self._send_guild_text(chat_id, content, reply_to)
                 else:
@@ -2592,13 +2733,22 @@ class QQAdapter(BasePlatformAdapter):
             content: str,
             reply_to: Optional[str] = None,
             keyboard: Optional[InlineKeyboard] = None,
+            metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send text to a C2C user via REST API.
 
         :param keyboard: Optional inline keyboard attached to the message.
         """
         self._next_msg_seq(reply_to or openid)
-        body = self._build_text_body(content, reply_to)
+        event_id, is_wakeup = self._resolve_send_context(
+            openid, "c2c", reply_to, metadata
+        )
+        body = self._build_text_body(
+            content,
+            reply_to,
+            event_id=event_id,
+            is_wakeup=is_wakeup,
+        )
         if reply_to:
             body["msg_id"] = reply_to
         if keyboard is not None:
@@ -2614,13 +2764,17 @@ class QQAdapter(BasePlatformAdapter):
             content: str,
             reply_to: Optional[str] = None,
             keyboard: Optional[InlineKeyboard] = None,
+            metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send text to a group via REST API.
 
         :param keyboard: Optional inline keyboard attached to the message.
         """
         self._next_msg_seq(reply_to or group_openid)
-        body = self._build_text_body(content, reply_to)
+        event_id, _ = self._resolve_send_context(
+            group_openid, "group", reply_to, metadata
+        )
+        body = self._build_text_body(content, reply_to, event_id=event_id)
         if reply_to:
             body["msg_id"] = reply_to
         if keyboard is not None:
@@ -2795,7 +2949,12 @@ class QQAdapter(BasePlatformAdapter):
         )
 
     def _build_text_body(
-            self, content: str, reply_to: Optional[str] = None
+            self,
+            content: str,
+            reply_to: Optional[str] = None,
+            *,
+            event_id: Optional[str] = None,
+            is_wakeup: bool = False,
     ) -> Dict[str, Any]:
         """Build the message body for C2C/group text sending."""
         msg_seq = self._next_msg_seq(reply_to or "default")
@@ -2817,6 +2976,10 @@ class QQAdapter(BasePlatformAdapter):
             # For non-markdown mode, add message_reference
             if not self._markdown_support:
                 body["message_reference"] = {"message_id": reply_to}
+        elif event_id:
+            body["event_id"] = event_id
+        if is_wakeup:
+            body["is_wakeup"] = True
 
         return body
 
@@ -2833,10 +2996,14 @@ class QQAdapter(BasePlatformAdapter):
             metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send an image natively via QQ Bot API upload."""
-        del metadata
-
         result = await self._send_media(
-            chat_id, image_url, MEDIA_TYPE_IMAGE, "image", caption, reply_to
+            chat_id,
+            image_url,
+            MEDIA_TYPE_IMAGE,
+            "image",
+            caption,
+            reply_to,
+            metadata=metadata,
         )
         if result.success or not self._is_url(image_url):
             return result
@@ -2848,7 +3015,12 @@ class QQAdapter(BasePlatformAdapter):
             result.error,
         )
         fallback = f"{caption}\n{image_url}" if caption else image_url
-        return await self.send(chat_id=chat_id, content=fallback, reply_to=reply_to)
+        return await self.send(
+            chat_id=chat_id,
+            content=fallback,
+            reply_to=reply_to,
+            metadata=metadata,
+        )
 
     async def send_image_file(
             self,
@@ -2859,9 +3031,15 @@ class QQAdapter(BasePlatformAdapter):
             **kwargs,
     ) -> SendResult:
         """Send a local image file natively."""
-        del kwargs
+        metadata = kwargs.get("metadata") if isinstance(kwargs, dict) else None
         return await self._send_media(
-            chat_id, image_path, MEDIA_TYPE_IMAGE, "image", caption, reply_to
+            chat_id,
+            image_path,
+            MEDIA_TYPE_IMAGE,
+            "image",
+            caption,
+            reply_to,
+            metadata=metadata,
         )
 
     async def send_voice(
@@ -2873,9 +3051,15 @@ class QQAdapter(BasePlatformAdapter):
             **kwargs,
     ) -> SendResult:
         """Send a voice message natively."""
-        del kwargs
+        metadata = kwargs.get("metadata") if isinstance(kwargs, dict) else None
         return await self._send_media(
-            chat_id, audio_path, MEDIA_TYPE_VOICE, "voice", caption, reply_to
+            chat_id,
+            audio_path,
+            MEDIA_TYPE_VOICE,
+            "voice",
+            caption,
+            reply_to,
+            metadata=metadata,
         )
 
     async def send_video(
@@ -2887,9 +3071,15 @@ class QQAdapter(BasePlatformAdapter):
             **kwargs,
     ) -> SendResult:
         """Send a video natively."""
-        del kwargs
+        metadata = kwargs.get("metadata") if isinstance(kwargs, dict) else None
         return await self._send_media(
-            chat_id, video_path, MEDIA_TYPE_VIDEO, "video", caption, reply_to
+            chat_id,
+            video_path,
+            MEDIA_TYPE_VIDEO,
+            "video",
+            caption,
+            reply_to,
+            metadata=metadata,
         )
 
     async def send_document(
@@ -2902,7 +3092,7 @@ class QQAdapter(BasePlatformAdapter):
             **kwargs,
     ) -> SendResult:
         """Send a file/document natively."""
-        del kwargs
+        metadata = kwargs.get("metadata") if isinstance(kwargs, dict) else None
         return await self._send_media(
             chat_id,
             file_path,
@@ -2911,6 +3101,7 @@ class QQAdapter(BasePlatformAdapter):
             caption,
             reply_to,
             file_name=file_name,
+            metadata=metadata,
         )
 
     async def _send_media(
@@ -2922,6 +3113,7 @@ class QQAdapter(BasePlatformAdapter):
             caption: Optional[str] = None,
             reply_to: Optional[str] = None,
             file_name: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Upload media and send as a native message.
 
@@ -2949,7 +3141,13 @@ class QQAdapter(BasePlatformAdapter):
         # QQ C2C media sends behave like passive replies more often than plain
         # text sends; when we have a recent inbound anchor, reuse it so native
         # uploads do not fail just because the caller omitted reply_to.
-        if reply_to is None and chat_type == "c2c":
+        # Explicit QQ event-based send metadata wins over this passive fallback.
+        if (
+            reply_to is None
+            and chat_type == "c2c"
+            and not self._metadata_bool(metadata, "qq_is_wakeup", "is_wakeup")
+            and not self._metadata_str(metadata, "qq_event_id", "event_id")
+        ):
             reply_to = self._last_msg_id.get(chat_id)
 
         try:
@@ -2989,6 +3187,9 @@ class QQAdapter(BasePlatformAdapter):
 
             # Send media message
             msg_seq = self._next_msg_seq(chat_id)
+            event_id, is_wakeup = self._resolve_send_context(
+                chat_id, chat_type, reply_to, metadata
+            )
             body: Dict[str, Any] = {
                 "msg_type": MSG_TYPE_MEDIA,
                 "media": {"file_info": file_info},
@@ -2998,6 +3199,10 @@ class QQAdapter(BasePlatformAdapter):
                 body["content"] = caption[: self.MAX_MESSAGE_LENGTH]
             if reply_to:
                 body["msg_id"] = reply_to
+            elif event_id:
+                body["event_id"] = event_id
+            if is_wakeup:
+                body["is_wakeup"] = True
 
             send_data = await self._api_request(
                 "POST",

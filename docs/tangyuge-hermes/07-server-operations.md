@@ -166,9 +166,11 @@ Plugin policy:
   dropping the attachment. Live adapter uploads and generic live-adapter
   `send()` calls are scheduled back onto the gateway-owned event loop so they
   do not fail with cross-loop `is bound to a different event loop` errors. QQ
-  C2C native media sends also reuse the latest inbound message ID when no
-  explicit `reply_to` is provided, keeping passive media replies anchored to a
-  valid inbound message.
+  text/media sends can also use explicit event-based send context through
+  `qq_event_id`, and QQ C2C sends can request `qq_is_wakeup`. On the current
+  runtime, C2C native media still reuses the latest inbound message ID as a
+  passive fallback only when no explicit `qq_event_id` / `qq_is_wakeup`
+  context is present.
 - On the current 81 runtime, active generated-image and TTS files still land in
   `/home/hermes/.hermes/image_cache/` and `/home/hermes/.hermes/audio_cache/`
   because those legacy directories already exist on that host. The shared

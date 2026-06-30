@@ -86,8 +86,15 @@ the current QQ inbound video temp path.
   gateway auto-appends that tag and QQBot sends the image through its live
   adapter's native HTTP `POST` upload path. Live-adapter sends are bridged back
   onto the gateway event loop so they do not trip cross-loop
-  `is bound to a different event loop` errors, and QQ C2C native media sends
-  reuse the latest inbound message ID when no explicit `reply_to` is provided.
+  `is bound to a different event loop` errors. QQ text/media sends also support
+  explicit event-based send context through `qq_event_id`, and QQ C2C sends can
+  request `qq_is_wakeup`; those explicit event-based paths win over the older
+  C2C passive-reply fallback that reuses the latest inbound message ID when no
+  explicit `reply_to` is provided.
+- The QQ adapter also tracks the latest official QQ proactive-message and
+  relationship events used by active-send maintenance: `FRIEND_ADD`,
+  `FRIEND_DEL`, `C2C_MSG_RECEIVE`, `C2C_MSG_REJECT`, `GROUP_ADD_ROBOT`,
+  `GROUP_DEL_ROBOT`, `GROUP_MSG_RECEIVE`, and `GROUP_MSG_REJECT`.
   When `image_gen.provider` is explicitly configured, `image_generate` stays
   visible in the model tool list even if the provider is temporarily missing
   credentials; the tool call returns the provider/auth error directly instead

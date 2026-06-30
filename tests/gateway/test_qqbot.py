@@ -446,6 +446,35 @@ class TestDispatchPayload:
         adapter._dispatch_payload({"op": 0, "t": "SOME_EVENT", "s": 10, "d": {}})
         assert adapter._last_seq == 10
 
+    def test_tracks_c2c_proactive_receive_state(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._dispatch_payload({
+            "op": 0,
+            "t": "C2C_MSG_RECEIVE",
+            "id": "evt_c2c_1",
+            "s": 7,
+            "d": {"openid": "user-openid", "timestamp": "2026-06-29T00:00:00+00:00"},
+        })
+        assert adapter._chat_type_map["user-openid"] == "c2c"
+        assert adapter._proactive_message_enabled["user-openid"] is True
+        assert adapter._last_event_id["user-openid"] == "evt_c2c_1"
+
+    def test_friend_del_clears_cached_proactive_state(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._last_msg_id["user-openid"] = "msg-1"
+        adapter._last_event_id["user-openid"] = "evt-old"
+        adapter._proactive_message_enabled["user-openid"] = True
+        adapter._dispatch_payload({
+            "op": 0,
+            "t": "FRIEND_DEL",
+            "id": "evt_c2c_2",
+            "s": 8,
+            "d": {"openid": "user-openid", "timestamp": "2026-06-29T00:00:00+00:00"},
+        })
+        assert adapter._proactive_message_enabled["user-openid"] is False
+        assert "user-openid" not in adapter._last_msg_id
+        assert "user-openid" not in adapter._last_event_id
+
 
 # ---------------------------------------------------------------------------
 # READY / RESUMED handling
@@ -543,6 +572,17 @@ class TestBuildTextBody:
         adapter = self._make_adapter(app_id="a", client_secret="b", markdown_support=False)
         body = adapter._build_text_body("reply text", reply_to="msg_123")
         assert body.get("message_reference", {}).get("message_id") == "msg_123"
+
+    def test_event_id(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b", markdown_support=False)
+        body = adapter._build_text_body("hello", event_id="evt_123")
+        assert body["event_id"] == "evt_123"
+        assert "message_reference" not in body
+
+    def test_is_wakeup(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b", markdown_support=False)
+        body = adapter._build_text_body("hello", is_wakeup=True)
+        assert body["is_wakeup"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +756,84 @@ class TestWaitForReconnection:
 
         assert result.success
         assert seen["path"] == "/v2/groups/group-openid/messages"
+        assert "msg_id" not in seen["body"]
+
+    @pytest.mark.asyncio
+    async def test_send_text_uses_cached_c2c_event_id_when_proactive_enabled(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b", markdown_support=False)
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+        adapter._chat_type_map["user-openid"] = "c2c"
+        adapter._proactive_message_enabled["user-openid"] = True
+        adapter._last_event_id["user-openid"] = "evt-99"
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["path"] = path
+            seen["body"] = body
+            return {"id": "msg_text_evt"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter.send("user-openid", "hello proactive")
+
+        assert result.success
+        assert seen["path"] == "/v2/users/user-openid/messages"
+        assert seen["body"]["event_id"] == "evt-99"
+        assert "msg_id" not in seen["body"]
+
+    @pytest.mark.asyncio
+    async def test_send_text_explicit_is_wakeup_sets_flag(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b", markdown_support=False)
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["body"] = body
+            return {"id": "msg_text_wakeup"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter.send(
+            "user-openid",
+            "wake up",
+            metadata={"qq_is_wakeup": True},
+        )
+
+        assert result.success
+        assert seen["body"]["is_wakeup"] is True
+        assert "msg_id" not in seen["body"]
+        assert "event_id" not in seen["body"]
+
+    @pytest.mark.asyncio
+    async def test_send_media_explicit_event_id_overrides_passive_fallback(self):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=False)
+        adapter._last_msg_id["user-openid"] = "inbound-42"
+        adapter._upload_media = mock.AsyncMock(return_value={"file_info": "file-info-evt"})
+
+        seen = {}
+
+        async def fake_api_request(method, path, body, timeout=None):
+            seen["body"] = body
+            return {"id": "msg_media_evt"}
+
+        adapter._api_request = fake_api_request
+
+        result = await adapter._send_media(
+            "user-openid",
+            "https://example.com/demo.png",
+            1,
+            "image",
+            metadata={"qq_event_id": "evt-explicit"},
+        )
+
+        assert result.success
+        assert seen["body"]["event_id"] == "evt-explicit"
         assert "msg_id" not in seen["body"]
 
 
