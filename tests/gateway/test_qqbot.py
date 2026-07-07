@@ -361,6 +361,12 @@ class TestDetectMessageType:
         from gateway.platforms.qqbot import QQAdapter
         return QQAdapter._detect_message_type(media_urls, media_types)
 
+    def _processed_fn(self, media_urls, media_types, voice_transcripts):
+        from gateway.platforms.qqbot import QQAdapter
+        return QQAdapter._detect_processed_message_type(
+            media_urls, media_types, voice_transcripts
+        )
+
     def test_no_media(self):
         from gateway.platforms.base import MessageType
         assert self._fn([], []) == MessageType.TEXT
@@ -376,6 +382,17 @@ class TestDetectMessageType:
     def test_video(self):
         from gateway.platforms.base import MessageType
         assert self._fn(["vid.mp4"], ["video/mp4"]) == MessageType.VIDEO
+
+    def test_processed_voice_transcript_keeps_voice_type(self):
+        from gateway.platforms.base import MessageType
+        assert self._processed_fn([], [], ["[Voice] hello"]) == MessageType.VOICE
+
+    def test_processed_voice_transcript_wins_with_image_context(self):
+        from gateway.platforms.base import MessageType
+        assert (
+            self._processed_fn(["file.jpg"], ["image/jpeg"], ["[Voice] hello"])
+            == MessageType.VOICE
+        )
 
 
 # ---------------------------------------------------------------------------

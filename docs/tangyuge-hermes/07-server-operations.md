@@ -171,6 +171,10 @@ Plugin policy:
   runtime, C2C native media still reuses the latest inbound message ID as a
   passive fallback only when no explicit `qq_event_id` / `qq_is_wakeup`
   context is present.
+- When a QQ voice reply already contains tool-generated audio
+  (`[[audio_as_voice]]` or audio `MEDIA:<path>`), the gateway sends that media
+  through the normal media delivery path and does not generate a second
+  runner-side auto-TTS reply.
 - On the current 81 runtime, active generated-image and TTS files still land in
   `/home/hermes/.hermes/image_cache/` and `/home/hermes/.hermes/audio_cache/`
   because those legacy directories already exist on that host. The shared

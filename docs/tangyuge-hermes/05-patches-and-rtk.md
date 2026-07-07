@@ -132,6 +132,11 @@ external patch files to replay:
   Local cached image results also include `media_tag` (`MEDIA:<path>`); gateway
   auto-appends `image_generate` media tags when the final model reply omits
   them, so QQBot can deliver generated images natively.
+  TTS media uses the same producer-tool discipline: the gateway treats both
+  `text_to_speech` and `text_to_speech_tool` as TTS producers, and runner-side
+  auto voice reply skips when the final response already contains
+  `[[audio_as_voice]]` or an audio `MEDIA:<path>` tag. This prevents one turn
+  from sending both the tool-generated audio and an extra auto-TTS reply.
   Do not expose `response_format` for this path because the gateway returns
   cached local paths; do not expose `partial_images` until Hermes handles
   streaming image events.
@@ -150,6 +155,10 @@ external patch files to replay:
   latest inbound `_last_msg_id` when no explicit `reply_to` is provided.
   The standalone QQBot REST sender remains text-only and returns an explicit
   error instead of silently omitting attachments.
+- QQBot voice attachments that are consumed by STT still keep
+  `MessageType.VOICE` after the attachment is normalized into transcript text.
+  This keeps `/voice on|tts` de-duplication on the voice-input path instead of
+  accidentally treating the transcript-only event as plain text.
 - The QQ adapter now tracks the latest official QQ proactive-message and
   relationship events needed for active-send maintenance:
   `FRIEND_ADD`, `FRIEND_DEL`, `C2C_MSG_RECEIVE`, `C2C_MSG_REJECT`,

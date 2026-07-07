@@ -391,6 +391,21 @@ class TestAutoVoiceReply:
         }]
         assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is False
 
+    def test_dedup_skips_when_agent_called_tts_alias(self, runner):
+        messages = [{
+            "role": "assistant",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "text_to_speech_tool", "arguments": "{}"},
+            }],
+        }]
+        assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is False
+
+    def test_dedup_skips_when_response_already_has_voice_media(self, runner):
+        response = "[[audio_as_voice]]\nMEDIA:/tmp/hermes_voice/reply.ogg"
+        assert self._call(runner, "all", MessageType.TEXT, response=response) is False
+
     def test_no_dedup_for_other_tools(self, runner):
         messages = [{
             "role": "assistant",

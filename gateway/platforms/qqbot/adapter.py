@@ -1458,7 +1458,9 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="dm",
             ),
             text=text,
-            message_type=self._detect_message_type(media_urls, media_types),
+            message_type=self._detect_processed_message_type(
+                media_urls, media_types, voice_transcripts
+            ),
             raw_message=d,
             message_id=msg_id,
             media_urls=media_urls,
@@ -1531,7 +1533,9 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="group",
             ),
             text=text,
-            message_type=self._detect_message_type(media_urls, media_types),
+            message_type=self._detect_processed_message_type(
+                media_urls, media_types, voice_transcripts
+            ),
             raw_message=d,
             message_id=msg_id,
             media_urls=media_urls,
@@ -1614,7 +1618,9 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="group",
             ),
             text=text,
-            message_type=self._detect_message_type(media_urls, media_types),
+            message_type=self._detect_processed_message_type(
+                media_urls, media_types, voice_transcripts
+            ),
             raw_message=d,
             message_id=msg_id,
             media_urls=media_urls,
@@ -1692,7 +1698,9 @@ class QQAdapter(BasePlatformAdapter):
                 chat_type="dm",
             ),
             text=text,
-            message_type=self._detect_message_type(media_urls, media_types),
+            message_type=self._detect_processed_message_type(
+                media_urls, media_types, voice_transcripts
+            ),
             raw_message=d,
             message_id=msg_id,
             media_urls=media_urls,
@@ -1837,6 +1845,17 @@ class QQAdapter(BasePlatformAdapter):
             first_type,
         )
         return MessageType.TEXT
+
+    @staticmethod
+    def _detect_processed_message_type(
+            media_urls: list,
+            media_types: list,
+            voice_transcripts: list,
+    ):
+        """Determine MessageType after QQ attachments have been normalized."""
+        if voice_transcripts:
+            return MessageType.VOICE
+        return QQAdapter._detect_message_type(media_urls, media_types)
 
     async def _process_attachments(
             self,

@@ -173,9 +173,9 @@ provider; DeepSeek is the retained backup provider.
 web search backends, `edge-tts`, dev/test, cron compatibility, CLI, PTY,
 vision, MCP, and `[all]` as the small Tangyuge server install profile. Removed
 upstream extras such as Slack, Matrix, WeCom, ACP, Modal, Daytona, Honcho,
-HomeAssistant, SMS, Google/YouTube, premium TTS, voice/STT, Bedrock, Azure,
-Termux, DingTalk, Feishu, FAL, and non-retained messaging stacks are outside the
-current install profile.
+HomeAssistant, SMS, Google/YouTube, premium TTS, upstream voice/STT extras
+(not the retained QQBot STT path), Bedrock, Azure, Termux, DingTalk, Feishu,
+FAL, and non-retained messaging stacks are outside the current install profile.
 
 `aiohttp` is a core dependency, not an optional web/TTS dependency, because the
 retained QQBot gateway WebSocket adapter imports `aiohttp` directly for
