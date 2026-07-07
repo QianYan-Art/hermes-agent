@@ -175,6 +175,15 @@ Plugin policy:
   (`[[audio_as_voice]]` or audio `MEDIA:<path>`), the gateway sends that media
   through the normal media delivery path and does not generate a second
   runner-side auto-TTS reply.
+- Platform config can set `typing_indicator: false` to disable the generic
+  typing/thinking refresh loop for that platform while preserving reply
+  delivery. The default remains `true`.
+- QQ text/media send failures include both the human-readable `error` and a
+  stable `SendResult.error_kind` category (`too_long`, `bad_format`,
+  `forbidden`, `not_found`, `rate_limited`, `transient`, or `unknown`). The QQ
+  WebSocket reader also raises immediately if the stored WebSocket is already
+  closed, so reconnect/backoff logic handles that state instead of a tight
+  read-loop retry.
 - On the current 81 runtime, active generated-image and TTS files still land in
   `/home/hermes/.hermes/image_cache/` and `/home/hermes/.hermes/audio_cache/`
   because those legacy directories already exist on that host. The shared

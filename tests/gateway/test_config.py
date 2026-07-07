@@ -70,6 +70,23 @@ class TestPlatformConfigRoundtrip:
         restored = PlatformConfig.from_dict({"gateway_restart_notification": "false"})
         assert restored.gateway_restart_notification is False
 
+    def test_typing_indicator_defaults_true(self):
+        assert PlatformConfig().typing_indicator is True
+        assert PlatformConfig.from_dict({}).typing_indicator is True
+
+    def test_typing_indicator_roundtrip_false(self):
+        pc = PlatformConfig(enabled=True, typing_indicator=False)
+        restored = PlatformConfig.from_dict(pc.to_dict())
+        assert restored.typing_indicator is False
+
+    def test_typing_indicator_coerces_quoted_false(self):
+        restored = PlatformConfig.from_dict({"typing_indicator": "false"})
+        assert restored.typing_indicator is False
+
+    def test_typing_indicator_resolved_from_extra(self):
+        restored = PlatformConfig.from_dict({"extra": {"typing_indicator": False}})
+        assert restored.typing_indicator is False
+
 
 class TestGetConnectedPlatforms:
     def test_returns_enabled_with_token(self):

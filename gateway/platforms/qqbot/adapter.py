@@ -69,6 +69,7 @@ from gateway.platforms.base import (
     _ssrf_redirect_guard,
     cache_document_from_bytes,
     cache_image_from_bytes,
+    classify_send_error,
 )
 from gateway.platforms.helpers import strip_markdown
 
@@ -687,6 +688,10 @@ class QQAdapter(BasePlatformAdapter):
         """Read WebSocket frames until connection closes."""
         if not self._ws:
             raise RuntimeError("WebSocket not connected")
+        if self._ws.closed:
+            # ws 非 None 但已关闭时，循环条件会在入口直接为假；这里抛错，
+            # 让 _listen_loop 进入重连退避路径，避免按“干净读完”零退避空转。
+            raise RuntimeError("WebSocket closed")
 
         while self._running and self._ws and not self._ws.closed:
             msg = await self._ws.receive()
@@ -2671,7 +2676,12 @@ class QQAdapter(BasePlatformAdapter):
         """
         if not self.is_connected:
             if not await self._wait_for_reconnection():
-                return SendResult(success=False, error="Not connected", retryable=True)
+                return SendResult(
+                    success=False,
+                    error="Not connected",
+                    retryable=True,
+                    error_kind="transient",
+                )
 
         if not content or not content.strip():
             return SendResult(success=True)
@@ -2716,7 +2726,9 @@ class QQAdapter(BasePlatformAdapter):
                     return await self._send_guild_text(chat_id, content, reply_to)
                 else:
                     return SendResult(
-                        success=False, error=f"Unknown chat type for {chat_id}"
+                        success=False,
+                        error=f"Unknown chat type for {chat_id}",
+                        error_kind="unknown",
                     )
             except Exception as exc:
                 last_exc = exc
@@ -2744,7 +2756,12 @@ class QQAdapter(BasePlatformAdapter):
         retryable = not any(
             k in error_msg.lower() for k in ("invalid", "forbidden", "not found")
         )
-        return SendResult(success=False, error=error_msg, retryable=retryable)
+        return SendResult(
+            success=False,
+            error=error_msg,
+            retryable=retryable,
+            error_kind=classify_send_error(last_exc, error_msg),
+        )
 
     async def _send_c2c_text(
             self,
@@ -3147,7 +3164,12 @@ class QQAdapter(BasePlatformAdapter):
         """
         if not self.is_connected:
             if not await self._wait_for_reconnection():
-                return SendResult(success=False, error="Not connected", retryable=True)
+                return SendResult(
+                    success=False,
+                    error="Not connected",
+                    retryable=True,
+                    error_kind="transient",
+                )
 
         chat_type = self._guess_chat_type(chat_id)
         if chat_type == "guild":
@@ -3155,6 +3177,7 @@ class QQAdapter(BasePlatformAdapter):
             return SendResult(
                 success=False,
                 error="Guild media send not supported via this path",
+                error_kind="bad_format",
             )
 
         # QQ C2C media sends behave like passive replies more often than plain
@@ -3202,6 +3225,7 @@ class QQAdapter(BasePlatformAdapter):
                 return SendResult(
                     success=False,
                     error=f"Upload returned no file_info: {upload}",
+                    error_kind="unknown",
                 )
 
             # Send media message
@@ -3251,6 +3275,7 @@ class QQAdapter(BasePlatformAdapter):
                     f"({exc.file_size_human}). Retry tomorrow."
                 ),
                 retryable=False,
+                error_kind="rate_limited",
             )
         except UploadFileTooLargeError as exc:
             logger.warning(
@@ -3264,10 +3289,15 @@ class QQAdapter(BasePlatformAdapter):
                     f"QQ per-file upload limit ({exc.limit_human})."
                 ),
                 retryable=False,
+                error_kind="too_long",
             )
         except Exception as exc:
             logger.error("[%s] Media send failed: %s", self._log_tag, exc)
-            return SendResult(success=False, error=str(exc))
+            return SendResult(
+                success=False,
+                error=str(exc),
+                error_kind=classify_send_error(exc),
+            )
 
     async def _upload_local_file(
             self,

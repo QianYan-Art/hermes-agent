@@ -298,6 +298,9 @@ class PlatformConfig:
     # noise; keep True for back-channels where the operator wants them.
     gateway_restart_notification: bool = True
 
+    # 控制处理消息时是否显示 typing / thinking 状态；默认开启以保持旧行为。
+    typing_indicator: bool = True
+
     # Platform-specific settings
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -307,6 +310,7 @@ class PlatformConfig:
             "extra": self.extra,
             "reply_to_mode": self.reply_to_mode,
             "gateway_restart_notification": self.gateway_restart_notification,
+            "typing_indicator": self.typing_indicator,
         }
         if self.token:
             result["token"] = self.token
@@ -330,6 +334,10 @@ class PlatformConfig:
         if _grn is None:
             _grn = data.get("extra", {}).get("gateway_restart_notification")
 
+        _typing = data.get("typing_indicator")
+        if _typing is None:
+            _typing = data.get("extra", {}).get("typing_indicator")
+
         return cls(
             enabled=_coerce_bool(data.get("enabled"), False),
             token=data.get("token"),
@@ -337,6 +345,7 @@ class PlatformConfig:
             home_channel=home_channel,
             reply_to_mode=data.get("reply_to_mode", "first"),
             gateway_restart_notification=_coerce_bool(_grn, True),
+            typing_indicator=_coerce_bool(_typing, True),
             extra=data.get("extra", {}),
         )
 
@@ -922,6 +931,8 @@ def load_gateway_config() -> GatewayConfig:
                         bridged["channel_prompts"] = channel_prompts
                 if "gateway_restart_notification" in platform_cfg:
                     bridged["gateway_restart_notification"] = platform_cfg["gateway_restart_notification"]
+                if "typing_indicator" in platform_cfg:
+                    bridged["typing_indicator"] = platform_cfg["typing_indicator"]
                 enabled_was_explicit = _cfg_toplevel and "enabled" in platform_cfg
                 if not bridged and not enabled_was_explicit:
                     continue

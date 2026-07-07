@@ -2506,3 +2506,63 @@ class TestCloseCodeClassification:
         assert 4014 in fatal_codes
         assert 4001 in fatal_codes
         assert 4915 in fatal_codes
+
+
+class TestReadEventsClosedWsGuard:
+    def _make_adapter(self):
+        from gateway.platforms.qqbot.adapter import QQAdapter
+        return QQAdapter(_make_config(app_id="a", client_secret="b"))
+
+    @pytest.mark.asyncio
+    async def test_read_events_raises_when_ws_closed_on_entry(self):
+        adapter = self._make_adapter()
+        adapter._running = True
+        adapter._ws = SimpleNamespace(closed=True)
+
+        with pytest.raises(RuntimeError, match="WebSocket closed"):
+            await adapter._read_events()
+
+    @pytest.mark.asyncio
+    async def test_read_events_raises_when_ws_none(self):
+        adapter = self._make_adapter()
+        adapter._running = True
+        adapter._ws = None
+
+        with pytest.raises(RuntimeError, match="WebSocket not connected"):
+            await adapter._read_events()
+
+
+class TestQQSendErrorClassification:
+    def _make_adapter(self):
+        from gateway.platforms.qqbot.adapter import QQAdapter
+        return QQAdapter(_make_config(app_id="a", client_secret="b"))
+
+    @pytest.mark.asyncio
+    async def test_send_chunk_classifies_forbidden_failure(self):
+        adapter = self._make_adapter()
+
+        async def _raise_forbidden(*_args, **_kwargs):
+            raise RuntimeError("Forbidden: bot was blocked by the user")
+
+        adapter._send_c2c_text = _raise_forbidden
+
+        result = await adapter._send_chunk("user_openid", "hello")
+
+        assert result.success is False
+        assert result.retryable is False
+        assert result.error_kind == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_send_chunk_classifies_transient_failure(self):
+        adapter = self._make_adapter()
+
+        async def _raise_network(*_args, **_kwargs):
+            raise RuntimeError("ConnectError: connection refused")
+
+        adapter._send_c2c_text = _raise_network
+
+        result = await adapter._send_chunk("user_openid", "hello")
+
+        assert result.success is False
+        assert result.retryable is True
+        assert result.error_kind == "transient"

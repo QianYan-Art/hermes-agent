@@ -153,8 +153,17 @@ external patch files to replay:
   `qq_event_id`, and QQ C2C sends can request `qq_is_wakeup`. Those explicit
   event-based paths win over the older passive-media fallback that reuses the
   latest inbound `_last_msg_id` when no explicit `reply_to` is provided.
+  QQ text/media send failures now keep the human-readable `error` and also
+  populate stable `SendResult.error_kind` categories (`too_long`,
+  `bad_format`, `forbidden`, `not_found`, `rate_limited`, `transient`, or
+  `unknown`) so tools and callers do not need to substring-match provider
+  errors.
   The standalone QQBot REST sender remains text-only and returns an explicit
   error instead of silently omitting attachments.
+- QQBot WebSocket reads now fail fast when the stored WebSocket object is
+  already closed on entry. A closed-but-non-`None` WebSocket previously made
+  the read loop return normally and could cause `_listen_loop` to spin without
+  reconnect backoff.
 - QQBot voice attachments that are consumed by STT still keep
   `MessageType.VOICE` after the attachment is normalized into transcript text.
   This keeps `/voice on|tts` de-duplication on the voice-input path instead of
