@@ -27,6 +27,7 @@ on:
       - 'pyproject.toml'
       - 'package.json'
       - 'package-lock.json'
+      - 'osv-scanner.toml'
       - '.github/workflows/osv-scanner.yml'
   push:
     branches: [main]
@@ -35,6 +36,7 @@ on:
       - 'pyproject.toml'
       - 'package.json'
       - 'package-lock.json'
+      - 'osv-scanner.toml'
   schedule:
     # Weekly scan against main — catches CVEs published after merge for
     # deps that haven't changed since.
@@ -55,6 +57,7 @@ jobs:
       # Scan explicit lockfiles rather than recursing, so we only look at
       # the sources of truth and skip vendored / test / worktree dirs.
       scan-args: |-
+        --config=osv-scanner.toml
         --lockfile=uv.lock
         --lockfile=package-lock.json
       fail-on-vuln: false

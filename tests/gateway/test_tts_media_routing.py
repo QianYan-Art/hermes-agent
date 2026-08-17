@@ -261,3 +261,91 @@ async def test_streaming_delivery_blocks_media_path_outside_allowed_roots(tmp_pa
 
     adapter.send_document.assert_not_awaited()
     adapter.send_voice.assert_not_awaited()
+
+
+def _queued_media_runner():
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner._thread_metadata_for_source = lambda source, anchor=None: {}
+    runner._reply_anchor_for_event = lambda event: None
+    return runner
+
+
+def _queued_media_adapter():
+    return SimpleNamespace(
+        name="test",
+        extract_media=BasePlatformAdapter.extract_media,
+        extract_images=BasePlatformAdapter.extract_images,
+        extract_local_files=BasePlatformAdapter.extract_local_files,
+        send=AsyncMock(return_value=SendResult(success=True, message_id="text")),
+        send_multiple_images=AsyncMock(
+            return_value=SendResult(success=True, message_id="image")
+        ),
+        send_voice=AsyncMock(return_value=SendResult(success=True, message_id="voice")),
+        send_document=AsyncMock(return_value=SendResult(success=True, message_id="doc")),
+        send_video=AsyncMock(return_value=SendResult(success=True, message_id="video")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_queued_first_response_splits_text_and_media(tmp_path, monkeypatch):
+    event = _event(thread_id="topic-1")
+    media_file = _allowed_media_path(tmp_path, monkeypatch, "queued.png")
+    runner = _queued_media_runner()
+    adapter = _queued_media_adapter()
+
+    await runner._deliver_queued_first_response(
+        f"done\nMEDIA:{media_file}",
+        event.source,
+        adapter,
+        metadata={"thread_id": "topic-1"},
+        event_message_id=event.message_id,
+    )
+
+    adapter.send.assert_awaited_once_with(
+        "chat-1",
+        "done",
+        metadata={"thread_id": "topic-1"},
+    )
+    adapter.send_multiple_images.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_queued_streamed_response_only_delivers_media(tmp_path, monkeypatch):
+    event = _event(thread_id="topic-1")
+    media_file = _allowed_media_path(tmp_path, monkeypatch, "streamed.png")
+    runner = _queued_media_runner()
+    adapter = _queued_media_adapter()
+
+    await runner._deliver_queued_first_response(
+        f"done\nMEDIA:{media_file}",
+        event.source,
+        adapter,
+        metadata={"thread_id": "topic-1"},
+        text_already_delivered=True,
+    )
+
+    adapter.send.assert_not_awaited()
+    adapter.send_multiple_images.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_queued_failed_response_does_not_upload_media(tmp_path, monkeypatch):
+    event = _event(thread_id="topic-1")
+    media_file = _allowed_media_path(tmp_path, monkeypatch, "failed.png")
+    runner = _queued_media_runner()
+    adapter = _queued_media_adapter()
+
+    await runner._deliver_queued_first_response(
+        f"failed\nMEDIA:{media_file}",
+        event.source,
+        adapter,
+        metadata={"thread_id": "topic-1"},
+        deliver_media=False,
+    )
+
+    adapter.send.assert_awaited_once_with(
+        "chat-1",
+        "failed",
+        metadata={"thread_id": "topic-1"},
+    )
+    adapter.send_multiple_images.assert_not_awaited()

@@ -5310,6 +5310,16 @@ def invalidate_env_cache() -> None:
     _env_cache = None
 
 
+_STRUCTURED_VALUE_MARKERS = ("://", "?", "&")
+
+
+def _looks_like_structured_value(value: str) -> bool:
+    """Return whether a value must stay opaque to the concatenation splitter."""
+    if any(marker in value for marker in _STRUCTURED_VALUE_MARKERS):
+        return True
+    return any(ch.isspace() for ch in value)
+
+
 def _sanitize_env_lines(lines: list) -> list:
     """Fix corrupted .env lines before reading or writing.
 
@@ -5358,10 +5368,24 @@ def _sanitize_env_lines(lines: list) -> list:
             )
         })
 
-        if len(split_positions) > 1:
-            for i, pos in enumerate(split_positions):
-                end = split_positions[i + 1] if i + 1 < len(split_positions) else len(stripped)
-                part = stripped[pos:end].strip()
+        split_into_entries = False
+        segments: list[str] = []
+        if len(split_positions) > 1 and split_positions[0] == 0:
+            segments = [
+                stripped[pos:split_positions[i + 1] if i + 1 < len(split_positions) else len(stripped)]
+                for i, pos in enumerate(split_positions)
+            ]
+            # Plain token secrets may be concatenated by a missing newline.
+            # URLs, query strings, and values containing whitespace can embed
+            # KNOWN_KEY= text legitimately and must remain a single value.
+            split_into_entries = all(
+                not _looks_like_structured_value(segment.split("=", 1)[1])
+                for segment in segments[:-1]
+            )
+
+        if split_into_entries:
+            for segment in segments:
+                part = segment.strip()
                 if part:
                     sanitized.append(part + "\n")
         else:

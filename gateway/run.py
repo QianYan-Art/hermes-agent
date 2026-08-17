@@ -1432,6 +1432,14 @@ def _is_control_interrupt_message(message: Optional[str]) -> bool:
     return normalized in _CONTROL_INTERRUPT_MESSAGES
 
 
+def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
+    """提取排队回复中可直接发送的文本，并保留受保护的示例标签。"""
+    _, cleaned = adapter.extract_media(response)
+    cleaned = cleaned.replace("[[audio_as_voice]]", "").strip()
+    cleaned = cleaned.replace("[[as_document]]", "").strip()
+    return cleaned.strip()
+
+
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
     """Derive the /command slug and declared frontmatter name from a SKILL.md.
 
@@ -12878,6 +12886,7 @@ class GatewayRunner:
         response: str,
         event: MessageEvent,
         adapter,
+        thread_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Extract MEDIA: tags and local file paths from a response and deliver them.
 
@@ -12910,7 +12919,14 @@ class GatewayRunner:
             local_files, _ = adapter.extract_local_files(cleaned)
             local_files = BasePlatformAdapter.filter_local_delivery_paths(local_files)
 
-            _thread_meta = self._thread_metadata_for_source(event.source, self._reply_anchor_for_event(event))
+            _thread_meta = (
+                dict(thread_metadata)
+                if thread_metadata is not None
+                else self._thread_metadata_for_source(
+                    event.source,
+                    self._reply_anchor_for_event(event),
+                )
+            )
 
             _VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp'}
             _IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
@@ -12993,6 +13009,41 @@ class GatewayRunner:
 
         except Exception as e:
             logger.warning("Post-stream media extraction failed: %s", e)
+
+    async def _deliver_queued_first_response(
+        self,
+        response: str,
+        source: SessionSource,
+        adapter,
+        metadata: Optional[Dict[str, Any]] = None,
+        event_message_id: Optional[str] = None,
+        text_already_delivered: bool = False,
+        deliver_media: bool = True,
+    ) -> None:
+        """按正常文本与附件分流规则交付排队追问前的首轮回复。"""
+        if not text_already_delivered:
+            text_content = _strip_response_attachments_for_direct_send(response, adapter)
+            if text_content:
+                await adapter.send(
+                    source.chat_id,
+                    text_content,
+                    metadata=metadata,
+                )
+
+        if not deliver_media:
+            return
+
+        synthetic_event = MessageEvent(
+            text="",
+            source=source,
+            message_id=event_message_id,
+        )
+        await self._deliver_media_from_response(
+            response,
+            synthetic_event,
+            adapter,
+            thread_metadata=metadata,
+        )
 
     async def _handle_rollback_command(self, event: MessageEvent) -> str:
         """Handle /rollback command — list or restore filesystem checkpoints."""
@@ -19614,24 +19665,29 @@ class GatewayRunner:
                         or (_sc and getattr(_sc, "final_content_delivered", False))
                     )
                     first_response = result.get("final_response", "")
-                    if first_response and not _already_streamed:
+                    if first_response:
                         try:
-                            logger.info(
-                                "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
-                                session_key or "?",
-                            )
-                            await adapter.send(
-                                source.chat_id,
+                            if not _already_streamed:
+                                logger.info(
+                                    "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
+                                    session_key or "?",
+                                )
+                            else:
+                                logger.info(
+                                    "Queued follow-up for session %s: text delivery confirmed; delivering any remaining attachments.",
+                                    session_key or "?",
+                                )
+                            await self._deliver_queued_first_response(
                                 first_response,
+                                source=source,
+                                adapter=adapter,
                                 metadata=_status_thread_metadata,
+                                event_message_id=event_message_id,
+                                text_already_delivered=_already_streamed,
+                                deliver_media=not bool(result.get("failed")),
                             )
                         except Exception as e:
                             logger.warning("Failed to send first response before queued message: %s", e)
-                    elif first_response:
-                        logger.info(
-                            "Queued follow-up for session %s: skipping resend because final streamed delivery was confirmed.",
-                            session_key or "?",
-                        )
                     # Release deferred bg-review notifications now that the
                     # first response has been delivered.  Pop from the
                     # adapter's callback dict (prevents double-fire in

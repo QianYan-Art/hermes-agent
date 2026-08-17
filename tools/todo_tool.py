@@ -20,6 +20,7 @@ from typing import Dict, Any, List, Optional
 
 # Valid status values for todo items
 VALID_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+TODO_INJECTION_HEADER = "[Your active task list was preserved across context compression]"
 
 
 class TodoStore:
@@ -114,7 +115,7 @@ class TodoStore:
         if not active_items:
             return None
 
-        lines = ["[Your active task list was preserved across context compression]"]
+        lines = [TODO_INJECTION_HEADER]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['id']}. {item['content']} ({item['status']})")

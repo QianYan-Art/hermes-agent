@@ -1,6 +1,7 @@
 # Patches And RTK
 
 常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、"/context"、
+"todo压缩"、"压缩后todo"、"TODO快照"、"conversation compression"、
 "关闭自动记忆"、"自动总结skills"、"RTK"、"provider"、"模型路由"、
 "Tavily"、"OpenAI-compatible image"、"CPA生图旁路"、"生图参数"、
 "QQ授权按钮"、"允许一次"、"始终允许"、"拒绝"、"新旧行为差异"。
@@ -75,6 +76,15 @@ external patch files to replay:
   back to 256k if detection cannot resolve a stronger value. `/model` switches
   also auto-probe and persist the current model context window so providers do
   not need static default context values.
+- The `.env` sanitizer only splits a malformed line when it starts with a known
+  key and the preceding values are plain tokens. URL/query-string or
+  whitespace-bearing values that embed another `KNOWN_KEY=` substring remain
+  opaque, preventing persistent secret truncation during config reads/writes.
+- Context compression refreshes the active todo snapshot using
+  `TODO_INJECTION_HEADER`. A real trailing user turn absorbs the current
+  snapshot after any stale copy is removed; summary/scaffolding tails keep a
+  flagged standalone snapshot so compressed task state is not mistaken for a
+  new human instruction.
 - Automatic memory and skill-review loops are disabled for the Tangyuge Codex
   runtime path. `agent/codex_runtime.py` explicitly sets
   `should_review_memory = False` and `should_review_skills = False`; memory
@@ -136,7 +146,11 @@ external patch files to replay:
   `text_to_speech` and `text_to_speech_tool` as TTS producers, and runner-side
   auto voice reply skips when the final response already contains
   `[[audio_as_voice]]` or an audio `MEDIA:<path>` tag. This prevents one turn
-  from sending both the tool-generated audio and an extra auto-TTS reply.
+  from sending both the tool-generated audio and an extra auto-TTS reply. The
+  shared `MEDIA:` parser accepts Chinese full-width punctuation as a path
+  terminator. When a queued follow-up arrives, the first response now splits
+  visible text from attachments: confirmed streamed text is not resent, media
+  is still delivered, and failed turns do not upload stale attachments.
   Do not expose `response_format` for this path because the gateway returns
   cached local paths; do not expose `partial_images` until Hermes handles
   streaming image events.
@@ -167,7 +181,10 @@ external patch files to replay:
 - QQBot voice attachments that are consumed by STT still keep
   `MessageType.VOICE` after the attachment is normalized into transcript text.
   This keeps `/voice on|tts` de-duplication on the voice-input path instead of
-  accidentally treating the transcript-only event as plain text.
+  accidentally treating the transcript-only event as plain text. QQ
+  `content_type=file` takes precedence over an audio-looking filename so a
+  normal `.wav`/`.mp3` file remains a document, and STT temporary WAV files are
+  removed even when the ASR call raises.
 - The QQ adapter now tracks the latest official QQ proactive-message and
   relationship events needed for active-send maintenance:
   `FRIEND_ADD`, `FRIEND_DEL`, `C2C_MSG_RECEIVE`, `C2C_MSG_REJECT`,
@@ -193,6 +210,9 @@ external patch files to replay:
 pytest tests/plugins/test_rtk_rewrite_plugin.py -q
 pytest tests/tools/test_send_message_tool_live_loop_bridge.py -q
 pytest -o addopts='' tests/gateway/test_qqbot.py -q
+pytest tests/gateway/test_media_tag_cleanup.py tests/gateway/test_tts_media_routing.py -q
+pytest tests/run_agent/test_compression_todo_snapshot.py -q
+pytest tests/hermes_cli/test_config.py::TestSanitizeEnvLines -q
 python -m compileall -q gateway/platforms/qqbot plugins/rtk-rewrite hermes_cli/plugins.py
 ```
 

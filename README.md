@@ -216,6 +216,11 @@ from `tests/trimmed_manifest.py`. Running `python -m pytest` without targets
 will still collect upstream residual tests for removed platforms/tools and is
 not the Tangyuge-Hermes release baseline.
 
+Dependency lockfiles are scanned by the GitHub OSV-Scanner workflow. The scan
+loads repository exceptions from `osv-scanner.toml`; entries are limited to
+equivalent source fixes already backported here or vulnerabilities in features
+that are physically absent from the retained runtime.
+
 On the server:
 
 ```bash

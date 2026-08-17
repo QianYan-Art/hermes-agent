@@ -1,0 +1,12 @@
+# 上游应用层漏洞已按当前精简分支逐项处理；这里仅抑制与实际代码状态不符的告警。
+[[IgnoredVulns]]
+id = "CVE-2026-10221"
+reason = ".env sanitizer 修复已从上游 b944c6e 回移，并由聚焦回归测试覆盖。"
+
+[[IgnoredVulns]]
+id = "CVE-2026-10222"
+reason = "压缩边界 todo 快照权限修复已局部回移，并由聚焦回归测试覆盖。"
+
+[[IgnoredVulns]]
+id = "CVE-2026-10224"
+reason = "受影响的 Feishu adapter 已从 Tangyuge 精简源码与 81 运行面裁剪，不可部署。"

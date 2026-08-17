@@ -481,6 +481,16 @@ class TestSanitizeEnvLines:
         assert result[0].startswith("GLM_API_KEY=")
         assert result[1].startswith("LM_API_KEY=")
 
+    def test_value_embedding_known_key_not_split(self):
+        lines = [
+            "OPENAI_BASE_URL=https://proxy.example.com/v1?TAVILY_API_KEY=sk-embedded\n",
+        ]
+        assert _sanitize_env_lines(lines) == lines
+
+    def test_leading_text_before_first_key_not_dropped(self):
+        lines = ["export OPENAI_API_KEY=sk1ANTHROPIC_API_KEY=sk2\n"]
+        assert _sanitize_env_lines(lines) == lines
+
     def test_save_env_value_fixes_corruption_on_write(self, tmp_path):
         """save_env_value sanitizes corrupted lines when writing a new key."""
         env_file = tmp_path / ".env"

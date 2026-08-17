@@ -148,6 +148,9 @@ class TestIsVoiceContentType:
     def test_audio_extension_amr(self):
         assert self._fn("", "recording.amr") is True
 
+    def test_file_content_type_wins_over_audio_extension(self):
+        assert self._fn("file", "recording.wav") is False
+
 
 # ---------------------------------------------------------------------------
 # Voice attachment SSRF protection
@@ -173,6 +176,31 @@ class TestVoiceAttachmentSSRFProtection:
 
         assert transcript is None
         adapter._http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stt_cleans_temp_wav_when_asr_raises(self, tmp_path):
+        adapter = self._make_adapter(app_id="a", client_secret="b")
+        response = mock.Mock()
+        response.content = b"not-real-audio-but-long-enough"
+        response.headers = {}
+        response.raise_for_status.return_value = None
+        adapter._http_client = mock.AsyncMock()
+        adapter._http_client.get.return_value = response
+
+        wav_path = tmp_path / "voice.wav"
+        wav_path.write_bytes(b"wav")
+        adapter._convert_audio_to_wav_file = mock.AsyncMock(return_value=str(wav_path))
+        adapter._call_stt = mock.AsyncMock(side_effect=RuntimeError("asr failed"))
+
+        with mock.patch("tools.url_safety.is_safe_url", return_value=True):
+            with pytest.raises(RuntimeError, match="asr failed"):
+                await adapter._stt_voice_attachment(
+                    "https://example.com/voice.silk",
+                    "audio/silk",
+                    "voice.silk",
+                )
+
+        assert not wav_path.exists()
 
     def test_connect_uses_redirect_guard_hook(self):
         from gateway.platforms.qqbot import QQAdapter, _ssrf_redirect_guard

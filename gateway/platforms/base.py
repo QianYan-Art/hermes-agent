@@ -1209,6 +1209,9 @@ _MEDIA_EXT_ALTERNATION = "|".join(
     sorted((e.lstrip(".") for e in MEDIA_DELIVERY_EXTS), key=len, reverse=True)
 )
 
+# 中文回复常在路径后直接接全角标点；这些字符和 ASCII 标点一样用于终止路径。
+_MEDIA_CJK_TERMINATORS = "（）〈〉《》：，。；！？、\u201c\u201d\u2018\u2019【】"
+
 # Anchored ``MEDIA:<path>`` cleanup pattern. Unlike the old loose
 # ``MEDIA:\\s*\\S+``, this only strips a tag whose path ends in a known
 # deliverable extension (optionally quoted/backticked). A ``MEDIA:`` tag with
@@ -1221,8 +1224,8 @@ _MEDIA_EXT_ALTERNATION = "|".join(
 MEDIA_TAG_CLEANUP_RE = re.compile(
     r'''[`"']?MEDIA:\s*'''
     r'''(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|'''
-    r'''(?:~/|/|[A-Za-z]:[/\\])\S+(?:[^\S\n]+\S+)*?\.(?:''' + _MEDIA_EXT_ALTERNATION + r'''))'''
-    r'''(?=[\s`"',;:)\]}]|$)[`"']?''',
+    r'''(?:~/|/|[A-Za-z]:[/\\])\S+?(?:[^\S\n]+\S+?)*?\.(?:''' + _MEDIA_EXT_ALTERNATION + r'''))'''
+    r'''(?=[\s`"',;:)\]}''' + _MEDIA_CJK_TERMINATORS + r''']|MEDIA:|$)[`"']?''',
     re.IGNORECASE,
 )
 

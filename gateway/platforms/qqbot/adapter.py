@@ -2038,6 +2038,9 @@ class QQAdapter(BasePlatformAdapter):
         fn = filename.strip().lower()
         if ct == "voice" or ct.startswith("audio/"):
             return True
+        # QQ 普通文件上传统一标记为 file；即使扩展名是音频，也必须按文件交付。
+        if ct == "file":
+            return False
         _VOICE_EXTENSIONS = (
             ".silk",
             ".amr",
@@ -2164,15 +2167,15 @@ class QQAdapter(BasePlatformAdapter):
                     )
                     return None
 
-            # 4. Call STT API
+            # 4. Call STT API and always clean up the temp WAV afterward.
             logger.debug("[%s] STT: calling ASR on %s", self._log_tag, wav_path)
-            transcript = await self._call_stt(wav_path)
-
-            # 5. Cleanup temp file
             try:
-                os.unlink(wav_path)
-            except OSError:
-                pass
+                transcript = await self._call_stt(wav_path)
+            finally:
+                try:
+                    os.unlink(wav_path)
+                except OSError:
+                    pass
 
             if transcript:
                 logger.debug("[%s] STT success: %r", self._log_tag, transcript[:100])

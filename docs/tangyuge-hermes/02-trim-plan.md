@@ -183,6 +183,13 @@ retained QQBot gateway WebSocket adapter imports `aiohttp` directly for
 Keep the direct pin aligned with `uv.lock` and current GitHub advisory fixed
 ranges so fresh 81-style installs do not rely on leftover server packages.
 
+Security upgrades inside the retained dependency boundary must update both
+`pyproject.toml` and `uv.lock`. The pinned GitHub OSV-Scanner workflow runs with
+`--config=osv-scanner.toml` against the lockfiles. Ignore entries are reserved
+for equivalent application-layer fixes already backported to this branch or
+for affected features that are physically absent from the retained source;
+vulnerable retained packages must be upgraded to a fixed version instead.
+
 ## Verification
 
 ```bash

@@ -121,12 +121,21 @@ README policy:
 - Do not restore `README.zh-CN.md`; it previously carried upstream marketing
   and non-retained platform claims.
 
+Repository security scanning is CI-only: `.github/workflows/osv-scanner.yml`
+invokes `--config=osv-scanner.toml` for lockfile checks. That TOML file is
+tracked with the checkout and is not server runtime data or a replacement for
+upgrading a vulnerable retained dependency.
+
 Plugin policy:
 
 - The 81 runtime enables `rtk-rewrite` in `plugins.enabled`, and the active
   runtime plugin now resolves to the bundled `plugins/rtk-rewrite/` copy. The
   old `/home/hermes/.hermes/plugins/rtk-rewrite/` user override was removed
   after verifying it was byte-identical to the bundled plugin.
+- The server binary `/home/hermes/.local/bin/rtk` was updated to `0.45.0` on
+  2026-08-17. The Linux x86_64 musl archive was verified against SHA256
+  `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4`;
+  the installed file remains owned by `hermes:hermes` with mode `755`.
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`,
   `browser/firecrawl`, `web/exa`, `web/firecrawl`, `web/parallel`,
