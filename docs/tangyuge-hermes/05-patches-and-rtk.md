@@ -1,6 +1,7 @@
 # Patches And RTK
 
 常用叫法："patch记录"、"二开patch"、"/new和/reset"、"/view"、"/context"、
+"/reasoning"、"推理强度"、"思考深度"、"max档位"、"会话与全局设置"、
 "todo压缩"、"压缩后todo"、"TODO快照"、"conversation compression"、
 "关闭自动记忆"、"自动总结skills"、"RTK"、"provider"、"模型路由"、
 "Tavily"、"OpenAI-compatible image"、"CPA生图旁路"、"生图参数"、
@@ -80,6 +81,16 @@ external patch files to replay:
   key and the preceding values are plain tokens. URL/query-string or
   whitespace-bearing values that embed another `KNOWN_KEY=` substring remain
   opaque, preventing persistent secret truncation during config reads/writes.
+- `/reasoning` 的共享解析器、QQ/CLI 命令、补全和各语言帮助支持
+  `none/minimal/low/medium/high/xhigh/max`。QQ 默认仅覆盖当前会话，
+  `--global` 才保存 `agent.reasoning_effort`，`/reasoning reset` 清除会话覆盖；
+  CLI 仍沿用直接保存配置、下轮重建 agent 的行为。
+- `max` 与 `xhigh` 是独立的请求等级。已有 Anthropic 自适应路径保留
+  `output_config.effort=max`；手动预算路径（包括当前 MiniMax Anthropic 兼容路径）
+  将 `max` 映射为现有 `xhigh` 的 32000 token 预算，不再因未知值回落到 8000。
+  这是本项目的兼容映射，不表示 MiniMax-M3 支持原生 `max`；其他模型与接口仍按
+  现有适配器能力处理，不承诺所有接口均支持此等级。本次不修改线上模型、默认推理
+  配置或被裁剪的 provider 范围。
 - Context compression refreshes the active todo snapshot using
   `TODO_INJECTION_HEADER`. A real trailing user turn absorbs the current
   snapshot after any stale copy is removed; summary/scaffolding tails keep a

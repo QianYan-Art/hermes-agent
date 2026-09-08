@@ -1,6 +1,8 @@
 """Tangyuge-Hermes 精简版验证清单。"""
 
 TRIMMED_TEST_TARGETS = (
+    "tests/test_hermes_constants.py::TestParseReasoningEffort",
+    "tests/test_reasoning_max.py",
     "tests/agent/test_prompt_builder.py",
     "tests/agent/test_system_prompt.py",
     "tests/agent/test_tangyuge_identity.py",

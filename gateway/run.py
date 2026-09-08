@@ -3173,7 +3173,7 @@ class GatewayRunner:
         """Load reasoning effort from config.yaml.
 
         Reads agent.reasoning_effort from config.yaml. Valid: "none",
-        "minimal", "low", "medium", "high", "xhigh". Returns None to use
+        "minimal", "low", "medium", "high", "xhigh", "max". Returns None to use
         default (medium).
         """
         from hermes_constants import parse_reasoning_effort
@@ -13434,11 +13434,10 @@ class GatewayRunner:
             self._reasoning_config = self._load_reasoning_config()
             self._evict_cached_agent(session_key)
             return t("gateway.reasoning.reset_done")
-        if effort == "none":
-            parsed = {"enabled": False}
-        elif effort in {"minimal", "low", "medium", "high", "xhigh"}:
-            parsed = {"enabled": True, "effort": effort}
-        else:
+        from hermes_constants import parse_reasoning_effort
+
+        parsed = parse_reasoning_effort(effort)
+        if parsed is None:
             return t(
                 "gateway.reasoning.unknown_arg",
                 arg=effort or raw_args.lower(),

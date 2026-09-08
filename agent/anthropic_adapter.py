@@ -55,7 +55,8 @@ def _get_anthropic_sdk():
 
 logger = logging.getLogger(__name__)
 
-THINKING_BUDGET = {"xhigh": 32000, "high": 16000, "medium": 8000, "low": 4000}
+# 手动预算路径将 max 映射为现有最高预算；原生自适应路径仍保留独立的 max。
+THINKING_BUDGET = {"max": 32000, "xhigh": 32000, "high": 16000, "medium": 8000, "low": 4000}
 # Hermes effort → Anthropic adaptive-thinking effort (output_config.effort).
 # Anthropic exposes 5 levels on 4.7+: low, medium, high, xhigh, max.
 # Opus/Sonnet 4.6 only expose 4 levels: low, medium, high, max — no xhigh.

@@ -63,6 +63,9 @@ the current QQ inbound video temp path.
   session DB row/transcript. `/reset` starts a fresh session while preserving
   the current model/provider/reasoning config and the old session record. The
   gateway replies for these commands do not append random discovery tips.
+- `/reasoning` 支持 `none/minimal/low/medium/high/xhigh/max`。QQ 中默认只修改
+  当前会话，添加 `--global` 才写入全局配置；CLI 沿用直接保存行为。
+  `max` 是否原生生效取决于所选模型与接口，新增枚举不改变当前 MiniMax 配置。
 - `/restart` is exposed to allowed/admin chat operators. In DM, exact plaintext
   such as `restart gateway` is also routed to `/restart`. It uses the gateway's
   built-in graceful restart handler, not arbitrary shell execution.

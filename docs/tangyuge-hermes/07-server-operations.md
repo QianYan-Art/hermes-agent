@@ -6,7 +6,8 @@ server. It replaces the old home-directory lookup documents.
 ## Source Of Truth
 
 常用叫法："维护手册"、"全局状态"、"服务器全局状态"、"当前状态"、
-"重启网关命令"、"自动清理session任务"、"session清理timer"。
+"重启网关命令"、"自动清理session任务"、"session清理timer"、
+"/reasoning"、"推理强度"、"思考深度"、"max档位"、"会话与全局设置"。
 
 - Code: `/home/hermes/.hermes/hermes-agent`
 - Runtime home: `/home/hermes/.hermes`
@@ -322,6 +323,22 @@ Chinese operator phrasing:
 
 If GitHub fetch fails from the 81 server, use a local git bundle and fetch it
 on the server, then checkout `main`.
+
+## 推理强度设置
+
+- `/reasoning` 查看当前请求等级、作用域和思考显示设置。可选等级为
+  `none/minimal/low/medium/high/xhigh/max`，`none` 表示关闭思考。
+- QQ 中 `/reasoning max` 仅覆盖当前会话，下条消息生效，不写全局配置；
+  `/reasoning max --global` 才保存到 `config.yaml` 的 `agent.reasoning_effort`。
+- `/reasoning reset` 清除当前会话覆盖并重新使用全局配置；
+  `show/hide/on/off` 仍控制思考内容显示，不是强度等级。
+- CLI 的 `/reasoning max` 沿用直接保存全局配置的行为，与 QQ 默认作用域不同。
+- 当前 MiniMax-M3 没有因新增枚举获得原生 `max` 能力。其现有手动预算路径将
+  `max` 与 `xhigh` 都映射到 32000 token；支持原生 `max` 的 Anthropic 自适应
+  路径使用 `output_config.effort=max`。具体效果以目标模型与接口能力为准，
+  不要把命令接受枚举理解成所有模型都支持同名等级。
+- 本次更新不更改 81 当前模型或推理配置，也不恢复已裁剪 provider。
+  切换模型前先核对接口支持的等级；实现与兼容映射见 `05-patches-and-rtk.md`。
 
 ## Documentation Rule
 
