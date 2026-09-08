@@ -133,10 +133,13 @@ Plugin policy:
   runtime plugin now resolves to the bundled `plugins/rtk-rewrite/` copy. The
   old `/home/hermes/.hermes/plugins/rtk-rewrite/` user override was removed
   after verifying it was byte-identical to the bundled plugin.
-- The server binary `/home/hermes/.local/bin/rtk` was updated to `0.45.0` on
-  2026-08-17. The Linux x86_64 musl archive was verified against SHA256
-  `c4c036fbf181fc55ef329786c8c17e0d427972b053b825944d968a6aafef1ba4`;
+- The server binary `/home/hermes/.local/bin/rtk` was updated to `0.48.0` on
+  2026-09-08. The Linux x86_64 musl archive was verified against SHA256
+  `e4e650fa1677c0de2f6839a6040d7b17f312d32f163c402b75af70e9e5af1a91`;
   the installed file remains owned by `hermes:hermes` with mode `755`.
+- 本次已验证实际 `pre_tool_call` 注册、命令改写、已有 `rtk` 前缀的幂等处理、
+  不支持命令的透传和只读 Git 执行。成功改写返回码仍为 `3`，透传为 `1`，
+  与现有插件兼容，不需要新增工具、恢复 user override 或运行 `rtk init`。
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`,
   `browser/firecrawl`, `web/exa`, `web/firecrawl`, `web/parallel`,
@@ -346,12 +349,21 @@ For bot-readable documentation, update repo docs under
 `docs/tangyuge-hermes/` and redeploy. KBase records on the Windows machine are
 operator notes only and are not synced to the server.
 
+KBase 只有阿颜明确授权后才能更新，改动只留本地，不提交、不推送、不运行博客同步。
+NowledgeMem/nmem 与 Serena 指维护侧记忆，不是 Hermes runtime 的 `memories/`；
+读取或核对记忆不等于获准写入，也不改变 Hermes 自身记忆工具的既有行为。
+维护侧记忆的写入、合并、替换和删除均须阿颜明确授权，只保留长期稳定规则、
+当前主状态和关键部署事实，不写临时日志、验证流水账或密钥内容。
+
 ## Cleanup Rule
 
 After deployment or documentation changes:
 
-- Keep the local repo, WSL view, GitHub `main`, and server checkout aligned.
+- 三端基线只指本地 Git HEAD、GitHub `main` 和服务器 checkout HEAD；
+  WSL 是本地工作区的访问视图，KBase 和服务器 runtime 数据不计入三端基线。
 - Remove local and server `.bundle` deployment archives after successful use.
+- `.doc-maintenance/` 是本地临时审阅目录，保持 Git 忽略并在完成后删除；
+  不推送、不部署，不在 KBase 内生成。不要用 `git clean -fdX` 一刀切清理。
 - Keep server runtime data under `/home/hermes/.hermes/` intact; never replace
   `.env`, `config.yaml`, memories, sessions, media caches, or user documents.
 - Keep `/home/hermes/.hermes/skills` aligned to the six retained skills and
@@ -360,7 +372,11 @@ After deployment or documentation changes:
   directories.
 - Keep `/home/hermes/.hermes/SOUL.md` as a clean style overlay when prompt or
   identity code changes; do not restore old upstream default identity text.
-- Remove obsolete home-directory lookup docs and old code backups when they are
-  no longer referenced.
-- For NowledgeMem, update the existing Tangyuge-Hermes current-state memory and
-  merge/supersede duplicate old memories instead of creating parallel entries.
+- 旧 home 文档、代码备份和 `.bak` 删除前，先核查引用、运行依赖及恢复价值，
+  明确精确路径后再清理，不按文件后缀或年龄批量删除。
+- 清理会话前的 SQLite 快照可能保存当前库已删除的历史数据；不能仅因文件旧、
+  没有运行引用或现用数据库正常而判定冗余。无法证明没有恢复价值时保留。
+- SSH 备份（例如 `known_hosts.old`）只有在确证内容冗余、没有独立恢复价值后
+  才可清理；不得连带删除或改写现用 SSH 文件。
+- 获得记忆更新授权后，优先维护既有 Tangyuge-Hermes 当前状态主条目；
+  不把过时快照当作当前状态，也不创建重复的平行条目。

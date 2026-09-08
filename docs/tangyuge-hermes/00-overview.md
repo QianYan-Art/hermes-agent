@@ -70,17 +70,20 @@ When project behavior changes, keep these sources aligned:
 - When docs or README add/remove topics, aliases, or current-state facts, update
   `skills_builtin/hermes-md-locator/SKILL.md` in the same change so the bot can
   locate the new content from natural user phrasing.
-- Update Windows KBase records only as local operator notes. Do not sync KBase
-  records to the server and do not make the bot depend on them for lookup.
-- Update durable NowledgeMem state by refining the existing Tangyuge-Hermes
-  current-state memory when possible. Prefer merging/superseding stale duplicate
-  memories over creating new memory entries.
+- KBase 仅在阿颜明确授权后更新，只保留本地 operator notes；不提交、不推送、
+  不执行博客同步，不作为服务器同步源或 bot lookup source。
+- NowledgeMem/nmem 与 Serena 是维护侧记忆，仅在阿颜明确授权后写入、合并、
+  替换或删除。优先更新既有 Tangyuge-Hermes 主条目，不新建平行状态条目；
+  只记录长期稳定规则、当前主状态和关键部署事实，不记录流水账或密钥内容。
+- `.doc-maintenance/` 仅存放本地临时审阅材料，必须被 Git 忽略，完成后清理；
+  不得在 KBase 内生成此目录。
 - When prompt, SOUL, identity, or roleplay behavior changes, verify both the
   always-on role card and `tangyuge-roleplay` skill boundary: the role card
   defines identity; the skill only adds style, relationship, and topic
   resources.
-- Do not keep old bundles, temporary deployment archives, historical home-level
-  docs, or obsolete server backups after successful deployment verification.
+- 部署核验后清理临时 bundle、部署包和确认无用的旧文档/备份；删除前按
+  `07-server-operations.md` 的 Cleanup Rule 核对引用、运行依赖与恢复价值，
+  不把“备份较旧”或“没有运行引用”直接等同于可删除。
 
 ## Baseline Verification
 
