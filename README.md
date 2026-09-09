@@ -76,11 +76,13 @@ the current QQ inbound video temp path.
   multi-key failover, OpenAI-compatible image backend behavior, mail VPS operation,
   `hermes-md-locator`, and Tangyuge roleplay references are built-in repo
   behavior, not external patch files to replay.
-- The OpenAI-compatible image backend defaults to `gpt-image-2` at
-  `low`/`medium`/`high` quality tiers, but `/auxmodel image <model>` and the
-  `image_generate` tool's non-tier `model` / explicit `api_model` override can
-  switch the actual Images API model without changing provider, endpoint URL,
-  or API key.
+- OpenAI-compatible 生图默认保留 `gpt-image-2`，提供
+  `low`/`medium`/`high` 请求档位。`/auxmodel image <model>` 和工具的非档位
+  `model` / `api_model` 可以指定请求模型，不改变 provider、入口或密钥；
+  是否真正执行仍受旁路映射、账号权限和终态模型校验约束。当前 ChatGPT Codex
+  生图旁路不等同官方 Images API，不能将 Image-2.5 的名称或 usage 展示理解为
+  已可用，也不自动升级默认模型。详情见
+  [生图旁路与 Usage](docs/tangyuge-hermes/07-server-operations.md#生图旁路与-usage)。
 - User image-generation requests should go through the built-in
   `image_generate` tool, not ad-hoc curl/Python/heredoc calls to external image
   APIs. The OpenAI-compatible backend supports text-to-image, image-to-image,

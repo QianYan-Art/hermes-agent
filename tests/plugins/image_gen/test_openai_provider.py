@@ -518,6 +518,71 @@ class TestGenerate:
         assert result["success"] is False
         assert result["error_type"] == "empty_response"
 
+    @pytest.mark.parametrize("with_data", [False, True])
+    @pytest.mark.parametrize("edit", [False, True])
+    @pytest.mark.parametrize("status,error,expected", [
+        (200, {"type": "image_model_unavailable", "message": "requested model unavailable"},
+         "image_model_unavailable"),
+        (200, {"code": "model_not_found", "message": "unknown model"}, "model_not_found"),
+        (200, {"message": "upstream failed"}, "upstream failed"),
+        (200, {}, "Image endpoint returned an error"),
+        (200, "upstream failed", "upstream failed"),
+        (503, {"type": "image_model_unavailable", "message": "requested model unavailable"},
+         "image_model_unavailable"),
+        (401, {"message": "invalid key"}, "invalid key"),
+    ])
+    def test_sdk_error_body_is_not_image_success(
+        self, provider, tmp_path, edit, status, error, expected, with_data,
+    ):
+        import httpx
+        from openai import OpenAI
+
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            # 错误优先于图片数据，不能把后端拒绝的旧模型图片当作成功。
+            body = {"error": error}
+            if with_data:
+                body["data"] = [{"b64_json": _b64_png()}]
+            return httpx.Response(status, json=body)
+
+        options = {"model": "gpt-image-2.5-flare"}
+        if edit:
+            source = tmp_path / "input.png"
+            source.write_bytes(bytes.fromhex(_PNG_HEX))
+            options["input_image"] = str(source)
+
+        with OpenAI(
+            api_key="test-key", base_url="https://image.test/v1", max_retries=0,
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client, patch("openai.OpenAI", return_value=client):
+            result = provider.generate("a blue square", **options)
+
+        assert result["success"] is False
+        assert result["image"] is None
+        assert result["error_type"] == "api_error"
+        assert expected in result["error"]
+        assert result["model"] == "gpt-image-2.5-flare"
+        assert len(requests) == 1
+        assert requests[0].url.path == (
+            "/v1/images/edits" if edit else "/v1/images/generations"
+        )
+        assert not list((tmp_path / "image_cache").rglob("*.png"))
+
+    def test_sdk_null_error_keeps_valid_image(self, provider):
+        from openai.types import ImagesResponse
+
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = ImagesResponse.model_validate({
+            "created": 0, "error": None, "data": [{"b64_json": _b64_png()}],
+        })
+        with _patched_openai(fake_client):
+            result = provider.generate("a blue square")
+
+        assert result["success"] is True
+        assert Path(result["image"]).is_file()
+
     def test_url_response_is_cached_locally(self, provider, tmp_path):
         """OpenAI URL response (if API ever returns one) is cached locally.
 

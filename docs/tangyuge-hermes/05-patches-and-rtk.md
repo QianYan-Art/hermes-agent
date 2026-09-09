@@ -143,6 +143,12 @@ external patch files to replay:
   unavailable or lacks credentials; the call path returns the exact
   provider/auth error, so the model must not infer that image generation is
   unavailable and must not replace the tool with manual shell/API scripts.
+  兼容入口可能先发送 HTTP 200 保活，再返回包含 `error` 的 JSON。OpenAI 插件
+  先检查错误正文，再处理图片；保留上游 `type` / `code` 和错误信息，统一返回
+  `error_type=api_error`，不把 `image_model_unavailable` 误报为 `empty_response`。
+  错误正文即使同时包含图片数据也不能缓存或当作成功，不自动降级到其他模型；
+  无错误且有非空 `data` 后才继续解析图片。当前旁路型号和 usage 限制见
+  `07-server-operations.md` 的“生图旁路与 Usage”。
   For the retained OpenAI-compatible backend, Hermes defaults to the underlying
   API model `gpt-image-2`, maps the configured or requested quality tier to
   `low`/`medium`/`high`, treats a non-tier model name as the actual Images API
@@ -216,6 +222,17 @@ external patch files to replay:
   click.
 
 ## Verification
+
+生图聚焦回归使用逐文件隔离入口，测试环境需要项目测试依赖，不在服务器安装
+测试/已裁剪功能依赖：
+
+```bash
+python scripts/run_tests_parallel.py tests/plugins/image_gen/test_openai_provider.py tests/tools/test_image_generation_plugin_dispatch.py tests/tools/test_image_generation_env.py tests/tools/test_image_generation.py tests/agent/test_image_gen_registry.py tests/hermes_cli/test_image_gen_picker.py tests/gateway/test_auxmodel_command.py -- -p no:cacheprovider
+```
+
+回归覆盖真实 OpenAI SDK 对 HTTP 200 错误正文、401/503、文生图/编辑、空错误和
+有效图片的解析；旧 FAL 错误翻译用例隔离可选依赖导入，不应触发联网安装。
+本地回归、81 工具处理器实测和 QQ 实际投递是三个不同验收层次，不能互相替代。
 
 ```bash
 pytest tests/plugins/test_rtk_rewrite_plugin.py -q

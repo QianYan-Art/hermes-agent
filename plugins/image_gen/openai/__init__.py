@@ -659,6 +659,32 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
+        # 兼容入口可能先发送 HTTP 200 保活，再用错误正文结束请求。
+        response_error = getattr(response, "error", None)
+        if response_error is not None:
+            if isinstance(response_error, dict):
+                message = (
+                    _clean_str(response_error.get("message"))
+                    or "Image endpoint returned an error"
+                )
+                code = (
+                    _clean_str(response_error.get("code"))
+                    or _clean_str(response_error.get("type"))
+                )
+                if code:
+                    message = f"{code}: {message}"
+            else:
+                message = _clean_str(response_error) or "Image endpoint returned an error"
+            operation = "edit" if is_edit else "generation"
+            return error_response(
+                error=f"OpenAI image {operation} failed: {message}",
+                error_type="api_error",
+                provider="openai",
+                model=result_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
         data = getattr(response, "data", None) or []
         if not data:
             return error_response(

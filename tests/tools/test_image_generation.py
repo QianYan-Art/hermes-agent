@@ -455,6 +455,8 @@ class TestManagedGatewayErrorTranslation:
         monkeypatch.setattr(image_tool, "_get_managed_fal_client",
                             lambda gw: mock_managed_client)
 
+        # 此处只验证错误翻译，不应导入或安装可选 FAL 依赖。
+        monkeypatch.setattr(image_tool, "_load_fal_client", lambda: None)
         with pytest.raises(ValueError) as exc_info:
             image_tool._submit_fal_request("fal-ai/nano-banana-pro", {"prompt": "x"})
 

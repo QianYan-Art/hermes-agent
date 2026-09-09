@@ -224,6 +224,66 @@ Plugin policy:
   are physically removed from the tracked source after retained-scope tests
   prove they are no longer referenced.
 
+## 生图旁路与 Usage
+
+2026-09-09（UTC）核对的 81 配置：`image_gen.provider=openai`，
+`image_gen.model` 和 `image_gen.openai.model` 均为 `gpt-image-2-medium`；
+实际请求 `api_model=gpt-image-2`、`quality=medium`。
+`image_gen.openai.base_url=https://suyuan.4071253.xyz/v1`，
+`image_gen.openai.timeout=180`。图片专用密钥在 `OPENAI_IMAGE_API_KEY`，
+现场未设置其他图片模型环境覆盖；不将密钥写入仓库或文档。
+
+请求从 EdgeOne 经 NetCup nginx 到 `cliproxyapi-edge-proxy`（回环 59999），
+图片转交 `cliproxyapi-image-proxy`（60001），普通模型请求转交 CLIProxyAPI（59998）。
+旁路使用 ChatGPT Codex 后端，内部编排模型是 `gpt-5.6-luna`；它不是图片工具
+模型，也不是 Hermes 主聊天模型。官方 Images API 的模型支持不等于该账号通道权限。
+
+旁路请求名和执行边界：
+
+- 默认和 `gpt-image-2` 使用 Image-2；`gpt-image2` 是同一模型的兼容别名。
+- `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 保留同名请求；
+  `gpt-image-2.5` 仅是本地映射到 Flare 的便利别名。未知名称返回 HTTP 400。
+- 当前账号通道的 2.5 请求终态仍声明 `gpt-image-2-codex`，严格校验会返回
+  `image_model_unavailable`，不会把旧模型图片冒充 2.5。默认 Image-2 保持不变，
+  不自动切换，也不猜下架时间。
+- 文生图和编辑支持 `n=1..10`；`response_format=url` 返回 data URL，不是图床链接。
+  `variations` 只有入口路由与鉴权覆盖，图片旁路未实现该功能。
+- 入口先鉴权再读取大图片；缺失或错误密钥返回 401。超过 10 秒保活后，
+  后续失败可能表现为 HTTP 200 加 `error` 正文；判断成功须检查正文和非空图片数据。
+  Hermes 保留上游错误原因，不自动换模型重试。
+- Hermes 返回的 `quality` / `size` 是请求值，不是输出图片的实测元数据。
+  本轮请求 `medium`、`1024x1024`，实际文生图和编辑均为 `1312x1199`；
+  不能承诺旁路严格遵守尺寸/质量参数，也不能凭 `low` 档推断实际费用。
+
+usage 由 NetCup 入口聚合，顶部展示七个家族：`gpt-5.5`、`gpt-5.6-luna`、
+`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra`、`gpt-image-2`、
+`gpt-image-2.5`。两个 2.5 型号归入同一展示家族，出现该行不证明权限可用。
+按 Key 展示不等于多租户隔离；价格是人工维护快照，不保证自动抓取最新价格。
+
+图片费用仅按 Responses 总 `usage` 估算，缺少完整图片模态与编排模型拆账。
+编辑路径使用 `gpt-image-2-edit` / `gpt-image-2.5-edit` 作为估算键，它们不是真实
+模型。失败按旁路实际状态记账，不因保活 HTTP 200 改记成功；无 token 的失败
+不虚构费用，但零估算不代表没有消耗上游额度。
+
+NetCup 入口已修复 SDK multipart 编辑请求的模型提取：按 `Content-Type` 解析
+`model` 表单字段，不把图片或上传文件内容当作模型名。另保留响应截取上限
+2 MiB，在大图 JSON 被截断时用标准 JSON 解码器读取前部完整的顶层 `usage`；
+旁路输出顺序为 `created`、`usage`、`data`。缺失或不完整用量仍不补造 token，
+不能保证任意第三方响应布局都可恢复用量。历史空模型/零估算记录保持原样。
+正式实现和回归测试位于 NetCup 的
+`/root/cliproxyapi-edge-proxy/cliproxyapi_edge_proxy.py` 和同目录
+`test_usage_image25.py`，11 项测试使用临时数据库，未重算运行时账目。
+这两个 NetCup 文件不属于 Hermes 本地/GitHub/81 的三端 Git 基线。
+
+本轮 81 真实 `_handle_image_generate` 文生图和编辑各一张成功，分别约 36/47 秒，
+PNG 完整性和 `MEDIA:<path>` 校验通过，结果存入顶层 `image_cache/`；
+两张测试图片已清除。本轮未向 QQ 实际投递，不能把工具产图成功当作 QQ 送达验收。
+维护验证应走该注册处理器，不能误调仅供 FAL 后端使用的 `image_generate_tool`。
+入口修复后又验证了两次合成图片编辑，模型归属均为 `gpt-image-2`；其中一次
+SDK 的 2474 tokens 与数据库一致并产生非零估算费用，另一次记录用量为零，
+不据此认定实际无额度消耗。全部四张产图及临时输入已清理。Hermes 本轮本地
+生图/辅助模型测试 169 项、QQ/媒体标签/skill 同步测试 239 项通过。
+
 ## Runtime Data Boundary
 
 Never overwrite or commit server runtime data:
