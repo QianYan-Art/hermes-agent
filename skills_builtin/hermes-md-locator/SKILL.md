@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 用户要求查找 Tangyuge-Hermes 文档、当前状态或维护规则时必须使用。包括生图旁路、CLIProxyAPI、NetCup、/auxmodel image、Image-2.5、gpt-5.6-luna 编排模型、image_model_unavailable、HTTP200正文错误、usage估算、multipart、usage.model为空、图生图、mask、QQBot发图、MEDIA、尺寸不一致和 data URL。也覆盖项目总览、81部署、sparse checkout、精简边界、依赖漏洞、provider/插件白名单、唐语歌角色卡与身份注入、SOUL、表情包、tangyuge-roleplay、内置skills、patch/RTK、/new与/reset、/view与/context、/reasoning与max档位、辅助模型、自动记忆、异步subagent、QQ消息与媒体路由、MiniMax视频阈值、缓存目录、session清理timer、网关重启、升级冻结、邮件与附件、KBase/nmem/Serena写入授权、doc-maintenance和备份清理。按正文路由到仓库 docs/tangyuge-hermes，不把 KBase 当作 bot 查询源。
+description: 用户要求查找 Tangyuge-Hermes 文档、当前状态或维护规则时必须使用。包括生图旁路、CLIProxyAPI、NetCup、/auxmodel image、Image-2.5、gpt-5.6-luna 编排模型、image_model_unavailable、HTTP200正文错误、usage估算、multipart、usage.model为空、图生图、mask、QQBot发图、MEDIA、尺寸不一致和 data URL。也覆盖项目总览、81部署、sparse checkout、精简边界、依赖漏洞、provider/插件白名单、唐语歌角色卡与身份注入、SOUL、表情包、tangyuge-roleplay、内置skills、patch/RTK、/new与/reset、/view与/context、/reasoning与max档位、辅助模型、自动记忆、异步subagent、QQ消息与媒体路由、MiniMax视频阈值、缓存目录、session清理timer、网关重启、升级冻结、邮箱列表、多域名邮箱、sru.edu.kg、邮件与附件、KBase/nmem/Serena写入授权、doc-maintenance和备份清理。按正文路由到仓库 docs/tangyuge-hermes，不把 KBase 当作 bot 查询源。
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -52,7 +52,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "升级冻结", "上游升级", "能不能合并上游", "release规则", "tag规则", "版本冻结" | `docs/tangyuge-hermes/06-upgrade-freeze.md` |
 | "/reasoning", "推理强度", "思考深度", "max档位", "reasoning_effort", "会话与全局设置" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "typing_indicator", "输入状态", "正在输入", "thinking状态", "缓存目录", "cache目录", "image_cache", "audio_cache", "video_cache", "document_cache", "cache/documents", "邮件缓存", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
-| "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
+| "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "邮箱列表", "有哪些邮箱", "列出全部邮箱", "多域名邮箱", "新域名邮箱漏列", "mail.qianyan.me", "sru.edu.kg", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
 
@@ -80,7 +80,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "QQBot变体、SOUL_QQBOT、私聊/群聊 SOUL 变体"：读 `03-identity-prompt.md` 的 SOUL 注入规则，再读 `07-server-operations.md` 的运行时清理记录。
 - "新建 session 初始提示词、提示词拼接顺序、身份歧义、Hermes Agent 身份噪音、角色卡界面、固定UI块、每轮复盘、状态栏、好感度、情绪表、表情包、Unicode emoji、QQ表情、方括号表情占位符"：读 `03-identity-prompt.md`；涉及当前服务器实际 SOUL、`USER.md` 或表情包目录时再读 `07-server-operations.md`。
 - "tangyuge-roleplay、角色扮演skill、陪聊skill、角色卡和skill关系、角色卡输出格式、QQ回复格式"：读 `03-identity-prompt.md` 和 `04-built-in-skills.md`。
-- "邮件/邮箱/验证码/附件"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops` 执行实际邮箱操作。
+- "邮件/邮箱/验证码/附件/邮箱列表/多域名邮箱/新域名邮箱漏列/sru.edu.kg"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops`；查询全部邮箱不加域名或数量过滤，不把服务主机名当作邮箱域名白名单。
 - "文档在哪、KBase和服务器文档关系"：读 `00-overview.md` 和 `07-server-operations.md`。
 
 ## 触发语义
@@ -113,6 +113,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “全局状态文档”“当前服务器全局状态文档”
 - “邮件文档”“邮件VPS文档”“邮件集成文档”“邮件读取文档”“邮件技能文档”
 - “邮箱文档”“看邮箱文档”“查邮箱文档”
+- “邮箱列表”“有哪些邮箱”“列出全部邮箱”“多域名邮箱”“新域名邮箱漏列”“mail.qianyan.me”“sru.edu.kg”
 - “验证码”“验证链接”“邮件附件”“发邮件”“回复邮件”“转发邮件”“删邮件”
 - “按维护手册处理”“按全局状态文档核对”
 - “之前做了什么 patch”“当前有哪些补丁”“更新时要保留什么”
@@ -122,7 +123,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 1. 用户问“维护手册、如何维护、如何重启、如何删除 skill、如何改配置、日常操作步骤”时，读取 `docs/tangyuge-hermes/07-server-operations.md`。
 2. 用户问“全局状态、当前状态、服务器状态、网关状态”时，读取 `docs/tangyuge-hermes/07-server-operations.md` 和 `docs/tangyuge-hermes/01-deployment-81.md`。
-3. 用户问“邮件 VPS、读邮件、附件、发信、回复、转发、Trash、删除、邮件 skill”时，读取 `docs/tangyuge-hermes/08-mail-vps.md`。
+3. 用户问“邮件 VPS、邮箱列表、多域名邮箱、新域名邮箱漏列、sru.edu.kg、读邮件、附件、发信、回复、转发、Trash、删除、邮件 skill”时，读取 `docs/tangyuge-hermes/08-mail-vps.md`。
 4. 用户问“更新、diff、patch、当前真实配置、启用工具集、provider、模型、memory、skills”时，读取 `docs/tangyuge-hermes/05-patches-and-rtk.md`、`docs/tangyuge-hermes/07-server-operations.md` 和相关专题文档。
 5. 用户问 tangyuge-hermes 二开、部署方案、当前实现边界时，优先读取本技能列出的 repo 文档。
 6. 用户问表内没有的新主题时，按 repo docs 的标题、常用叫法和正文关键词定位；不要因为路由表没有列出就回答“没有文档”。

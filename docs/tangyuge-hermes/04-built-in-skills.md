@@ -36,6 +36,9 @@ bundled skill catalog. In particular, broad upstream skills such as
   change.
 - `grok-search` documents environment-variable based configuration only. Real
   secrets must remain in runtime environment or server-local config.
+- `mail-vps-ops` 查询全部邮箱时默认覆盖所有域名，不添加 `--domain` 或
+  数量限制，也不要求用户提供邮箱地址；只有用户明确指定域名时才过滤。
+  邮件服务主机名不是邮箱域名白名单，具体规则见 `08-mail-vps.md`。
 - Sub-agents default to no memory/skill mutation capability.
 
 ## Runtime Guard
