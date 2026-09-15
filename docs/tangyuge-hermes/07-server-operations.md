@@ -348,10 +348,13 @@ The 81 server keeps a systemd timer for old session transcript cleanup:
 - Service: `hermes-session-cleanup.service`
 - Script: `/usr/local/sbin/hermes-session-cleanup`
 - Schedule: `OnBootSec=15m` and `OnUnitInactiveSec=10d`
+- 随机延迟：`RandomizedDelaySec=10m`，不是每日任务。
 - Policy: `/usr/local/sbin/hermes-session-cleanup --days 10 --delete`
 - Scope: deletes old non-active files under `/home/hermes/.hermes/sessions`
 - Protection: session IDs still referenced by
   `/home/hermes/.hermes/sessions/sessions.json` are not deleted.
+- 仅删除旧 transcript 文件，不清理 `state.db`；产生的
+  `session_retention_*/deleted-over-retention.txt` 是删除清单，不是内容备份。
 - Unit documentation: this file,
   `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/07-server-operations.md`
 
@@ -363,6 +366,52 @@ systemctl is-active hermes-session-cleanup.timer
 systemctl list-timers hermes-session-cleanup.timer --no-pager
 systemctl cat hermes-session-cleanup.service
 ```
+
+## 自动任务与季度备份清理
+
+2026-09-15 核验及部署；以下时间均为北京时间。此变更只安装独立运维脚本和
+systemd unit，不重启网关、不改变聊天、角色卡、记忆或已有会话。
+
+| 任务 | 调度 | 范围与保留策略 |
+| --- | --- | --- |
+| `hermes-backup-cleanup.timer` | 每年 1、4、7、10 月 1 日 03:30 | 仅清理 `/home/hermes/backups` 下超过 90 天的已识别旧备份或清单，保护最新一组手工备份 |
+| `hermes-session-cleanup.timer` | 见上节，约每 10 天 | 旧非活跃 transcript；不备份内容、不动活跃会话 |
+| `/etc/cron.weekly/hermes-cache-cleanup` | 每周日 06:47 | 日志、音频、图片缓存分别按 `find -mtime +30/+7/+14` 清理，不清理 backups |
+| root crontab 的 `/usr/local/bin/blog-sync-kbase.sh` | 每天 04:00 | 同步文章，失败时使用临时回滚副本；退出时清理临时目录，不保留长期备份 |
+
+Hermes 内部 `cron/jobs.json` 在本次核验时任务数为 0。以上不是整机或 Hermes
+完整运行数据备份；系统软件包数据库的每日 7 份轮换策略保持不变，云平台快照未核验。
+
+季度清理的本地维护源为 `scripts/ops/hermes_backup_cleanup.py` 及同目录的
+`hermes-backup-cleanup.service`、`hermes-backup-cleanup.timer`。服务器安装位置：
+
+- `/usr/local/sbin/hermes-backup-cleanup`
+- `/etc/systemd/system/hermes-backup-cleanup.service`
+- `/etc/systemd/system/hermes-backup-cleanup.timer`
+
+只接受 `session_manual_cleanup_YYYYMMDD_HHMMSS` 与
+`session_retention_YYYYMMDD_HHMMSS` 目录；按目录名称时间、目录及文件修改时间的
+最新值计算 90 天门槛，恰好 90 天不删除。手工备份须含非空普通文件
+`state.db.backup`，保护其中名称时间最新的一组，即使超过 90 天也保留。
+不识别的目录、额外文件、嵌套目录、符号链接及硬链接文件均不进入删除集合。
+`Persistent=true` 会在错过季度执行时于后续启动补执行。
+
+```bash
+# 只读预演，不删除文件。
+python3 -B /usr/local/sbin/hermes-backup-cleanup
+systemctl list-timers hermes-backup-cleanup.timer --no-pager
+journalctl -u hermes-backup-cleanup.service --no-pager -n 20
+```
+
+只有 service 的 `--delete` 模式才执行删除；service 使用 `flock` 防止重叠运行。
+2026-09-15 已通过 7 项临时目录测试、unit 校验和 systemd 隔离环境预演，
+没有提前执行生产删除。首次计划执行为 2026-10-01 03:30，预演保护
+`session_manual_cleanup_20260909_095223`，仅列出 6 月 15 日旧备份为候选。
+这是已授权的定期淘汰，不是新增自动备份；被淘汰的历史数据无法靠删除清单恢复。
+该任务独立于网关进程；源码和本文随 Hermes 仓库发布，但单独拉取仓库不会自动
+更新 `/usr/local/sbin` 与 `/etc/systemd/system` 下的安装副本。后续修改应核对
+三份安装文件与 `scripts/ops/` 内容一致，unit 有变化时执行 `systemctl daemon-reload`。
+不要为了部署或验收而手动启动带 `--delete` 的 service，也不需要重启网关。
 
 ## Deployment Flow
 
@@ -451,6 +500,8 @@ After deployment or documentation changes:
   明确精确路径后再清理，不按文件后缀或年龄批量删除。
 - 清理会话前的 SQLite 快照可能保存当前库已删除的历史数据；不能仅因文件旧、
   没有运行引用或现用数据库正常而判定冗余。无法证明没有恢复价值时保留。
+- 例外是 2026-09-15 阿颜明确授权的“自动任务与季度备份清理”范围；
+  不得将其 90 天规则扩展到其他路径、备份类型或 runtime 数据。
 - SSH 备份（例如 `known_hosts.old`）只有在确证内容冗余、没有独立恢复价值后
   才可清理；不得连带删除或改写现用 SSH 文件。
 - 获得记忆更新授权后，优先维护既有 Tangyuge-Hermes 当前状态主条目；

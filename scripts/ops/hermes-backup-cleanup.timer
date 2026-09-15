@@ -1,0 +1,10 @@
+[Unit]
+Description=每季度执行 Hermes 旧备份清理
+
+[Timer]
+OnCalendar=*-01,04,07,10-01 03:30:00 Asia/Shanghai
+Persistent=true
+Unit=hermes-backup-cleanup.service
+
+[Install]
+WantedBy=timers.target

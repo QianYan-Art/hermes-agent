@@ -1,0 +1,15 @@
+[Unit]
+Description=季度清理 Hermes 超过 90 天的旧备份并保留最新手工备份
+ConditionPathIsDirectory=/home/hermes/backups
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/flock -n /run/lock/hermes-backup-cleanup.lock /usr/bin/python3 -B /usr/local/sbin/hermes-backup-cleanup --delete
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hermes/backups /run/lock
+PrivateTmp=true
+TimeoutStartSec=5min
