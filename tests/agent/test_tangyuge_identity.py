@@ -81,3 +81,52 @@ def test_build_tangyuge_identity_prompt_is_deterministic_and_high_priority():
 def test_missing_character_file_fails_closed(tmp_path: Path):
     with pytest.raises(TangyugeIdentityError):
         load_tangyuge_character(tmp_path / "missing.json")
+
+
+@pytest.mark.parametrize("name", ["", "   ", 123, [], None])
+def test_invalid_character_name_fails_closed(tmp_path: Path, name):
+    path = tmp_path / "character.json"
+    path.write_text(json.dumps({"name": name}), encoding="utf-8")
+
+    with pytest.raises(TangyugeIdentityError):
+        load_tangyuge_character(path)
+
+
+def test_new_prompt_build_observes_character_file_updates(tmp_path: Path):
+    path = tmp_path / "character.json"
+    path.write_text(json.dumps({"name": "角色甲"}), encoding="utf-8")
+    first = build_tangyuge_identity_prompt(path)
+    path.write_text(json.dumps({"name": "角色乙"}), encoding="utf-8")
+
+    assert "## Name\n角色乙" in build_tangyuge_identity_prompt(path)
+    assert "## Name\n角色甲" in first
+
+
+def test_disabled_constant_entries_are_not_injected(tmp_path: Path):
+    path = tmp_path / "character.json"
+    data = {
+        "name": "测试角色",
+        "character_book": {"entries": [
+            {"constant": True, "enabled": False, "content": "已停用的旧设定"},
+            {"constant": True, "content": "当前有效设定"},
+            {"constant": False, "content": "未激活的条件设定"},
+        ]},
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    prompt = build_tangyuge_identity_prompt(path)
+
+    assert "当前有效设定" in prompt
+    assert "已停用的旧设定" not in prompt
+    assert "未激活的条件设定" not in prompt
+
+
+def test_runtime_character_fields_are_present_without_data_changes():
+    data = load_tangyuge_character()
+    prompt = build_tangyuge_identity_prompt()
+
+    for field in ("name", "description", "personality", "system_prompt", "mes_example"):
+        assert data[field].strip() in prompt
+    for entry in data["character_book"]["entries"]:
+        if entry.get("constant") is True and entry.get("enabled", True):
+            assert entry["content"].strip() in prompt

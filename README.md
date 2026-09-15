@@ -166,9 +166,9 @@ repo docs.
 - `docs/tangyuge-hermes/07-server-operations.md`
 - `docs/tangyuge-hermes/08-mail-vps.md`
 
-The Windows KBase directory keeps human operator notes only. It is not a server
-sync source and should not be used by the bot for lookup. The 81 server should
-not keep separate home-directory lookup document copies.
+Windows KBase 保存人工记录，不是 Hermes 运行时文档的同步源，也不作为 bot 查阅入口。
+经阿颜当次明确授权，可以提交、推送 KBase 或发布博客文章；这不等于把记录安装到
+Hermes 运行目录。服务器不另行维护 home 目录下的重复查阅文档。
 
 ## Deployment Rule
 

@@ -102,3 +102,26 @@ class TestTangyugeIdentityOrdering:
         assert "USER BLOCK" not in parts["stable"]
         assert "MEMORY BLOCK" in parts["volatile"]
         assert "USER BLOCK" in parts["volatile"]
+
+    def test_fork_help_does_not_require_removed_upstream_skill(self):
+        parts = build_system_prompt_parts(_make_agent(skip_context_files=True))
+
+        assert "docs/tangyuge-hermes" in parts["stable"]
+        assert "hermes-md-locator" in parts["stable"]
+        assert "skill_view(name='hermes-agent')" not in parts["stable"]
+        assert "always holds the latest" not in parts["stable"]
+
+    def test_memory_guidance_does_not_require_unavailable_history_tool(self):
+        parts = build_system_prompt_parts(
+            _make_agent(skip_context_files=True, valid_tool_names=["memory"])
+        )
+
+        assert "use session_search" not in parts["stable"]
+        assert "enabled history-search tool" in parts["stable"]
+
+    def test_identity_and_execution_have_explicit_separate_scopes(self):
+        parts = build_system_prompt_parts(_make_agent(skip_context_files=True))
+
+        assert parts["stable"].count("## Runtime Boundaries") == 1
+        assert "角色关系约定不是用户身份验证或权限检查的替代品" in parts["stable"]
+        assert "能力以本轮实际提供的工具及其参数为准" in parts["stable"]

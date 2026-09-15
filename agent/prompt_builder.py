@@ -139,14 +139,12 @@ DEFAULT_SOUL_STYLE_OVERLAY = (
 )
 
 HERMES_AGENT_HELP_GUIDANCE = (
-    "For Hermes Agent runtime, configuration, setup, extension, troubleshooting, "
-    "or tool/capability questions, the documentation at "
-    "https://hermes-agent.nousresearch.com/docs is the authoritative reference "
-    "and always holds the latest, most up-to-date information. Load the "
-    "`hermes-agent` skill with skill_view(name='hermes-agent') for additional "
-    "guidance and proven workflows, but treat the docs as the source of truth "
-    "when the two differ. This is product/runtime guidance, not an identity "
-    "definition."
+    "查询本二开的运行、配置、排障和能力时，以当前部署源码、实际配置与 "
+    "docs/tangyuge-hermes 开发文档为准。若当前有技能读取工具且可用索引包含 "
+    "hermes-md-locator，先读取该入口，再按其路由查所需文档。"
+    "上游 Hermes 文档仅作通用参考，不能覆盖本二开的裁剪、权限和实际行为；"
+    "不要假定上游技能或能力在此部署存在，也不要把文档说明当作操作成功的证据。"
+    "工具不足以核验时说明限制，不虚构读取或检查结果。这是运行指引，不重定义角色身份。"
 )
 
 MEMORY_GUIDANCE = (
@@ -158,12 +156,14 @@ MEMORY_GUIDANCE = (
     "that prevents the user from having to correct or remind you again. "
     "User preferences and recurring corrections matter more than procedural task details.\n"
     "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO "
-    "state to memory; use session_search to recall those from past transcripts. "
+    "state to memory; consult available conversation history or an enabled "
+    "history-search tool instead. Never invent an unavailable tool. "
     "Specifically: do not record PR numbers, issue numbers, commit SHAs, 'fixed bug X', "
     "'submitted PR Y', 'Phase N done', file counts, or any artifact that will be stale "
     "in 7 days. If a fact will be stale in a week, it does not belong in memory. "
     "If you've discovered a new way to do something, solved a problem that could be "
-    "necessary later, save it as a skill with the skill tool.\n"
+    "necessary later, save it as a skill only when a skill-management tool "
+    "is available and the write is authorized.\n"
     "Write memories as declarative facts, not instructions to yourself. "
     "'User prefers concise responses' ✓ — 'Always respond concisely' ✗. "
     "'Project uses pytest with xdist' ✓ — 'Run tests with pytest -n 4' ✗. "

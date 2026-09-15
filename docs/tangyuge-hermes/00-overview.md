@@ -57,9 +57,9 @@ The bot-facing documentation source is this repository directory:
 - `docs/tangyuge-hermes/07-server-operations.md`
 - `docs/tangyuge-hermes/08-mail-vps.md`
 
-`hermes-md-locator` points to these repo docs only. The local KBase directory
-keeps human record notes and is not a server sync source. The 81 server should
-not maintain separate home-directory lookup document copies.
+`hermes-md-locator` 仅定位这些仓库开发文档。KBase 保存人工记录，不是 Hermes
+运行时文档的同步源；经阿颜当次授权可以发布为博客文章。服务器不另行维护 home
+目录下的重复查阅文档，也不把博客文章目录作为 Hermes 文档入口。
 
 ## Documentation And Memory Rules
 
@@ -70,8 +70,9 @@ When project behavior changes, keep these sources aligned:
 - When docs or README add/remove topics, aliases, or current-state facts, update
   `skills_builtin/hermes-md-locator/SKILL.md` in the same change so the bot can
   locate the new content from natural user phrasing.
-- KBase 仅在阿颜明确授权后更新，只保留本地 operator notes；不提交、不推送、
-  不执行博客同步，不作为服务器同步源或 bot lookup source。
+- KBase 仅在阿颜明确授权后更新；默认只保留本地 operator notes，不提交、不推送、
+  不执行博客同步。相应发布动作须阿颜当次另行明确授权；公开文章同步不等于将
+  KBase 安装到 Hermes 运行目录，不改变 bot 只定位仓库开发文档的规则。
 - NowledgeMem/nmem 与 Serena 是维护侧记忆，仅在阿颜明确授权后写入、合并、
   替换或删除。优先更新既有 Tangyuge-Hermes 主条目，不新建平行状态条目；
   只记录长期稳定规则、当前主状态和关键部署事实，不记录流水账或密钥内容。

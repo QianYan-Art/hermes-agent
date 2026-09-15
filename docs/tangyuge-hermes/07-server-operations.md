@@ -385,6 +385,11 @@ Chat-side restart:
 - In DM only, exact plaintext `restart gateway` is treated as `/restart`.
 - This command does not grant arbitrary shell access to the bot.
 
+提示词或角色规则更新后，重启网关仍可能恢复旧会话的基础提示快照。要应用新基础提示
+且保留历史，由阿颜执行 `/reset`：下一轮重建提示，同时保留旧会话记录和当前模型、
+provider、reasoning 设置。`/new` 会删除旧会话记录并恢复全局默认，不作为本场景的
+默认建议。部署不得代为执行会话重置；拼接与缓存契约见 `03-identity-prompt.md`。
+
 Chinese operator phrasing:
 
 - If the user says "去维护手册里查重启网关命令", the answer is this section.
@@ -415,9 +420,11 @@ on the server, then checkout `main`.
 
 For bot-readable documentation, update repo docs under
 `docs/tangyuge-hermes/` and redeploy. KBase records on the Windows machine are
-operator notes only and are not synced to the server.
+operator notes only, not installed into the Hermes runtime or used by the locator.
 
-KBase 只有阿颜明确授权后才能更新，改动只留本地，不提交、不推送、不运行博客同步。
+KBase 只有阿颜明确授权后才能更新；默认改动只留本地，不提交、不推送、不运行博客同步。
+只有当次另行明确授权时才执行相应发布动作。博客同步可把公开记录发布为文章，
+不等于将 KBase 安装成 Hermes 开发文档或运行时定位源。
 NowledgeMem/nmem 与 Serena 指维护侧记忆，不是 Hermes runtime 的 `memories/`；
 读取或核对记忆不等于获准写入，也不改变 Hermes 自身记忆工具的既有行为。
 维护侧记忆的写入、合并、替换和删除均须阿颜明确授权，只保留长期稳定规则、

@@ -39,6 +39,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | --- | --- |
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
 | "记忆写入授权", "更新 nmem", "Serena 记忆", "KBase 能提交吗", "博客同步", ".doc-maintenance" | `docs/tangyuge-hermes/00-overview.md` and `docs/tangyuge-hermes/07-server-operations.md` |
+| "提示词拼接链路", "外部记忆注入", "插件上下文", "提示规则更新后保留历史", "/reset 应用新提示词", "角色刷新保留会话" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "旧备份能删吗", "备份清理", ".bak", "清理前 SQLite 快照", "SSH 备份", "known_hosts.old 能删吗" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "部署", "部署文档", "81部署", "81服务器部署", "服务器怎么部署", "靠什么部署", "main分支部署", "服务命令", "旧版本还保留吗", "sparse checkout", "服务器瘦身" | `docs/tangyuge-hermes/01-deployment-81.md` and `docs/tangyuge-hermes/02-trim-plan.md` |
 | "精简方案", "删了什么", "保留什么", "保留平台", "保留toolsets", "为什么docs还有这些", "项目裁剪", "README留几个", "README.zh-CN", "CLI裁剪", "removed commands", "honcho/acp/proxy/lsp/kanban/profile", "provider白名单", "bundled provider", "插件白名单", "插件要不要删", "物理插件清理", "optional deps", "依赖精简", "aiohttp", "QQBot WebSocket依赖", "core dependency", "scripts删除", "google_meet", "teams_pipeline", "精简版测试", "测试基线", "run_trimmed_tests", "trimmed_manifest", "上游残留测试" | `docs/tangyuge-hermes/02-trim-plan.md` |
@@ -55,6 +56,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "邮箱列表", "有哪些邮箱", "列出全部邮箱", "多域名邮箱", "新域名邮箱漏列", "mail.qianyan.me", "sru.edu.kg", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
+
+- "提示词拼接链路、外部记忆注入、插件上下文、提示规则更新后保留历史、/reset 应用新提示词、角色刷新保留会话"：先读 `03-identity-prompt.md` 的拼接、作用域和缓存规则；操作前再读 `07-server-operations.md`。不要把重启网关视作旧提示已刷新，不自动执行会话重置。
 
 - "CLIProxyAPI、NetCup、Image-2.5、编排模型、image_model_unavailable、HTTP200正文错误、usage估算、multipart、usage.model为空、编辑费用没记上、尺寸不一致、data URL"：先读 `07-server-operations.md` 的“生图旁路与 Usage”，再按需读 `05-patches-and-rtk.md`。区分请求模型、旁路编排模型和实际执行模型；usage 展示或 HTTP 200 不证明 2.5 可用，不自动切换默认模型。
 - "记忆写入授权、更新 nmem、Serena 记忆、KBase 能提交吗、博客同步、.doc-maintenance"：读 `00-overview.md` 的 Documentation And Memory Rules 和 `07-server-operations.md` 的 Documentation Rule；查文档不等于获准写记忆，不混同 Hermes runtime 记忆。
@@ -87,6 +90,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 用户说以下内容时，优先使用本技能：
 
+- “提示词拼接链路”“外部记忆注入”“插件上下文”“提示规则更新后保留历史”“/reset 应用新提示词”“角色刷新保留会话”
 - “CLIProxyAPI”“NetCup”“Image-2.5”“gpt-image-2.5”“gpt-5.6-luna”“编排模型”“image_model_unavailable”“HTTP200正文错误”“usage估算”“multipart”“usage.model为空”“编辑费用没记上”“尺寸不一致”“data URL”
 - “记忆写入授权”“更新 nmem”“Serena 记忆”“KBase 能提交吗”“博客同步”“.doc-maintenance”
 - “旧备份能删吗”“备份清理”“.bak”“清理前 SQLite 快照”“SSH 备份”“known_hosts.old 能删吗”

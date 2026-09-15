@@ -55,12 +55,37 @@ A new session builds one system prompt in this order:
 4. Tool/task completion guidance and tool-family guidance.
 5. Skills index and mandatory skill-loading rule.
 6. Environment/profile/platform hints.
-7. Project context files such as `AGENTS.md`.
+7. 调用方显式传入的 `system_message`（若有），再加 `AGENTS.md` 等项目上下文。
 8. Volatile memory, user profile, date, model, and provider lines.
 
-The prompt is stored for the session and replayed byte-for-byte on later turns.
-Ephemeral channel/system prompts are appended at API-call time after the cached
-system prompt; they must not replace the Tangyuge identity block.
+基础提示按会话保存，后续回合复用原有快照。`system_message` 属于这个基础快照，
+不能与 `ephemeral_system_prompt` 混为一谈。后者才在每次 API 请求时追加；
+QQ 的当前会话、频道和自定义临时提示使用这个入口，不写入基础提示存档。
+
+角色文件加载器不再跨新会话缓存 JSON；新的基础提示构建会读取当前角色文件。
+这不表示每轮重读角色或记忆，也不改变继续会话的缓存恢复逻辑。部署提示规则更新后，
+可由阿颜执行 `/reset` 轮换到新会话，使下一轮重建基础提示，同时保留旧会话记录及当前
+模型、provider、reasoning 设置。`/new` 会删除旧会话记录并恢复全局默认，只在明确需要
+这种行为时使用。部署不代为执行这两个命令，不能把仍在复用旧快照的会话视作已更新。
+
+## 作用域与数据边界
+
+- 固定身份约束姓名、关系、性格和文风，不授予服务器权限，也不证明工具存在或操作成功。
+  真正的运维、查询、生图和语音等任务必须依照本轮工具定义与实际结果，不能以角色叙事替代执行。
+- SOUL 补充工作风格，MEMORY 和 USER 补充相关事实与偏好；当前明确要求优先于旧偏好。
+  记忆中的流程不自动授权同步、发送、修改或删除，角色关系默认值也不是身份认证。
+- 本二开运行问题以当前部署源码、配置和 `docs/tangyuge-hermes` 为准；
+  有可用技能读取工具且索引包含 `hermes-md-locator` 时先读取入口。
+  不再强制加载已移除的上游 `hermes-agent` 技能，也不要求调用未启用的历史搜索工具。
+- 角色卡 `name` 必须是非空字符串。常驻角色条目只有在 `constant=true`
+  且未设置 `enabled=false` 时注入；不恢复已刻意排除的开场白、场景强制项或状态面板。
+- 外部记忆输入只移除旧包装和内部提示标记，保留其中的资料；标签字符转义后作为参考数据注入。
+  这与输出侧删除泄漏记忆区块的 `sanitize_context` 分开处理。
+- 插件参考内容有独立包装。外部记忆和插件上下文追加到当轮 user 消息的 API 副本，
+  同时支持文本与多模态内容列表；不修改原始历史或基础系统缓存。
+
+这些措施解决代码层的遗漏、重复包装和指令作用域含糊问题，不构成模型语义上永不冲突、
+永不受提示词注入影响的保证。当前未配置的外部记忆 provider 属于加固覆盖，不能说成生产中已发生攻击。
 
 ## Included Identity Material
 
@@ -117,12 +142,14 @@ PY
 
 python - <<'PY'
 from run_agent import AIAgent
-a = AIAgent(provider="minimax-cn", model="minimax-m3", api_mode="anthropic_messages", quiet_mode=True, platform="qq")
+a = AIAgent(provider="minimax-cn", model="minimax-m3", api_mode="anthropic_messages", quiet_mode=True, platform="qqbot")
 s = a._build_system_prompt_parts()["stable"]
 assert s.startswith("# Tangyuge Identity")
 assert "You are Hermes Agent" not in s
 assert "created by Nous Research" not in s
-assert "This is product/runtime guidance, not an identity definition." in s
+assert "docs/tangyuge-hermes" in s
+assert "skill_view(name='hermes-agent')" not in s
+assert s.count("## Runtime Boundaries") == 1
 assert "这套 Hermes/QQ 部署只服务阿颜本人" in s
 assert "不代表初次见面或关系重置" in s
 assert "不要说“我叫唐语歌" in s
