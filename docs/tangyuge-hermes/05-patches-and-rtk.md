@@ -54,18 +54,26 @@ external patch files to replay:
 - `/auxmodel`, QQ `/model` provider selection, custom provider routing, and
   model/provider filtering are retained as source behavior around gateway
   command handling, runtime provider resolution, and auxiliary client routing.
-  The 81 deployment currently uses the built-in `minimax-cn` provider for the
-  main model (`minimax-m3`). The older main-model custom providers
-  `openrouter`, `siliconflow`, `deepseek-direct`, and `xiaomi-token-plan-cn`
-  are removed from server runtime config; auxiliary/vision, image generation,
-  and TTS settings are separate and must be preserved.
+  The 81 deployment now uses the named custom provider `kimi-code` for the main
+  model (`kimi-for-coding`, transport `chat_completions`); the built-in
+  `minimax-cn` / `minimax-m3` pair stays configured as a fallback. The older
+  main-model custom providers `openrouter`, `siliconflow`, `deepseek-direct`,
+  and `xiaomi-token-plan-cn` are removed from server runtime config;
+  auxiliary/vision, image generation, and TTS settings are separate and must be
+  preserved.
+- QQ `/model` 的无参数列表被 `_filter_dialog_model_providers()` 限定在
+  `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn` 三个 slug 上。这三个
+  在 81 runtime 都不使用，所以过滤后列表为空，这是有意保留的取舍：切模型一律
+  显式写 `/model <model> --provider <slug>`。不要为了让上游列表用例通过而放开
+  白名单。
 - Inbound QQ images still respect the explicit auxiliary vision backend
   (`custom:ollama_vision`) when `agent.image_input_mode` is `auto`; images are
-  summarized before reaching the main model. Inbound QQ videos are separate:
-  for `minimax-cn` + `minimax-m3`, cached local video files are attached as
-  native Anthropic-compatible `video` blocks when small enough for inline
-  base64. The inline budget is 45 MiB per file and 45 MiB total per turn;
-  unsupported or oversized videos fall back to the cached-path text marker.
+  summarized before reaching the main model — 与主模型是谁无关。Inbound QQ
+  videos are separate: `_supports_native_video_input()` 只在 provider 属于
+  `{minimax, minimax-cn}` 且模型名以 `minimax-m3` 开头时才成立，此时缓存的本地
+  视频作为 Anthropic 兼容的原生 `video` block 内联上传，预算为单文件 45 MiB、
+  单轮合计 45 MiB。默认模型为 `kimi-code` / `kimi-for-coding` 时该条件不成立，
+  视频统一回落到缓存路径文本标记。
 - Built-in API-key provider discovery from generic env vars is disabled by
   default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
   legacy auto-discovery of built-in providers from env names such as
@@ -74,9 +82,23 @@ external patch files to replay:
 - `/context` is a native CLI/gateway command for showing or setting
   `model.context_length`. `/context <size> --global` persists the context
   window to config; `/context auto --global` probes the active model and falls
-  back to 256k if detection cannot resolve a stronger value. `/model` switches
-  also auto-probe and persist the current model context window so providers do
-  not need static default context values.
+  back to the `DEFAULT_CONTEXT_WINDOW` constant `256000` (裸整数，不是 `256k`)
+  if detection cannot resolve a stronger value.
+- `hermes_cli/context_window.py` 的单位是二进制：`k = 1024`、
+  `m = 1024 * 1024`，因此 `512k` 解析为 524288、`1m` 为 1048576。不带单位的
+  整数保持原值，`512000` 仍是 512000。回落常量 `DEFAULT_CONTEXT_WINDOW` 是
+  十进制 `256000` 且未随单位改动，不要把它写成 `256k`。这个解析器由 CLI 与
+  gateway 的 `/context` 共用。
+- `/model` 切换仍会自动探测目标模型的窗口，但**只有 `--global` 才写入**
+  `model.context_length`；会话级切换不落盘，只在该会话仍有缓存 agent 时同步，
+  回显后缀为 `(session only)`。gateway 的
+  `_auto_save_switch_context_length()` 与 CLI 的
+  `_auto_persist_context_window()` 都接受 `persist_global` 并遵循同一规则。
+  这条修复之前，会话级 `/model` 会把探测值写进全局配置，显式设置的
+  per-model 上限（如 Kimi Code 的 262144）会被接口自报值（1048576）覆盖。
+- 命名自定义 provider 的 per-model 窗口只认
+  `providers.<slug>.models.<model>.context_length`，provider 顶层的
+  `context_length` 不生效。
 - The `.env` sanitizer only splits a malformed line when it starts with a known
   key and the preceding values are plain tokens. URL/query-string or
   whitespace-bearing values that embed another `KNOWN_KEY=` substring remain
@@ -89,8 +111,19 @@ external patch files to replay:
   `output_config.effort=max`；手动预算路径（包括当前 MiniMax Anthropic 兼容路径）
   将 `max` 映射为现有 `xhigh` 的 32000 token 预算，不再因未知值回落到 8000。
   这是本项目的兼容映射，不表示 MiniMax-M3 支持原生 `max`；其他模型与接口仍按
-  现有适配器能力处理，不承诺所有接口均支持此等级。本次不修改线上模型、默认推理
-  配置或被裁剪的 provider 范围。
+  现有适配器能力处理，不承诺所有接口均支持此等级。
+- Kimi Code 的思考参数走 `plugins/model-providers/custom/` 的 CustomProfile。
+  命名自定义 provider 在运行时解析为内部 provider `custom`，因此不会经过内置
+  Kimi profile 的 legacy 分支；CustomProfile 过去只处理 Ollama 的 `think`，
+  只在 YAML 里配 `reasoning_effort` 并不会发给 Kimi。现在
+  `agent/transports/chat_completions.py` 把 `base_url` 一并传给
+  `build_api_kwargs_extras()`，CustomProfile 据此**精确匹配**主机
+  `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，输出
+  `extra_body.thinking.type = enabled|disabled` 并映射
+  `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`；
+  关闭思考或 `effort=none` 时不发 `reasoning_effort`。相似主机名不会误命中，
+  其他 custom provider 与 Ollama 路径行为不变，也没有恢复被裁剪的内置 Kimi
+  provider。
 - Context compression refreshes the active todo snapshot using
   `TODO_INJECTION_HEADER`. A real trailing user turn absorbs the current
   snapshot after any stale copy is removed; summary/scaffolding tails keep a

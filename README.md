@@ -65,7 +65,13 @@ the current QQ inbound video temp path.
   gateway replies for these commands do not append random discovery tips.
 - `/reasoning` 支持 `none/minimal/low/medium/high/xhigh/max`。QQ 中默认只修改
   当前会话，添加 `--global` 才写入全局配置；CLI 沿用直接保存行为。
-  `max` 是否原生生效取决于所选模型与接口，新增枚举不改变当前 MiniMax 配置。
+  `max` 是否原生生效取决于所选模型与接口。当前默认模型 Kimi Code 只有
+  `low/high/max` 三档，网关按 `minimal|low -> low`、`medium|high -> high`、
+  `xhigh|max -> max` 映射。
+- `/model` 与 `/context` 的作用域一致：不带 `--global` 只影响当前会话，
+  包括上下文窗口——会话级 `/model` 不再把自动探测值写进全局
+  `model.context_length`。`/context` 的单位是二进制（`k = 1024`、
+  `m = 1024²`），不带单位的整数保持原值，探测失败回落到 `256000`。
 - `/restart` is exposed to allowed/admin chat operators. In DM, exact plaintext
   such as `restart gateway` is also routed to `/restart`. It uses the gateway's
   built-in graceful restart handler, not arbitrary shell execution.
@@ -107,7 +113,9 @@ the current QQ inbound video temp path.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a
-  45 MiB per-file and per-turn inline budget.
+  45 MiB per-file and per-turn inline budget. 原生视频直连只在 provider 属于
+  `{minimax, minimax-cn}` 且模型名以 `minimax-m3` 开头时成立；默认模型为
+  Kimi Code 时视频回落到缓存路径文本标记，图片链路不受影响。
 - Child-agent tool access is constrained: leaf subagents cannot call
   `delegate_task`, `clarify`, `memory`, `send_message`, or `execute_code`;
   orchestrator subagents may delegate within configured depth but still cannot
@@ -121,6 +129,10 @@ the current QQ inbound video temp path.
 - Main chat providers are intentionally narrowed to bundled `minimax`,
   `deepseek`, and `custom`. The MiniMax plugin exposes `minimax`,
   `minimax-cn`, and `minimax-oauth`; DeepSeek remains available as fallback.
+  81 runtime 的默认主模型是命名自定义 provider `kimi-code` 的
+  `kimi-for-coding`（解析为内部 `custom`，transport `chat_completions`，
+  窗口 262144，`agent.reasoning_effort: low`），MiniMax 保留为备用。
+  白名单未新增完整内置 provider。
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK
   surfaces: `browser/browser_use`, `browser/browserbase`, `browser/firecrawl`,
   `web/exa`, `web/firecrawl`, `web/parallel`, `web/tavily`,

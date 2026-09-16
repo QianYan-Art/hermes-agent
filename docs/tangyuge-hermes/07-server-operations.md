@@ -26,28 +26,47 @@ docs.
 
 Default model provider:
 
-- Provider slug: `minimax-cn`
-- Display name: `MiniMax (China)`
-- Base URL: `https://api.minimaxi.com/anthropic`
-- Default model: `minimax-m3`
-- Key env: `MINIMAX_CN_API_KEY`
+- Provider slug: `kimi-code`（`providers:` 下的命名自定义 provider，运行时
+  解析出的内部 provider 名是 `custom`）
+- Display name: `kimi-code`
+- Base URL: `https://api.kimi.com/coding/v1`
+- Default model: `kimi-for-coding`
+- Key env: `KIMI_CODE_API_KEY`（值只存 runtime `.env`，不入仓库和文档）
+- Transport: 显式 `chat_completions`。必须显式写，否则 URL 自动检测会把
+  `/coding` 当成 Anthropic 协议。
+- Context length: `providers.kimi-code.models.kimi-for-coding.context_length`
+  是 `262144`，全局 `model.context_length` 同为 `262144`。接口自报 1M，
+  256K 是阿颜主动设置的上限，不是服务上限。
+  注意窗口只认 per-model 的 `models.<model>.context_length`，
+  **不认** provider 顶层的 `context_length`。
+- `agent.reasoning_effort` 全局为 `low`。Kimi 的思考参数由
+  `plugins/model-providers/custom/` 的 Kimi Code 分支发出：
+  `extra_body.thinking.type` 为 `enabled`/`disabled`，并映射
+  `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
+  该分支只匹配主机 `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，
+  其他自定义 provider 与 Ollama 行为不变。
+- MiniMax 转为备用：`MINIMAX_CN_API_KEY` 保留在 `.env`，内置 `minimax-cn`
+  provider 仍可用，但不再是默认主模型。
 - The old main-model custom providers `openrouter`, `siliconflow`,
   `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
   Auxiliary/vision, image generation, and TTS settings are separate and should
   not be removed when cleaning main model providers.
 - `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
   main model does not use it.
-- `prompt_caching.cache_ttl` is `5m`; MiniMax prompt cache uses
-  Anthropic-compatible `cache_control` markers and 5-minute renewal semantics.
+- `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
+  （`cache_control` 标记 + 5 分钟续期）的行为；Kimi Code 走
+  `chat_completions`，不适用这条 Anthropic 缓存路径。
 - `agent.image_input_mode` is `auto` and `auxiliary.vision.provider` points to
   `custom:ollama_vision`, so QQ images are summarized by the auxiliary vision
-  backend instead of being sent directly to MiniMax M3.
-- QQ videos are routed independently from images. For the default
-  `minimax-cn` / `minimax-m3` runtime, cached videos are attached directly to
-  the upstream Anthropic-compatible request as native `video` blocks when the
-  local file is supported and small enough for inline base64. The inline budget
-  is 45 MiB per file and 45 MiB total per turn. Unsupported, missing, or
-  oversized videos remain visible by cached file path in the text prompt.
+  backend instead of being sent to the main model. 图片链路与主模型无关，
+  切换默认模型不影响它。
+- QQ videos are routed independently from images. 原生 `video` block 直连由
+  `gateway/run.py` 的 `_supports_native_video_input()` 判定，条件是
+  provider 属于 `{minimax, minimax-cn}` **且** 模型名以 `minimax-m3` 开头。
+  默认模型切到 `kimi-code` / `kimi-for-coding` 后该条件不成立，QQ 视频不再
+  内联上传，而是以缓存文件路径的文本标记出现在提示里。需要视频直连时，用
+  `/model minimax-m3 --provider minimax-cn` 切回。MiniMax 路径下的内联预算
+  仍是单文件 45 MiB、单轮合计 45 MiB。
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
@@ -462,8 +481,37 @@ on the server, then checkout `main`.
   `max` 与 `xhigh` 都映射到 32000 token；支持原生 `max` 的 Anthropic 自适应
   路径使用 `output_config.effort=max`。具体效果以目标模型与接口能力为准，
   不要把命令接受枚举理解成所有模型都支持同名等级。
-- 本次更新不更改 81 当前模型或推理配置，也不恢复已裁剪 provider。
-  切换模型前先核对接口支持的等级；实现与兼容映射见 `05-patches-and-rtk.md`。
+- Kimi Code 只有 `low/high/max` 三档。网关把 `minimal|low` 归到 `low`、
+  `medium|high` 归到 `high`、`xhigh|max` 归到 `max`；`none` 或显式关闭思考时
+  发 `thinking.disabled` 且不带 `reasoning_effort`。当前全局是 `low`。
+- 切换模型前先核对接口支持的等级；实现与兼容映射见 `05-patches-and-rtk.md`。
+
+## 模型与上下文命令的作用域
+
+- `/model <name>` 只对当前 QQ 会话生效；`/model <name> --global` 才把
+  `model.default`、`model.provider` 写进 `config.yaml`。
+- 切换 Kimi Code 的完整写法是
+  `/model kimi-for-coding --provider kimi-code`，provider 直接写
+  `kimi-code`，**不要**加 `custom:` 前缀。
+- 上下文窗口跟随同一作用域：会话级 `/model` 不再写全局
+  `model.context_length`，只有 `--global` 才落盘。回显后缀相应为
+  `(session only)` 或 `(auto-saved)`。修这条之前，任何一次临时 `/model`
+  都会把自动探测值写进全局配置，显式配置的 262144 会被 Kimi 自报的
+  1048576 覆盖。CLI 的 `/model` 采用同一作用域规则。
+- 需要单独调窗口用 `/context <tokens|256k|1m|auto> [--global]`。单位是
+  二进制：`k = 1024`、`m = 1024²`，所以 `512k` 是 524288；不带单位的整数
+  按原值处理，`512000` 仍是 512000。探测失败时回落到常量 `256000`
+  （裸整数，不是 `256k`）。
+- `/context auto` 绕过全局 `model.context_length`，但仍遵守
+  `providers.kimi-code.models.kimi-for-coding.context_length` 的 262144。
+- QQ 的 `/model` 不带参数时列表是**空的**，这是有意保留的行为：
+  `gateway/run.py` 的 `_filter_dialog_model_providers()` 把可列出的
+  provider 限定在 `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn`，
+  而这三个在 81 runtime 上都不使用，因此过滤后为 0 条。切换模型一律用上面
+  的显式命令。副作用：上游用例
+  `tests/gateway/test_model_command_custom_providers.py::test_handle_model_command_lists_saved_custom_provider`
+  断言列表会展示自定义 provider，在本项目中长期失败，属于该取舍的已知结果，
+  不是回归，也不要为了让它通过而放开白名单。
 
 ## Documentation Rule
 

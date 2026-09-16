@@ -16,7 +16,7 @@ class ContextWindowResult:
 
 
 def parse_context_window(value: str) -> int:
-    """Parse context-window sizes such as ``256k``, ``1m``, or ``262144``."""
+    """解析 token 数；k 为 1024，m 为 1024²，不带单位的数字保持原值。"""
     raw = (value or "").strip().lower().replace("_", "").replace(",", "")
     if not raw:
         raise ValueError("missing context window size")
@@ -27,9 +27,9 @@ def parse_context_window(value: str) -> int:
     suffix = match.group(2)
     multiplier = 1
     if suffix == "k":
-        multiplier = 1_000
+        multiplier = 1024
     elif suffix == "m":
-        multiplier = 1_000_000
+        multiplier = 1024 * 1024
     parsed = int(number * multiplier)
     if parsed <= 0:
         raise ValueError("context window must be positive")
@@ -80,7 +80,7 @@ def resolve_context_window(
     config: dict[str, Any] | None = None,
     use_config_override: bool = True,
 ) -> ContextWindowResult:
-    """Resolve a model context window, falling back to 256k."""
+    """解析模型上下文；探测失败时仍回落到既有的 256000 tokens。"""
     config_context = _read_config_context_length(config) if use_config_override else None
     try:
         from hermes_cli.model_switch import resolve_display_context_length

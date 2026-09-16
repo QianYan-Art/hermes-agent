@@ -7890,7 +7890,12 @@ class HermesCLI:
         except Exception:
             pass
 
-    def _auto_persist_context_window(self, result) -> int:
+    def _auto_persist_context_window(self, result, persist_global: bool = False) -> int:
+        """探测目标模型的上下文窗口；只有 ``--global`` 切换才写回配置。
+
+        会话级切换只更新当前进程的 agent，不覆盖 ``model.context_length``，
+        与 gateway 侧 ``/model`` 的作用域保持一致。
+        """
         from hermes_cli.context_window import resolve_context_window
 
         cfg, custom_provs = self._current_context_config()
@@ -7904,7 +7909,10 @@ class HermesCLI:
             config=cfg,
             use_config_override=False,
         )
-        if save_config_value("model.context_length", resolved.value):
+        if persist_global:
+            if save_config_value("model.context_length", resolved.value):
+                self._set_runtime_context_window(resolved.value)
+        else:
             self._set_runtime_context_window(resolved.value)
         return resolved.value
 
@@ -8013,8 +8021,11 @@ class HermesCLI:
         _cprint(f"    Provider: {provider_label}")
 
         mi = result.model_info
-        ctx = self._auto_persist_context_window(result)
-        _cprint(f"    Context: {ctx:,} tokens (auto-saved)")
+        ctx = self._auto_persist_context_window(result, persist_global)
+        _cprint(
+            f"    Context: {ctx:,} tokens "
+            + ("(auto-saved)" if persist_global else "(session only)")
+        )
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
@@ -8245,8 +8256,11 @@ class HermesCLI:
         _cprint(f"    Provider: {provider_label}")
 
         mi = result.model_info
-        ctx = self._auto_persist_context_window(result)
-        _cprint(f"    Context: {ctx:,} tokens (auto-saved)")
+        ctx = self._auto_persist_context_window(result, persist_global)
+        _cprint(
+            f"    Context: {ctx:,} tokens "
+            + ("(auto-saved)" if persist_global else "(session only)")
+        )
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")

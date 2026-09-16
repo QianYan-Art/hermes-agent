@@ -533,6 +533,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 model=model,
                 ollama_num_ctx=params.get("ollama_num_ctx"),
                 session_id=params.get("session_id"),
+                base_url=params.get("base_url"),
             )
         )
         api_kwargs.update(top_level_from_profile)

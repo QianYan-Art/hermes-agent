@@ -11164,7 +11164,17 @@ class GatewayRunner:
         current_base_url: str = "",
         current_api_key: str = "",
         custom_providers: list | None = None,
+        persist_global: bool = False,
+        session_key: str = "",
     ) -> int:
+        """探测切换目标模型的上下文窗口，并按 ``/context`` 的作用域规则落地。
+
+        只有 ``--global`` 切换才写入 ``model.context_length``。会话级切换不
+        落盘，否则一次临时 ``/model`` 就会把显式配置的窗口（例如 per-model
+        的 262144）改成探测值。会话级路径只在该会话仍有缓存 agent 时同步窗
+        口；``/model`` 通常已先驱逐缓存，此时下一轮新建的 agent 会继续使用
+        全局配置值，需要单独调整请用 ``/context``。
+        """
         from hermes_cli.context_window import resolve_context_window
 
         resolved = resolve_context_window(
@@ -11177,10 +11187,13 @@ class GatewayRunner:
             config=None,
             use_config_override=False,
         )
-        try:
-            self._save_context_length_to_config(resolved.value)
-        except Exception as exc:
-            logger.warning("Failed to persist model.context_length: %s", exc)
+        if persist_global:
+            try:
+                self._save_context_length_to_config(resolved.value)
+            except Exception as exc:
+                logger.warning("Failed to persist model.context_length: %s", exc)
+        elif session_key:
+            self._apply_context_length_to_cached_agent(session_key, resolved.value)
         return resolved.value
 
     async def _handle_context_command(self, event: MessageEvent) -> str:
@@ -11480,8 +11493,10 @@ class GatewayRunner:
                             current_base_url=current_base_url,
                             current_api_key=current_api_key,
                             custom_providers=custom_provs,
+                            persist_global=False,
+                            session_key=_session_key,
                         )
-                        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (auto-saved)")
+                        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (session only)")
                         if mi:
                             if mi.max_output:
                                 lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
@@ -11652,8 +11667,13 @@ class GatewayRunner:
             current_base_url=current_base_url,
             current_api_key=current_api_key,
             custom_providers=custom_provs,
+            persist_global=persist_global,
+            session_key=session_key,
         )
-        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (auto-saved)")
+        lines.append(
+            t("gateway.model.context_label", tokens=f"{ctx:,}")
+            + (" (auto-saved)" if persist_global else " (session only)")
+        )
         if mi:
             if mi.max_output:
                 lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
