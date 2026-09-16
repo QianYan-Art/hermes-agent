@@ -19,6 +19,7 @@ import yaml
 from utils import base_url_host_matches, base_url_hostname
 
 from hermes_constants import OPENROUTER_MODELS_URL
+from agent.kimi_code import build_kimi_request_options, is_kimi_code_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -683,6 +684,8 @@ def fetch_endpoint_model_metadata(
         candidates.append(alternate)
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    if is_kimi_code_endpoint(normalized):
+        headers.update(build_kimi_request_options()["extra_headers"])
     last_error: Optional[Exception] = None
 
     if is_local_endpoint(normalized):
@@ -802,11 +805,13 @@ def _resolve_endpoint_context_length(
     model: str,
     base_url: str,
     api_key: str = "",
+    *,
+    exact_match: bool = False,
 ) -> Optional[int]:
     """Resolve context length from an endpoint's live ``/models`` metadata."""
     endpoint_metadata = fetch_endpoint_model_metadata(base_url, api_key=api_key)
     matched = endpoint_metadata.get(model)
-    if not matched:
+    if not matched and not exact_match:
         if len(endpoint_metadata) == 1:
             matched = next(iter(endpoint_metadata.values()))
         else:
@@ -816,7 +821,7 @@ def _resolve_endpoint_context_length(
                     break
     if matched:
         context_length = matched.get("context_length")
-        if isinstance(context_length, int):
+        if isinstance(context_length, int) and not isinstance(context_length, bool) and context_length > 0:
             return context_length
     return None
 
@@ -1488,7 +1493,8 @@ def get_model_context_length(
     config_context_length: int | None = None,
     provider: str = "",
     custom_providers: list | None = None,
-) -> int:
+    allow_fallback: bool = True,
+) -> Optional[int]:
     """Get the context length for a model.
 
     Resolution order:
@@ -1512,7 +1518,10 @@ def get_model_context_length(
     6. OpenRouter live API metadata (Kimi-family 32k guard)
     7. Hardcoded defaults (broad family patterns, longest-key-first)
     8. Local server query (last resort)
-    9. Default fallback (256K)"""
+    9. Default fallback (256K)
+
+    allow_fallback=False 时，无法解析返回 None，供调用方区分回落来源。
+    """
     # 0. Explicit config override — user knows best
     if config_context_length is not None and isinstance(config_context_length, int) and config_context_length > 0:
         return config_context_length
@@ -1538,6 +1547,19 @@ def get_model_context_length(
     # "model-name") so cache lookups and server queries use the bare ID that
     # local servers actually know about.  Ollama "model:tag" colons are preserved.
     model = _strip_provider_prefix(model)
+
+    # Kimi 的同一端点可有多个不同窗口的模型，只采用精确 ID 的官方数据。
+    if is_kimi_code_endpoint(base_url):
+        endpoint_context = _resolve_endpoint_context_length(
+            model, base_url, api_key=api_key, exact_match=True,
+        )
+        if endpoint_context is not None:
+            save_context_length(model, base_url, endpoint_context)
+            return endpoint_context
+        cached = get_cached_context_length(model, base_url)
+        if isinstance(cached, int) and not isinstance(cached, bool) and cached > 0:
+            return cached
+        return DEFAULT_FALLBACK_CONTEXT if allow_fallback else None
 
     # 1. Check persistent cache (model+provider)
     # LM Studio is excluded — its loaded context length is transient (the
@@ -1667,7 +1689,7 @@ def get_model_context_length(
                 "in config.yaml to override.",
                 model, base_url, f"{DEFAULT_FALLBACK_CONTEXT:,}",
             )
-            return DEFAULT_FALLBACK_CONTEXT
+            return DEFAULT_FALLBACK_CONTEXT if allow_fallback else None
 
     # 4. Anthropic /v1/models API (only for regular API keys, not OAuth)
     if provider == "anthropic" or (
@@ -1760,7 +1782,7 @@ def get_model_context_length(
     if not effective_provider:
         metadata = fetch_model_metadata()
         if model in metadata:
-            or_ctx = metadata[model].get("context_length", DEFAULT_FALLBACK_CONTEXT)
+            or_ctx = metadata[model].get("context_length")
             # Guard against stale OpenRouter metadata for Kimi-family models.
             if or_ctx == 32768 and _model_name_suggests_kimi(model):
                 logger.info(
@@ -1768,7 +1790,7 @@ def get_model_context_length(
                     "(Kimi-family underreport); falling through to hardcoded defaults",
                     or_ctx, model,
                 )
-            else:
+            elif isinstance(or_ctx, int) and not isinstance(or_ctx, bool) and or_ctx > 0:
                 return or_ctx
 
     # 7. (reserved)
@@ -1793,7 +1815,7 @@ def get_model_context_length(
             return local_ctx
 
     # 10. Default fallback — 256K
-    return DEFAULT_FALLBACK_CONTEXT
+    return DEFAULT_FALLBACK_CONTEXT if allow_fallback else None
 
 
 def estimate_tokens_rough(text: str) -> int:

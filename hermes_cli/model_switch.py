@@ -565,6 +565,7 @@ def resolve_display_context_length(
     model_info: Optional[ModelInfo] = None,
     custom_providers: list | None = None,
     config_context_length: int | None = None,
+    allow_fallback: bool = True,
 ) -> Optional[int]:
     """Resolve the context length to show in /model output.
 
@@ -592,6 +593,7 @@ def resolve_display_context_length(
             provider=provider or None,
             custom_providers=custom_providers,
             config_context_length=config_context_length,
+            **({"allow_fallback": False} if not allow_fallback else {}),
         )
         if ctx:
             return int(ctx)

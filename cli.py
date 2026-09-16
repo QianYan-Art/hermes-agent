@@ -3354,6 +3354,14 @@ class HermesCLI:
 
         # Agent will be initialized on first use
         self.agent: Optional[Any] = None
+        # 即使 agent 尚未初始化，也保留当前 CLI 会话的上下文覆盖值；来源
+        # 用于区分显式配置与探测/默认结果，供下一次模型切换回退。
+        self._session_context_length: Optional[int] = None
+        self._session_context_source: Optional[str] = None
+        self._global_context_source: Optional[str] = None
+        self._last_context_window_source: Optional[str] = None
+        self._last_context_persisted: Optional[bool] = None
+        self._last_context_persist_error: Optional[str] = None
         self._tool_callbacks_installed = False
         self._tirith_security_checked = False
         self._app = None  # prompt_toolkit Application (set in run())
@@ -5224,6 +5232,12 @@ class HermesCLI:
                 stream_delta_callback=self._stream_delta if self.streaming_enabled else None,
                 tool_gen_callback=self._on_tool_gen_start if self.streaming_enabled else None,
             )
+            if getattr(self, "_session_context_length", None):
+                source = getattr(self, "_session_context_source", None)
+                self._context_window_source = (
+                    source if isinstance(source, str) and source else "manual"
+                )
+                self._set_runtime_context_window(self._session_context_length)
             # Store reference for atexit memory provider shutdown
             global _active_agent_ref
             _active_agent_ref = self.agent
@@ -7871,26 +7885,142 @@ class HermesCLI:
         except Exception:
             return {}, None
 
+    @staticmethod
+    def _coerce_context_length(value: Any) -> int | None:
+        if isinstance(value, bool):
+            return None
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    def _current_context_fallback(
+        self,
+        cfg: dict | None = None,
+        custom_providers: list | None = None,
+        prefer_global: bool = False,
+    ) -> int | None:
+        """只返回当前作用域的显式上下文覆盖值。
+
+        刻意排除 ``context_compressor.context_length``：它可能只是探测值或
+        provider 默认值，不能在后续模型切换中重新标记为用户配置。
+        """
+        cfg = cfg if cfg is not None else self._current_context_config()[0]
+        try:
+            model_cfg = (cfg or {}).get("model", {})
+            config_context = (
+                model_cfg.get("context_length")
+                if isinstance(model_cfg, dict)
+                else None
+            )
+            config_context = self._coerce_context_length(config_context)
+        except Exception:
+            config_context = None
+
+        # 全局模型切换与 gateway 保持同一优先级：已有全局配置优先于本进程的
+        # 会话级覆盖值。
+        if prefer_global and config_context is not None:
+            return config_context
+
+        session_source = getattr(self, "_session_context_source", None)
+        if session_source not in {"detected", "fallback"}:
+            value = self._coerce_context_length(
+                getattr(self, "_session_context_length", None)
+            )
+            if value is not None:
+                return value
+
+            value = self._coerce_context_length(
+                getattr(getattr(self, "agent", None), "_config_context_length", None)
+            )
+            if value is not None:
+                return value
+
+        global_source = getattr(self, "_global_context_source", None)
+        if not prefer_global and global_source not in {"detected", "fallback"}:
+            if config_context is not None:
+                return config_context
+
+        if custom_providers is None:
+            try:
+                custom_providers = self._current_context_config()[1]
+            except Exception:
+                custom_providers = None
+        if custom_providers:
+            try:
+                from hermes_cli.config import get_custom_provider_context_length
+
+                value = get_custom_provider_context_length(
+                    model=getattr(self, "model", "") or "",
+                    base_url=getattr(self, "base_url", "") or "",
+                    custom_providers=custom_providers,
+                )
+                value = self._coerce_context_length(value)
+                if value is not None:
+                    return value
+            except Exception:
+                pass
+        return None
+
     def _set_runtime_context_window(self, context_length: int) -> None:
+        value = self._coerce_context_length(context_length)
+        if value is None:
+            return
+        source = getattr(self, "_context_window_source", None)
+        if not isinstance(source, str) or not source:
+            source = "manual"
+        self._session_context_length = value
+        self._session_context_source = source
         if self.agent is None:
             return
         try:
-            self.agent._config_context_length = int(context_length)
+            self.agent._config_context_length = value
             compressor = getattr(self.agent, "context_compressor", None)
             if compressor:
                 compressor.update_model(
                     model=self.agent.model,
-                    context_length=int(context_length),
+                    context_length=value,
                     base_url=getattr(self.agent, "base_url", ""),
                     api_key=getattr(self.agent, "api_key", ""),
                     provider=getattr(self.agent, "provider", ""),
                     api_mode=getattr(self.agent, "api_mode", ""),
                 )
+                primary_runtime = getattr(self.agent, "_primary_runtime", None)
+                if isinstance(primary_runtime, dict):
+                    primary_runtime.update(
+                        {
+                            "compressor_model": getattr(
+                                compressor, "model", self.agent.model
+                            ),
+                            "compressor_base_url": getattr(
+                                compressor, "base_url", self.agent.base_url
+                            ),
+                            "compressor_api_key": getattr(
+                                compressor, "api_key", ""
+                            ),
+                            "compressor_provider": getattr(
+                                compressor, "provider", self.agent.provider
+                            ),
+                            "compressor_context_length": value,
+                            "compressor_api_mode": getattr(
+                                compressor, "api_mode", self.agent.api_mode
+                            ),
+                            "compressor_threshold_tokens": getattr(
+                                compressor, "threshold_tokens", 0
+                            ),
+                        }
+                    )
             self.agent._cached_system_prompt = None
         except Exception:
             pass
 
-    def _auto_persist_context_window(self, result, persist_global: bool = False) -> int:
+    def _auto_persist_context_window(
+        self,
+        result,
+        persist_global: bool = False,
+        fallback_context_length: int | None = None,
+    ) -> int:
         """探测目标模型的上下文窗口；只有 ``--global`` 切换才写回配置。
 
         会话级切换只更新当前进程的 agent，不覆盖 ``model.context_length``，
@@ -7899,6 +8029,18 @@ class HermesCLI:
         from hermes_cli.context_window import resolve_context_window
 
         cfg, custom_provs = self._current_context_config()
+        self._last_context_persisted = None
+        self._last_context_persist_error = None
+        if fallback_context_length is None:
+            fallback_resolver = getattr(self, "_current_context_fallback", None)
+            if callable(fallback_resolver):
+                fallback_context_length = self._coerce_context_length(
+                    fallback_resolver(
+                        cfg,
+                        custom_provs,
+                        prefer_global=persist_global,
+                    )
+                )
         resolved = resolve_context_window(
             model=result.new_model,
             provider=result.target_provider,
@@ -7908,18 +8050,36 @@ class HermesCLI:
             custom_providers=custom_provs,
             config=cfg,
             use_config_override=False,
+            fallback_context_length=fallback_context_length,
         )
+        source = getattr(resolved, "source", "")
+        if not isinstance(source, str) or not source:
+            source = "unknown"
+        self._last_context_window_source = source
+        self._context_window_source = source
+        # 即使全局写盘失败，也要把目标窗口应用到当前会话；持久化与运行时
+        # 状态是两个独立结果。
+        self._set_runtime_context_window(resolved.value)
+        self._session_context_length = int(resolved.value)
+        self._session_context_source = source
         if persist_global:
-            if save_config_value("model.context_length", resolved.value):
-                self._set_runtime_context_window(resolved.value)
-        else:
-            self._set_runtime_context_window(resolved.value)
-        return resolved.value
+            try:
+                persisted = save_config_value("model.context_length", resolved.value)
+            except Exception as exc:
+                self._last_context_persisted = False
+                self._last_context_persist_error = str(exc) or exc.__class__.__name__
+                logger.warning("Failed to save model.context_length: %s", exc)
+            else:
+                self._last_context_persisted = bool(persisted)
+                if self._last_context_persisted:
+                    self._global_context_source = source
+                else:
+                    self._last_context_persist_error = "save_config_value returned False"
+        return int(resolved.value)
 
     def _handle_context_command(self, cmd_original: str) -> None:
         """Handle /context — show or set the current model context window."""
         from hermes_cli.context_window import (
-            DEFAULT_CONTEXT_WINDOW,
             format_context_window,
             parse_context_window,
             resolve_context_window,
@@ -7933,6 +8093,16 @@ class HermesCLI:
 
         cfg, custom_provs = self._current_context_config()
         if not raw_args:
+            session_value = self._coerce_context_length(
+                getattr(self, "_session_context_length", None)
+            )
+            if session_value is not None:
+                session_source = getattr(self, "_session_context_source", None) or "manual"
+                _cprint(
+                    f"  Context: {format_context_window(session_value)} ({session_source})"
+                )
+                _cprint("  Usage: /context <tokens|256k|1m|auto> [--global]")
+                return
             resolved = resolve_context_window(
                 model=self.model or "",
                 provider=self.provider or "",
@@ -7956,6 +8126,7 @@ class HermesCLI:
                 use_config_override=False,
             )
             value = resolved.value
+            context_source = resolved.source
         else:
             try:
                 value = parse_context_window(raw_args)
@@ -7963,10 +8134,14 @@ class HermesCLI:
                 _cprint(f"  ✗ Invalid context: {exc}")
                 _cprint("  Usage: /context <tokens|256k|1m|auto> [--global]")
                 return
+            context_source = "config" if persist_global else "manual"
 
+        self._context_window_source = context_source
         self._set_runtime_context_window(value)
+        self._last_context_window_source = context_source
         if persist_global:
             if save_config_value("model.context_length", value):
+                self._global_context_source = "config"
                 _cprint(f"  ✓ Context set: {format_context_window(value)}")
                 _cprint("    Saved to config.yaml (--global)")
             else:
@@ -7974,14 +8149,24 @@ class HermesCLI:
         else:
             _cprint(f"  ✓ Context set: {format_context_window(value)}")
             _cprint("    (session only — add --global to persist)")
-        if value == DEFAULT_CONTEXT_WINDOW and raw_args.lower() == "auto":
-            _cprint("    Auto-detect fell back to 256k")
+        if raw_args.lower() == "auto" and context_source == "fallback":
+            _cprint("    Auto-detect unavailable: default 256,000 tokens (250K)")
+        elif raw_args.lower() == "auto" and context_source == "retained":
+            _cprint("    Auto-detect failed; retained the previous explicit context")
 
     def _apply_model_switch_result(self, result, persist_global: bool) -> None:
         if not result.success:
             _cprint(f"  ✗ {result.error_message}")
             return
 
+        fallback_resolver = getattr(self, "_current_context_fallback", None)
+        fallback_context_length = (
+            self._coerce_context_length(
+                fallback_resolver(prefer_global=persist_global)
+            )
+            if callable(fallback_resolver)
+            else None
+        )
         old_model = self.model
         self.model = result.new_model
         self.provider = result.target_provider
@@ -8009,6 +8194,8 @@ class HermesCLI:
                 )
             except Exception as exc:
                 _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
+                self.agent = None
+                self._active_agent_route_signature = None
 
         self._pending_model_switch_note = (
             f"[Note: model was just switched from {old_model} to {result.new_model} "
@@ -8021,11 +8208,28 @@ class HermesCLI:
         _cprint(f"    Provider: {provider_label}")
 
         mi = result.model_info
-        ctx = self._auto_persist_context_window(result, persist_global)
+        ctx = self._auto_persist_context_window(
+            result,
+            persist_global,
+            fallback_context_length=fallback_context_length,
+        )
+        context_source = getattr(self, "_last_context_window_source", "")
+        context_persisted = getattr(self, "_last_context_persisted", None)
+        scope = (
+            "auto-saved"
+            if persist_global and context_persisted is not False
+            else "global save failed"
+            if persist_global
+            else "session only"
+        )
         _cprint(
             f"    Context: {ctx:,} tokens "
-            + ("(auto-saved)" if persist_global else "(session only)")
+            + (f"({context_source}; {scope})" if context_source else f"({scope})")
         )
+        if persist_global and context_persisted is False:
+            persist_error = getattr(self, "_last_context_persist_error", None)
+            detail = f": {persist_error}" if persist_error else ""
+            _cprint(f"    ✗ Failed to save model.context_length (--global){detail}")
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
@@ -8212,6 +8416,14 @@ class HermesCLI:
         # Apply to CLI state.
         # Update requested_provider so _ensure_runtime_credentials() doesn't
         # overwrite the switch on the next turn (it re-resolves from this).
+        fallback_resolver = getattr(self, "_current_context_fallback", None)
+        fallback_context_length = (
+            self._coerce_context_length(
+                fallback_resolver(prefer_global=persist_global)
+            )
+            if callable(fallback_resolver)
+            else None
+        )
         old_model = self.model
         self.model = result.new_model
         self.provider = result.target_provider
@@ -8240,6 +8452,8 @@ class HermesCLI:
                 )
             except Exception as exc:
                 _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
+                self.agent = None
+                self._active_agent_route_signature = None
 
         # Store a note to prepend to the next user message so the model
         # knows a switch occurred (avoids injecting system messages mid-history
@@ -8256,11 +8470,28 @@ class HermesCLI:
         _cprint(f"    Provider: {provider_label}")
 
         mi = result.model_info
-        ctx = self._auto_persist_context_window(result, persist_global)
+        ctx = self._auto_persist_context_window(
+            result,
+            persist_global,
+            fallback_context_length=fallback_context_length,
+        )
+        context_source = getattr(self, "_last_context_window_source", "")
+        context_persisted = getattr(self, "_last_context_persisted", None)
+        scope = (
+            "auto-saved"
+            if persist_global and context_persisted is not False
+            else "global save failed"
+            if persist_global
+            else "session only"
+        )
         _cprint(
             f"    Context: {ctx:,} tokens "
-            + ("(auto-saved)" if persist_global else "(session only)")
+            + (f"({context_source}; {scope})" if context_source else f"({scope})")
         )
+        if persist_global and context_persisted is False:
+            persist_error = getattr(self, "_last_context_persist_error", None)
+            detail = f": {persist_error}" if persist_error else ""
+            _cprint(f"    ✗ Failed to save model.context_length (--global){detail}")
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")

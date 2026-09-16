@@ -71,7 +71,8 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
 - `/model` 与 `/context` 的作用域一致：不带 `--global` 只影响当前会话，
   包括上下文窗口——会话级 `/model` 不再把自动探测值写进全局
   `model.context_length`。`/context` 的单位是二进制（`k = 1024`、
-  `m = 1024²`），不带单位的整数保持原值，探测失败回落到 `256000`。
+  `m = 1024²`），不带单位的整数保持原值。模型切换无法解析窗口时保留
+  显式配置；无配置时回落 `256000`（250K），来源与作用域在回显中区分。
 - Kimi Code 请求使用 `Tangyuge-Hermes/<版本>` 标识和会话/任务级
   `prompt_cache_key`；缓存统计兼容官方返回字段。接入范围、订阅使用边界及
   验证方式见 `docs/tangyuge-hermes/07-server-operations.md`。
@@ -136,7 +137,7 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   `deepseek`, and `custom`. The MiniMax plugin exposes `minimax`,
   `minimax-cn`, and `minimax-oauth`; DeepSeek remains available as fallback.
   81 runtime 的默认主模型是命名自定义 provider `kimi-code` 的
-  `kimi-for-coding`（解析为内部 `custom`，transport `chat_completions`，
+  `k3-256k`（解析为内部 `custom`，transport `chat_completions`，
   窗口 262144，`agent.reasoning_effort: low`），MiniMax 保留为备用。
   白名单未新增完整内置 provider。
 - Bundled plugin discovery is allow-listed to retained web/browser/image/RTK

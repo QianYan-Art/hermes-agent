@@ -102,12 +102,13 @@ external patch files to replay:
   十进制 `256000` 且未随单位改动，不要把它写成 `256k`。这个解析器由 CLI 与
   gateway 的 `/context` 共用。
 - `/model` 切换仍会自动探测目标模型的窗口，但**只有 `--global` 才写入**
-  `model.context_length`；会话级切换不落盘，只在该会话仍有缓存 agent 时同步，
-  回显后缀为 `(session only)`。gateway 的
+  `model.context_length`；会话级窗口保存在 session 覆盖中，新建或复用 agent
+  均应用该值，查询和压缩预算保持一致。gateway 的
   `_auto_save_switch_context_length()` 与 CLI 的
   `_auto_persist_context_window()` 都接受 `persist_global` 并遵循同一规则。
-  这条修复之前，会话级 `/model` 会把探测值写进全局配置，显式设置的
-  per-model 上限（如 Kimi Code 的 262144）会被接口自报值（1048576）覆盖。
+  目标 per-model 配置优先；Kimi Code 用精确模型 ID 的官方 `/models` 数据，
+  失败时使用已知缓存或保留此前显式窗口，来源分别报告。无已知值的默认回落
+  `256000` 标为 `fallback`，不作为 `detected` 返回。
 - 命名自定义 provider 的 per-model 窗口只认
   `providers.<slug>.models.<model>.context_length`，provider 顶层的
   `context_length` 不生效。

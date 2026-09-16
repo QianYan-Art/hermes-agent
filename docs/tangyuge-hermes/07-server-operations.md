@@ -30,13 +30,14 @@ Default model provider:
   解析出的内部 provider 名是 `custom`）
 - Display name: `kimi-code`
 - Base URL: `https://api.kimi.com/coding/v1`
-- Default model: `kimi-for-coding`
+- Default model: `k3-256k`
 - Key env: `KIMI_CODE_API_KEY`（值只存 runtime `.env`，不入仓库和文档）
 - Transport: 显式 `chat_completions`。必须显式写，否则 URL 自动检测会把
   `/coding` 当成 Anthropic 协议。
-- Context length: `providers.kimi-code.models.kimi-for-coding.context_length`
-  是 `262144`，全局 `model.context_length` 同为 `262144`。接口自报 1M，
-  256K 是阿颜主动设置的上限，不是服务上限。
+- Context length: 全局 `model.context_length` 为 `262144`。
+  `k3-256k` 的官方 `/models` 在 2026-09-16 返回 `262144`，即二进制 `256K`。
+  `providers.kimi-code.models.kimi-for-coding.context_length` 单独设为
+  `262144`，约束的是 `kimi-for-coding`；该模型接口自报 1048576。
   注意窗口只认 per-model 的 `models.<model>.context_length`，
   **不认** provider 顶层的 `context_length`。
 - `agent.reasoning_effort` 全局为 `low`。Kimi 的思考参数由
@@ -573,12 +574,20 @@ on the server, then checkout `main`.
   `/model kimi-for-coding --provider kimi-code`，provider 直接写
   `kimi-code`，**不要**加 `custom:` 前缀。
 - 上下文窗口跟随同一作用域：会话级 `/model` 保存会话覆盖，
-  `--global` 将 `model.context_length` 落盘。回显后缀相应为
-  `(session only)` 或 `(auto-saved)`。CLI 采用同一作用域规则。
+  缓存驱逐后的新 agent、压缩预算与 `/context` 查询使用同一窗口；
+  `--global` 才将 `model.context_length` 落盘。回显同时标明来源和作用域，
+  CLI 采用同一作用域规则。
+- 切换优先采用目标模型的 per-model 配置，再解析模型窗口。
+  Kimi 以精确模型 ID 查询官方 `/models`，查询请求带真实客户端标识；
+  服务不可达时可用该模型已缓存的窗口。不会把另一个模型的元数据当作目标模型上限。
+- `/model` 无法解析新窗口时，保留切换前该作用域的显式窗口配置，标为
+  `retained`；无保留值时采用 `256000`，标为 `fallback`。
+  `model_config` 表示目标模型专属配置，`detected` 表示已解析的模型元数据或缓存，
+  不用数值是否恰好等于 `256000` 推断来源。
 - 需要单独调窗口用 `/context <tokens|256k|1m|auto> [--global]`。单位是
   二进制：`k = 1024`、`m = 1024²`，所以 `512k` 是 524288；不带单位的整数
-  按原值处理，`512000` 仍是 512000。探测失败时回落到常量 `256000`
-  （裸整数，不是 `256k`）。
+  按原值处理，`512000` 仍是 512000。显式 `/context auto` 探测失败且无模型
+  专属窗口时回落到 `256000`（`250K`），并明确显示 `fallback`。
 - `/new`、`/reset` 的窗口回显也使用二进制 K/M，并附精确 token 数；
   `262144` 显示为 `256K (262,144 tokens; ...)`。无法整除单位的数值直接
   显示精确 token 数。`/reset` 回显保留的会话覆盖，`/new` 回显全局配置。
@@ -613,8 +622,8 @@ on the server, then checkout `main`.
 
 ### 请求体与验证边界
 
-- 主模型使用 `kimi-for-coding`、`reasoning_effort: low` 与
-  `thinking.type: enabled`；全局和 per-model 上下文上限均为 262144。
+- 主模型使用 `k3-256k`、`reasoning_effort: low` 与
+  `thinking.type: enabled`；全局窗口为 262144，模型专属配置按前面的运行形态维护。
   辅助任务的参数按自身调用链解析，不能从主模型配置推断其实际发出的思考参数。
 - assistant 历史中的 `reasoning_content` 与工具调用消息按现有回传链路保留。
   角色、SOUL、MEMORY、USER 的基础提示是会话快照；工具 schema 独立发送，

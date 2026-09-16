@@ -1919,7 +1919,7 @@ class GatewayRunner:
     _restart_via_service: bool = False
     _restart_command_source: Optional[SessionSource] = None
     _stop_task: Optional[asyncio.Task] = None
-    _session_model_overrides: Dict[str, Dict[str, str]] = {}
+    _session_model_overrides: Dict[str, Dict[str, Any]] = {}
     _session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self, config: Optional[GatewayConfig] = None):
@@ -2016,7 +2016,7 @@ class GatewayRunner:
 
         # Per-session model overrides from /model command.
         # Key: session_key, Value: dict with model/provider/api_key/base_url/api_mode
-        self._session_model_overrides: Dict[str, Dict[str, str]] = {}
+        self._session_model_overrides: Dict[str, Dict[str, Any]] = {}
         # Per-session reasoning effort overrides from /reasoning.
         # Key: session_key, Value: parsed reasoning config dict.
         self._session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
@@ -8730,6 +8730,10 @@ class GatewayRunner:
                             _msg_config_ctx = int(_msg_raw_ctx)
                 except Exception:
                     pass
+                _msg_override = self._session_model_overrides.get(
+                    self._session_key_for_source(source), {},
+                )
+                _msg_config_ctx = _msg_override.get("context_length") or _msg_config_ctx
                 _msg_ctx_len = get_model_context_length(
                     self._model,
                     base_url=self._base_url or _msg_runtime.get("base_url") or "",
@@ -9180,6 +9184,10 @@ class GatewayRunner:
                 pass
 
             if _hyg_compression_enabled:
+                _hyg_config_context_length = (
+                    self._session_model_overrides.get(session_key, {}).get("context_length")
+                    or _hyg_config_context_length
+                )
                 _hyg_context_length = get_model_context_length(
                     _hyg_model,
                     base_url=_hyg_base_url or "",
@@ -9919,7 +9927,7 @@ class GatewayRunner:
         users can immediately see if context detection went wrong (e.g.
         local models falling to the 128K default).
         """
-        from hermes_cli.context_window import DEFAULT_CONTEXT_WINDOW, resolve_context_window
+        from hermes_cli.context_window import resolve_context_window
 
         model = _resolve_gateway_model()
         config_context_length = None
@@ -10053,13 +10061,9 @@ class GatewayRunner:
 
         if session_context_length is not None:
             ctx_source = "session override"
-        elif resolved_context.source == "config":
-            ctx_source = "config"
-        elif resolved_context.source == "fallback" or (
-            resolved_context.source == "detected"
-            and context_length == DEFAULT_CONTEXT_WINDOW
-            and config_context_length is None
-        ):
+        elif resolved_context.source in {"config", "model_config", "retained"}:
+            ctx_source = resolved_context.source
+        elif resolved_context.source == "fallback":
             ctx_source = "default — set model.context_length in config to override"
         else:
             ctx_source = "detected"
@@ -11200,16 +11204,21 @@ class GatewayRunner:
         set_config_context_length(cfg, int(context_length))
         save_config(cfg)
 
-    def _apply_context_length_to_cached_agent(self, session_key: str, context_length: int) -> None:
+    def _apply_context_length_to_cached_agent(
+        self, session_key: str, context_length: int, *, agent=None,
+    ) -> None:
         cached_entry = None
         _cache_lock = getattr(self, "_agent_cache_lock", None)
         _cache = getattr(self, "_agent_cache", None)
         if _cache_lock and _cache is not None:
             with _cache_lock:
                 cached_entry = _cache.get(session_key)
-        if not cached_entry or cached_entry[0] is None:
+        if agent is None:
+            if not cached_entry or cached_entry[0] is None:
+                return
+            agent = cached_entry[0]
+        if getattr(agent, "_config_context_length", None) == int(context_length):
             return
-        agent = cached_entry[0]
         try:
             agent._config_context_length = int(context_length)
             compressor = getattr(agent, "context_compressor", None)
@@ -11222,6 +11231,9 @@ class GatewayRunner:
                     provider=getattr(agent, "provider", ""),
                     api_mode=getattr(agent, "api_mode", ""),
                 )
+            primary_runtime = getattr(agent, "_primary_runtime", None)
+            if isinstance(primary_runtime, dict):
+                primary_runtime["compressor_context_length"] = int(context_length)
             agent._cached_system_prompt = None
         except Exception:
             logger.debug("could not apply context_length to cached agent", exc_info=True)
@@ -11235,14 +11247,12 @@ class GatewayRunner:
         custom_providers: list | None = None,
         persist_global: bool = False,
         session_key: str = "",
+        fallback_context_length: int | None = None,
     ) -> int:
         """探测切换目标模型的上下文窗口，并按 ``/context`` 的作用域规则落地。
 
-        只有 ``--global`` 切换才写入 ``model.context_length``。会话级切换不
-        落盘，否则一次临时 ``/model`` 就会把显式配置的窗口（例如 per-model
-        的 262144）改成探测值。会话级路径只在该会话仍有缓存 agent 时同步窗
-        口；``/model`` 通常已先驱逐缓存，此时下一轮新建的 agent 会继续使用
-        全局配置值，需要单独调整请用 ``/context``。
+        只有 ``--global`` 写全局配置。两种作用域均保存 session 窗口，
+        保证缓存驱逐后新建的 agent 使用相同值；探测失败保留显式配置。
         """
         from hermes_cli.context_window import resolve_context_window
 
@@ -11255,14 +11265,15 @@ class GatewayRunner:
             custom_providers=custom_providers,
             config=None,
             use_config_override=False,
+            fallback_context_length=fallback_context_length,
         )
-        if persist_global:
-            try:
-                self._save_context_length_to_config(resolved.value)
-            except Exception as exc:
-                logger.warning("Failed to persist model.context_length: %s", exc)
-        elif session_key:
+        if session_key:
+            override = self._session_model_overrides.setdefault(session_key, {})
+            override["context_length"] = resolved.value
+            override["context_source"] = resolved.source
             self._apply_context_length_to_cached_agent(session_key, resolved.value)
+        if persist_global:
+            self._save_context_length_to_config(resolved.value)
         return resolved.value
 
     async def _handle_context_command(self, event: MessageEvent) -> str:
@@ -11308,6 +11319,12 @@ class GatewayRunner:
             api_key = override.get("api_key", api_key)
 
         if not raw_args:
+            if override.get("context_length"):
+                return (
+                    f"Context: {format_context_window(override['context_length'])} "
+                    f"(session: {override.get('context_source', 'config')})\n"
+                    "Usage: /context <tokens|256k|1m|auto> [--global]"
+                )
             resolved = resolve_context_window(
                 model=model,
                 provider=provider,
@@ -11339,6 +11356,9 @@ class GatewayRunner:
                 return f"✗ Invalid context: {exc}\nUsage: /context <tokens|256k|1m|auto> [--global]"
 
         self._apply_context_length_to_cached_agent(session_key, value)
+        session_context = self._session_model_overrides.setdefault(session_key, {})
+        session_context["context_length"] = value
+        session_context["context_source"] = resolved.source if raw_args.lower() == "auto" else "config"
         if persist_global:
             try:
                 self._save_context_length_to_config(value)
@@ -11347,8 +11367,8 @@ class GatewayRunner:
             suffix = "\nSaved to config.yaml (--global)"
         else:
             suffix = "\n(session only — add --global to persist)"
-        if value == DEFAULT_CONTEXT_WINDOW and raw_args.lower() == "auto":
-            suffix += "\nAuto-detect fell back to 256k"
+        if raw_args.lower() == "auto" and resolved.source == "fallback":
+            suffix += "\nAuto-detect unavailable: default 256,000 tokens (250K)"
         return f"✓ Context set: {format_context_window(value)}{suffix}"
 
     async def _handle_model_command(self, event: MessageEvent) -> Optional[str]:
@@ -11539,6 +11559,11 @@ class GatewayRunner:
                             f"via {result.provider_label or result.target_provider}. "
                             f"Adjust your self-identification accordingly.]"
                         )
+                        from hermes_cli.context_window import _read_config_context_length
+                        picker_fallback = _read_config_context_length(cfg)
+                        picker_previous = _self._session_model_overrides.get(_session_key, {})
+                        if picker_previous.get("context_source", "config") in {"config", "retained", "model_config"}:
+                            picker_fallback = picker_previous.get("context_length") or picker_fallback
                         _self._session_model_overrides[_session_key] = {
                             "model": result.new_model,
                             "provider": result.target_provider,
@@ -11564,8 +11589,10 @@ class GatewayRunner:
                             custom_providers=custom_provs,
                             persist_global=False,
                             session_key=_session_key,
+                            fallback_context_length=picker_fallback,
                         )
-                        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + " (session only)")
+                        picker_source = _self._session_model_overrides[_session_key]["context_source"]
+                        lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}") + f" ({picker_source}; session only)")
                         if mi:
                             if mi.max_output:
                                 lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
@@ -11680,6 +11707,13 @@ class GatewayRunner:
             f"Adjust your self-identification accordingly.]"
         )
 
+        # 在替换会话配置前保留显式窗口，作为新模型探测失败时的兜底。
+        from hermes_cli.context_window import _read_config_context_length
+        fallback_context = _read_config_context_length(cfg)
+        prior_override = self._session_model_overrides.get(session_key, {})
+        if not persist_global and prior_override.get("context_source", "config") in {"config", "retained", "model_config"}:
+            fallback_context = prior_override.get("context_length") or fallback_context
+
         # Store session override so next agent creation uses the new model
         self._session_model_overrides[session_key] = {
             "model": result.new_model,
@@ -11724,6 +11758,7 @@ class GatewayRunner:
                 save_config(cfg)
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
+                return "✗ 模型已切换到当前会话，但全局模型配置保存失败，请检查配置后重试。"
 
         # Build confirmation message with full metadata
         provider_label = result.provider_label or result.target_provider
@@ -11731,17 +11766,23 @@ class GatewayRunner:
         lines.append(t("gateway.model.provider_label", provider=provider_label))
 
         mi = result.model_info
-        ctx = self._auto_save_switch_context_length(
-            result,
-            current_base_url=current_base_url,
-            current_api_key=current_api_key,
-            custom_providers=custom_provs,
-            persist_global=persist_global,
-            session_key=session_key,
-        )
+        try:
+            ctx = self._auto_save_switch_context_length(
+                result,
+                current_base_url=current_base_url,
+                current_api_key=current_api_key,
+                custom_providers=custom_provs,
+                persist_global=persist_global,
+                session_key=session_key,
+                fallback_context_length=fallback_context,
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist switched context window: %s", exc)
+            return "\n".join(lines) + "\n✗ 当前会话已切换，但全局上下文保存失败，请检查配置后重试。"
+        context_source = self._session_model_overrides.get(session_key, {}).get("context_source", "unknown")
         lines.append(
             t("gateway.model.context_label", tokens=f"{ctx:,}")
-            + (" (auto-saved)" if persist_global else " (session only)")
+            + f" ({context_source}; " + ("global)" if persist_global else "session only)")
         )
         if mi:
             if mi.max_output:
@@ -18628,6 +18669,12 @@ class GatewayRunner:
                         _cache[session_key] = (agent, _sig)
                         self._enforce_agent_cache_cap()
                 logger.debug("Created new agent for session %s (sig=%s)", session_key, _sig)
+
+            session_context = self._session_model_overrides.get(session_key, {}).get("context_length")
+            if session_context:
+                self._apply_context_length_to_cached_agent(
+                    session_key, session_context, agent=agent,
+                )
 
             # Per-message state — callbacks and reasoning config change every
             # turn and must not be baked into the cached agent constructor.

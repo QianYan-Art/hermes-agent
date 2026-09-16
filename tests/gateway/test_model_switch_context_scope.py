@@ -72,6 +72,7 @@ class _SpyRunner:
     """只暴露 ``_auto_save_switch_context_length`` 依赖的两个落地入口。"""
 
     def __init__(self):
+        self._session_model_overrides = {}
         self.saved_global = []
         self.applied_session = []
         self._save_context_length_to_config = self.saved_global.append
@@ -108,7 +109,7 @@ def test_global_switch_writes_global_context():
 
     assert value == 1_048_576
     assert spy.saved_global == [1_048_576], "--global 切换仍应落盘"
-    assert spy.applied_session == []
+    assert spy.applied_session == [("tg:12345", 1_048_576)]
 
 
 def test_session_switch_without_session_key_is_noop():
@@ -155,6 +156,12 @@ def _prepare_gateway(tmp_path, monkeypatch, persisted):
     import hermes_cli.model_switch as model_switch
 
     monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.setattr(
+        "agent.model_metadata.fetch_endpoint_model_metadata",
+        lambda *args, **kwargs: {"k3": {"context_length": 262144}},
+    )
+    monkeypatch.setattr("agent.model_metadata.save_context_length", lambda *args: None)
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr(
         model_switch, "switch_model", lambda **kwargs: _switch_result("k3", "custom")
@@ -192,4 +199,49 @@ async def test_handle_model_command_global_switch_updates_config_context(
 
     assert reply is not None
     assert len(persisted) == 1, "--global 切换应写入全局上下文"
-    assert "auto-saved" in reply
+    assert "global)" in reply
+
+
+@pytest.mark.asyncio
+async def test_switch_stores_session_window_after_cache_eviction(tmp_path, monkeypatch):
+    persisted = []
+    runner = _prepare_gateway(tmp_path, monkeypatch, persisted)
+    event = _make_event("/model k3")
+    key = runner._session_key_for_source(event.source)
+    await runner._handle_model_command(event)
+    assert runner._session_model_overrides[key]["context_length"] == 262144
+    assert runner._session_model_overrides[key]["context_source"] == "detected"
+    assert persisted == []
+    reply = await runner._handle_context_command(_make_event("/context"))
+    assert "262,144" in reply
+    assert "session:" in reply
+
+
+def test_fresh_agent_receives_session_window_without_cache_entry():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    runner = _make_runner()
+    agent = SimpleNamespace(
+        _config_context_length=256000, context_compressor=Mock(),
+        model="k3", provider="custom", _cached_system_prompt="frozen",
+        _primary_runtime={"compressor_context_length": 256000},
+    )
+    runner._apply_context_length_to_cached_agent("test", 262144, agent=agent)
+    assert agent._config_context_length == 262144
+    assert agent.context_compressor.update_model.call_args.kwargs["context_length"] == 262144
+    assert agent._primary_runtime["compressor_context_length"] == 262144
+    agent._cached_system_prompt = "frozen"
+    runner._apply_context_length_to_cached_agent("test", 262144, agent=agent)
+    assert agent._cached_system_prompt == "frozen"
+    assert agent.context_compressor.update_model.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_context_explicit_value_survives_absent_cached_agent(tmp_path, monkeypatch):
+    runner = _prepare_gateway(tmp_path, monkeypatch, [])
+    event = _make_event("/context 128k")
+    reply = await runner._handle_context_command(event)
+    key = runner._session_key_for_source(event.source)
+    assert "131,072" in reply
+    assert runner._session_model_overrides[key]["context_length"] == 131072
+    assert "131,072" in await runner._handle_context_command(_make_event("/context"))

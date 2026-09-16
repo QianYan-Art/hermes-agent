@@ -79,9 +79,19 @@ def resolve_context_window(
     custom_providers: list | None = None,
     config: dict[str, Any] | None = None,
     use_config_override: bool = True,
+    fallback_context_length: int | None = None,
 ) -> ContextWindowResult:
-    """解析模型上下文；探测失败时仍回落到既有的 256000 tokens。"""
+    """区分配置、已知模型窗口、保留值与默认回落，避免把兜底误报为探测。"""
     config_context = _read_config_context_length(config) if use_config_override else None
+    if config_context:
+        return ContextWindowResult(config_context, "config")
+    if custom_providers and base_url:
+        from hermes_cli.config import get_custom_provider_context_length
+        model_context = get_custom_provider_context_length(
+            model=model, base_url=base_url, custom_providers=custom_providers,
+        )
+        if model_context:
+            return ContextWindowResult(int(model_context), "model_config")
     try:
         from hermes_cli.model_switch import resolve_display_context_length
 
@@ -93,10 +103,12 @@ def resolve_context_window(
             model_info=model_info,
             custom_providers=custom_providers,
             config_context_length=config_context,
+            allow_fallback=False,
         )
     except Exception:
         resolved = None
     if resolved:
-        source = "config" if config_context and int(resolved) == config_context else "detected"
-        return ContextWindowResult(int(resolved), source)
+        return ContextWindowResult(int(resolved), "detected")
+    if isinstance(fallback_context_length, int) and not isinstance(fallback_context_length, bool) and fallback_context_length > 0:
+        return ContextWindowResult(fallback_context_length, "retained")
     return ContextWindowResult(DEFAULT_CONTEXT_WINDOW, "fallback")

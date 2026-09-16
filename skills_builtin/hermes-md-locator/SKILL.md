@@ -39,6 +39,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | --- | --- |
 | "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
 | "Kimi 请求头", "User-Agent", "prompt_cache_key", "缓存命中", "cached_tokens", "官方订阅", "OpenCode Go", "x-opencode-session" | `docs/tangyuge-hermes/07-server-operations.md` 的“Kimi Code 请求与缓存” |
+| "k3-256k", "250K还是256K", "探测失败", "retained", "fallback", "切换后窗口不一致" | `docs/tangyuge-hermes/07-server-operations.md` 的模型与上下文命令；实现边界读 `05-patches-and-rtk.md` |
 | "memory 路径", "USER 语音参数", "运行记忆对齐", "TTS schema", "262k还是256k", "二进制回显" | `docs/tangyuge-hermes/07-server-operations.md` 的“运行记忆维护”与模型命令说明；身份边界读 `03-identity-prompt.md` |
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
 | "记忆写入授权", "更新 nmem", "Serena 记忆", "KBase 能提交吗", "博客同步", ".doc-maintenance" | `docs/tangyuge-hermes/00-overview.md` and `docs/tangyuge-hermes/07-server-operations.md` |
