@@ -1562,12 +1562,14 @@ def init_agent(
     # If model.context_length is set, it caps num_ctx so the user's VRAM
     # budget is respected even when GGUF metadata advertises a larger window.
     agent._ollama_num_ctx: int | None = None
+    agent._ollama_num_ctx_explicit = False
     _ollama_num_ctx_override = None
     if isinstance(_model_cfg, dict):
         _ollama_num_ctx_override = _model_cfg.get("ollama_num_ctx")
     if _ollama_num_ctx_override is not None:
         try:
             agent._ollama_num_ctx = int(_ollama_num_ctx_override)
+            agent._ollama_num_ctx_explicit = True
         except (TypeError, ValueError):
             _ra().logger.debug("Invalid ollama_num_ctx config value: %r", _ollama_num_ctx_override)
     if agent._ollama_num_ctx is None and agent.base_url and is_local_endpoint(agent.base_url):

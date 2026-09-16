@@ -1583,7 +1583,8 @@ def _load_gateway_config() -> dict:
         # direct read (keeps test fixtures with a monkeypatched
         # _hermes_home working).
         if config_path == get_config_path():
-            return read_raw_config()
+            loaded = read_raw_config()
+            return loaded if isinstance(loaded, dict) else {}
     except Exception:
         pass
 
@@ -1591,7 +1592,10 @@ def _load_gateway_config() -> dict:
         if config_path.exists():
             import yaml
             with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f) or {}
+                loaded = yaml.safe_load(f)
+                if loaded is not None and not isinstance(loaded, dict):
+                    logger.warning("Gateway config root must be a mapping")
+                return loaded if isinstance(loaded, dict) else {}
     except Exception:
         logger.debug("Could not load gateway config from %s", config_path)
     return {}
@@ -11221,6 +11225,11 @@ class GatewayRunner:
             return
         try:
             agent._config_context_length = int(context_length)
+            if (
+                getattr(agent, "_ollama_num_ctx", None) is not None
+                and not getattr(agent, "_ollama_num_ctx_explicit", False)
+            ):
+                agent._ollama_num_ctx = int(context_length)
             compressor = getattr(agent, "context_compressor", None)
             if compressor:
                 compressor.update_model(
@@ -11559,8 +11568,11 @@ class GatewayRunner:
                             f"via {result.provider_label or result.target_provider}. "
                             f"Adjust your self-identification accordingly.]"
                         )
-                        from hermes_cli.context_window import _read_config_context_length
-                        picker_fallback = _read_config_context_length(cfg)
+                        from hermes_cli.context_window import read_explicit_context_length
+                        picker_fallback = read_explicit_context_length(
+                            cfg, model=current_model, provider=current_provider,
+                            base_url=current_base_url, custom_providers=custom_provs,
+                        )
                         picker_previous = _self._session_model_overrides.get(_session_key, {})
                         if picker_previous.get("context_source", "config") in {"config", "retained", "model_config"}:
                             picker_fallback = picker_previous.get("context_length") or picker_fallback
@@ -11708,8 +11720,17 @@ class GatewayRunner:
         )
 
         # 在替换会话配置前保留显式窗口，作为新模型探测失败时的兜底。
-        from hermes_cli.context_window import _read_config_context_length
-        fallback_context = _read_config_context_length(cfg)
+        from hermes_cli.context_window import read_explicit_context_length
+        fallback_model_cfg = cfg.get("model", {})
+        if not isinstance(fallback_model_cfg, dict):
+            fallback_model_cfg = {}
+        fallback_context = read_explicit_context_length(
+            cfg,
+            model=fallback_model_cfg.get("default", current_model) if persist_global else current_model,
+            provider=fallback_model_cfg.get("provider", current_provider) if persist_global else current_provider,
+            base_url=fallback_model_cfg.get("base_url", "") if persist_global else current_base_url,
+            custom_providers=custom_provs,
+        )
         prior_override = self._session_model_overrides.get(session_key, {})
         if not persist_global and prior_override.get("context_source", "config") in {"config", "retained", "model_config"}:
             fallback_context = prior_override.get("context_length") or fallback_context

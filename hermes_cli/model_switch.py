@@ -599,6 +599,9 @@ def resolve_display_context_length(
             return int(ctx)
     except Exception:
         pass
+    from agent.kimi_code import is_kimi_code_endpoint
+    if is_kimi_code_endpoint(base_url):
+        return None
     if model_info is not None and model_info.context_window:
         return int(model_info.context_window)
     return None

@@ -41,6 +41,8 @@ def format_context_window(value: int) -> str:
 
 
 def _read_config_context_length(config: dict[str, Any] | None) -> int | None:
+    if not isinstance(config, dict):
+        return None
     model_cfg = (config or {}).get("model", {})
     if not isinstance(model_cfg, dict):
         return None
@@ -52,6 +54,27 @@ def _read_config_context_length(config: dict[str, Any] | None) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def read_explicit_context_length(
+    config: dict[str, Any] | None, *, model: str, provider: str = "",
+    base_url: str = "", custom_providers: list | None = None,
+) -> int | None:
+    """读取当前作用域的显式窗口，供切换失败时保留，不触发网络探测。"""
+    value = _read_config_context_length(config)
+    if value is not None:
+        return value
+    if not base_url:
+        base_url = next(
+            (p.get("base_url", "") for p in custom_providers or []
+             if isinstance(p, dict) and p.get("name") == provider), "",
+        )
+    if base_url and custom_providers:
+        from hermes_cli.config import get_custom_provider_context_length
+        return get_custom_provider_context_length(
+            model=model, base_url=base_url, custom_providers=custom_providers,
+        )
+    return None
 
 
 def set_config_context_length(config: dict[str, Any], value: int) -> dict[str, Any]:

@@ -7976,6 +7976,11 @@ class HermesCLI:
             return
         try:
             self.agent._config_context_length = value
+            if (
+                getattr(self.agent, "_ollama_num_ctx", None) is not None
+                and not getattr(self.agent, "_ollama_num_ctx_explicit", False)
+            ):
+                self.agent._ollama_num_ctx = value
             compressor = getattr(self.agent, "context_compressor", None)
             if compressor:
                 compressor.update_model(

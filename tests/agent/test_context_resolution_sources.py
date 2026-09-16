@@ -78,6 +78,27 @@ def test_unknown_context_retains_explicit_value():
     assert (result.value, result.source) == (131072, "retained")
 
 
+def test_offline_kimi_does_not_use_unverified_picker_metadata():
+    result = resolve(
+        model_info=SimpleNamespace(context_window=1048576),
+        fallback_context_length=131072,
+    )
+    assert (result.value, result.source) == (131072, "retained")
+
+
+def test_previous_per_model_window_is_explicit():
+    from hermes_cli.context_window import read_explicit_context_length
+    value = read_explicit_context_length(
+        {}, model="kimi-for-coding", provider="kimi-code",
+        custom_providers=[{
+            "name": "kimi-code", "base_url": BASE,
+            "models": {"kimi-for-coding": {"context_length": 262144}},
+        }],
+    )
+    result = resolve(fallback_context_length=value)
+    assert (result.value, result.source) == (262144, "retained")
+
+
 def test_fallback_value_is_not_detected():
     result = resolve()
     assert (result.value, result.source) == (256000, "fallback")

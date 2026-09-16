@@ -26,6 +26,8 @@ class _FakeAgent:
         self.api_key = "old-key"
         self.api_mode = "chat_completions"
         self._config_context_length = config_context_length
+        self._ollama_num_ctx = None
+        self._ollama_num_ctx_explicit = False
         self.context_compressor = _FakeCompressor()
         self._primary_runtime = {"compressor_context_length": 256_000}
         self._cached_system_prompt = "cached"
@@ -94,6 +96,52 @@ def test_model_switch_passes_previous_explicit_context_as_retained_fallback():
     assert cli.agent.context_compressor.context_length == 180_000
     assert cli.agent._primary_runtime["compressor_context_length"] == 180_000
     assert cli._last_context_window_source == "retained"
+
+
+def test_runtime_context_updates_auto_detected_ollama_num_ctx():
+    import cli as cli_mod
+
+    cli = _make_cli()
+    cli.agent._ollama_num_ctx = 8_192
+    cli._context_window_source = "manual"
+
+    cli_mod.HermesCLI._set_runtime_context_window(cli, 32_768)
+
+    assert cli.agent._ollama_num_ctx == 32_768
+    assert cli.agent.context_compressor.context_length == 32_768
+
+
+def test_runtime_context_preserves_explicit_ollama_num_ctx():
+    import cli as cli_mod
+
+    cli = _make_cli()
+    cli.agent._ollama_num_ctx = 65_536
+    cli.agent._ollama_num_ctx_explicit = True
+    cli._context_window_source = "manual"
+
+    cli_mod.HermesCLI._set_runtime_context_window(cli, 131_072)
+
+    assert cli.agent._ollama_num_ctx == 65_536
+    assert cli.agent.context_compressor.context_length == 131_072
+
+
+def test_current_context_fallback_keeps_current_model_per_model_config():
+    import cli as cli_mod
+
+    cli = _make_cli()
+    custom_providers = [
+        {
+            "base_url": cli.base_url,
+            "models": {
+                "old-model": {"context_length": 196_608},
+                "other-model": {"context_length": 65_536},
+            },
+        }
+    ]
+    cli.agent._config_context_length = None
+    cli._current_context_config = lambda: ({}, custom_providers)
+
+    assert cli_mod.HermesCLI._current_context_fallback(cli) == 196_608
 
 
 def test_detected_default_is_not_reused_as_custom_fallback():

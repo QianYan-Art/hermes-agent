@@ -245,3 +245,40 @@ async def test_context_explicit_value_survives_absent_cached_agent(tmp_path, mon
     assert "131,072" in reply
     assert runner._session_model_overrides[key]["context_length"] == 131072
     assert "131,072" in await runner._handle_context_command(_make_event("/context"))
+
+
+@pytest.mark.asyncio
+async def test_offline_switch_retains_initial_per_model_config(tmp_path, monkeypatch):
+    runner = _prepare_gateway(tmp_path, monkeypatch, [])
+    path = tmp_path / ".hermes" / "config.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    del cfg["model"]["context_length"]
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    monkeypatch.setattr("agent.model_metadata.fetch_endpoint_model_metadata", lambda *a, **kw: {})
+    monkeypatch.setattr("agent.model_metadata.get_cached_context_length", lambda *a: None)
+    event = _make_event("/model k3")
+    reply = await runner._handle_model_command(event)
+    assert "262,144" in reply and "retained" in reply
+    assert runner._session_model_overrides[runner._session_key_for_source(event.source)]["context_length"] == 262144
+
+
+@pytest.mark.parametrize("explicit,expected", [(False, 131072), (True, 8192)])
+def test_ollama_context_updates_request_unless_explicit(explicit, expected):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    runner = _make_runner()
+    agent = SimpleNamespace(
+        _config_context_length=256000, _ollama_num_ctx=8192,
+        _ollama_num_ctx_explicit=explicit, context_compressor=Mock(),
+        model="local-model", provider="custom", _cached_system_prompt="frozen",
+    )
+    runner._apply_context_length_to_cached_agent("test", 131072, agent=agent)
+    assert agent._ollama_num_ctx == expected
+
+
+@pytest.mark.parametrize("raw", ["- item\n", "a-string\n"])
+def test_non_mapping_gateway_config_is_normalized(tmp_path, monkeypatch, raw):
+    import gateway.run as gateway_run
+    (tmp_path / "config.yaml").write_text(raw, encoding="utf-8")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    assert gateway_run._load_gateway_config() == {}
