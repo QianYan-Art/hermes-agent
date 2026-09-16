@@ -29,6 +29,17 @@ WRITE_COMMANDS = {"send-mail", "reply-mail", "forward-mail", "move-mail-to-trash
 
 DEFAULT_RETENTION_HOURS = 24
 
+# 只读命令在网络类失败时重试。读操作是幂等的，重复执行结果一样。
+#
+# 写操作绝不重试：ssh 超时不代表远端没执行——邮件可能已经发出去、消息可能已经
+# 删掉，只是响应没回来。这种情况下重试等于重复发信或重复删除，所以宁可如实报错
+# 交给调用方决定。
+READ_COMMAND_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = 2.0
+# ssh 自身的连接失败退出码。只有它同时没有任何 stdout 时才算网络问题——远端一旦
+# 输出了 JSON 就说明命令真的跑过了，那是业务结果，重试没有意义。
+SSH_CONNECT_FAILURE = 255
+
 
 class ConfigError(Exception):
     """配置缺失或字段不完整。"""
@@ -118,6 +129,7 @@ def _ssh_credentials(cfg: dict, command: str) -> tuple[str, str]:
 
 
 def _run_remote(cfg: dict, command: str, remote_args: list[str]) -> tuple[int, str, str]:
+    """执行一次远端命令；读命令在网络类失败时重试，写命令永不重试。"""
     user, key = _ssh_credentials(cfg, command)
     key_path = Path(key)
     if not key_path.exists():
@@ -140,12 +152,26 @@ def _run_remote(cfg: dict, command: str, remote_args: list[str]) -> tuple[int, s
         f"{user}@{cfg['host']}",
         remote_command,
     ]
-    try:
-        proc = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30, check=False)
-    except subprocess.TimeoutExpired:
-        payload = {"ok": False, "error": "ssh_timeout"}
-        return 3, json.dumps(payload, ensure_ascii=False), ""
-    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+    attempts = READ_COMMAND_ATTEMPTS if command in READ_COMMANDS else 1
+    last: tuple[int, str, str] = (4, "", "")
+    for attempt in range(1, attempts + 1):
+        try:
+            proc = subprocess.run(
+                ssh_cmd, capture_output=True, text=True, timeout=30, check=False
+            )
+        except subprocess.TimeoutExpired:
+            payload = {"ok": False, "error": "ssh_timeout", "attempts": attempt}
+            last = (3, json.dumps(payload, ensure_ascii=False), "")
+        else:
+            stdout = proc.stdout.strip()
+            # 远端有输出就说明命令真的执行过，无论成败都直接返回。
+            if proc.returncode != SSH_CONNECT_FAILURE or stdout:
+                return proc.returncode, stdout, proc.stderr.strip()
+            last = (proc.returncode, stdout, proc.stderr.strip())
+        if attempt < attempts:
+            time.sleep(RETRY_BACKOFF_SECONDS)
+    return last
 
 
 def _parse_json_output(returncode: int, stdout: str, stderr: str) -> tuple[int, dict]:

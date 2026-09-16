@@ -371,6 +371,10 @@ The repo is deployed from `main`. Runtime state is server-local.
   `skills_builtin/mail-vps-ops/mail_vps.example.toml`。
 - 仓库是公开的，脚本里不含任何真实主机、IP 或 SSH 用户名；配置缺失时 helper 返回
   `config_error`，不回退到内置地址。
+- 读命令在网络类失败时重试一次（间隔 2 秒），触发条件仅限 ssh 超时和连接失败且远端
+  无输出；远端一旦返回 JSON 就视为已执行，不再重试。写命令永不重试，避免超时误判
+  导致重复发信或重复删除。81 直连邮件 VPS，不经代理，实测连续 5 次均成功、单次
+  2.5–4.5 秒，重试是兜底而非常态。
 
 ## 运行账号与权限现状
 

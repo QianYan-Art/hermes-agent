@@ -24,6 +24,14 @@ description: 当用户要求读取邮件 VPS 上的邮箱列表、最新邮件�
 `mail_vps.example.toml`）。附件和验证链接缓存由 helper 自己按保留期回收，
 gateway 的缓存清理不覆盖这两个目录。
 
+**失败重试的边界**：读命令（`list-mailboxes`、`read-mail`、`list-attachments`、
+`fetch-attachment`）在网络类失败时会自动重试一次，间隔 2 秒；触发条件仅限 ssh 超时
+和连接失败且远端无任何输出。写命令（`send-mail`、`reply-mail`、`forward-mail`、
+`move-mail-to-trash`、`delete-mail`）**永不自动重试**——ssh 超时不代表远端没执行，
+邮件可能已经发出、消息可能已经删除，只是响应没回来，重试等于重复发信或重复删除。
+因此写操作返回 `ssh_timeout` 或 `ssh_failed` 时，不要直接再发一次，应先用读命令
+核实实际结果，再向用户说明并请其确认。
+
 ```bash
 /home/hermes/.hermes/bin/mail_vps_fetch.py list-mailboxes
 /home/hermes/.hermes/bin/mail_vps_fetch.py read-mail --email <完整邮箱地址>

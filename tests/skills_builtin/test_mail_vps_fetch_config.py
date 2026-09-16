@@ -167,3 +167,104 @@ class TestPruneCacheDir:
 
         assert helper.prune_cache_dir(tmp_path, 24) == 0
         assert sub.exists()
+
+
+class TestReadCommandRetry:
+    """读命令在网络类失败时重试；写命令绝不重试。
+
+    写操作不幂等：ssh 超时不代表远端没执行——邮件可能已经发出、消息可能已经删除，
+    只是响应没回来。重试等于重复发信或重复删除。
+    """
+
+    @staticmethod
+    def _cfg():
+        return {
+            "host": "h",
+            "port": 22,
+            "readonly": {"user": "ro", "key": __file__},
+            "readwrite": {"user": "rw", "key": __file__},
+        }
+
+    def _run(self, helper, monkeypatch, command, side_effect):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = side_effect(len(calls))
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        monkeypatch.setattr(helper.subprocess, "run", fake_run)
+        monkeypatch.setattr(helper.time, "sleep", lambda s: None)
+        out = helper._run_remote(self._cfg(), command, [command])
+        return out, len(calls)
+
+    @staticmethod
+    def _proc(returncode, stdout="", stderr=""):
+        import types
+
+        return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    def test_read_retries_on_timeout(self, helper, monkeypatch):
+        import subprocess as sp
+
+        def effect(n):
+            if n == 1:
+                return sp.TimeoutExpired(cmd="ssh", timeout=30)
+            return self._proc(0, '{"ok": true}')
+
+        (rc, stdout, _), calls = self._run(helper, monkeypatch, "list-mailboxes", effect)
+
+        assert calls == 2, "读命令超时后应重试一次"
+        assert rc == 0 and '"ok": true' in stdout
+
+    def test_read_retries_on_connect_failure(self, helper, monkeypatch):
+        def effect(n):
+            if n == 1:
+                return self._proc(255, "", "ssh: connect failed")
+            return self._proc(0, '{"ok": true}')
+
+        (rc, _, _), calls = self._run(helper, monkeypatch, "read-mail", effect)
+
+        assert calls == 2
+        assert rc == 0
+
+    def test_read_does_not_retry_when_remote_replied(self, helper, monkeypatch):
+        """远端输出了 JSON 就说明命令跑过了，是业务结果，不该重试。"""
+        def effect(n):
+            return self._proc(255, '{"ok": false, "error": "mailbox_not_found"}')
+
+        (rc, stdout, _), calls = self._run(helper, monkeypatch, "read-mail", effect)
+
+        assert calls == 1, "远端已应答时不得重试"
+        assert "mailbox_not_found" in stdout
+
+    def test_read_gives_up_after_limit(self, helper, monkeypatch):
+        import json as _json
+        import subprocess as sp
+
+        def effect(n):
+            return sp.TimeoutExpired(cmd="ssh", timeout=30)
+
+        (rc, stdout, _), calls = self._run(helper, monkeypatch, "list-attachments", effect)
+
+        assert calls == helper.READ_COMMAND_ATTEMPTS
+        payload = _json.loads(stdout)
+        assert payload["error"] == "ssh_timeout"
+        assert payload["attempts"] == helper.READ_COMMAND_ATTEMPTS
+
+    @pytest.mark.parametrize(
+        "command",
+        ["send-mail", "reply-mail", "forward-mail", "move-mail-to-trash", "delete-mail"],
+    )
+    def test_write_never_retries(self, helper, monkeypatch, command):
+        import subprocess as sp
+
+        def effect(n):
+            return sp.TimeoutExpired(cmd="ssh", timeout=30)
+
+        (rc, stdout, _), calls = self._run(helper, monkeypatch, command, effect)
+
+        assert calls == 1, f"{command} 是写操作，超时后绝不能重试"
+        assert "ssh_timeout" in stdout
