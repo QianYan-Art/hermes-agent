@@ -504,6 +504,8 @@ on the server, then checkout `main`.
   （裸整数，不是 `256k`）。
 - `/context auto` 绕过全局 `model.context_length`，但仍遵守
   `providers.kimi-code.models.kimi-for-coding.context_length` 的 262144。
+- 会自动改写 `config.yaml` 的路径只有 `/model` 与 `/context` 的持久化分支，两者现在都只在 `--global` 时落盘。`model_catalog`（默认开启，每 24 小时拉一次上游清单）只写磁盘缓存
+  `~/.hermes/cache/model_catalog.json`，不会改动 `config.yaml`，因此不会影响主模型、13 个 `auxiliary` 槽位、`image_gen`、`tts`、`stt`、`x_search` 或 `grok-search` 的既有配置。
 - QQ 的 `/model` 不带参数时列表是**空的**，这是有意保留的行为：
   `gateway/run.py` 的 `_filter_dialog_model_providers()` 把可列出的
   provider 限定在 `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn`，
