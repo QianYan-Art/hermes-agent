@@ -179,10 +179,14 @@ Plugin policy:
   runtime plugin now resolves to the bundled `plugins/rtk-rewrite/` copy. The
   old `/home/hermes/.hermes/plugins/rtk-rewrite/` user override was removed
   after verifying it was byte-identical to the bundled plugin.
-- The server binary `/home/hermes/.local/bin/rtk` was updated to `0.48.0` on
-  2026-09-08. The Linux x86_64 musl archive was verified against SHA256
-  `e4e650fa1677c0de2f6839a6040d7b17f312d32f163c402b75af70e9e5af1a91`;
-  the installed file remains owned by `hermes:hermes` with mode `755`.
+- The server binary `/home/hermes/.local/bin/rtk` is at `0.49.0`, updated on
+  2026-09-16 from `0.48.0`. The Linux x86_64 musl archive was verified against
+  SHA256 `7278231dfd7e6a730a4ab7f847b195bcf02289c2d57622b0dab75a6411100c8f`
+  before install; the file stays owned by `hermes:hermes` with mode `755`.
+  升级方式：从 `rtk-ai/rtk` 的 release 取
+  `rtk-x86_64-unknown-linux-musl.tar.gz`，本地校验 SHA256 后再上传替换——81
+  直连 GitHub 不稳定，不要在服务器上直接跑官方 install.sh。旧二进制按
+  `rtk.bak-<时间戳>` 留在同目录，确认无误后删除。
 - 本次已验证实际 `pre_tool_call` 注册、命令改写、已有 `rtk` 前缀的幂等处理、
   不支持命令的透传和只读 Git 执行。成功改写返回码仍为 `3`，透传为 `1`，
   与现有插件兼容，不需要新增工具、恢复 user override 或运行 `rtk init`。
@@ -378,6 +382,23 @@ The repo is deployed from `main`. Runtime state is server-local.
 - sudo 配置有两份：`/etc/sudoers.d/hermes-gateway-control` 授权 `hermes` 以 root 执行
   `hermes-gateway-control` 的 `status`、`restart`、`logs`；`/etc/sudoers.d/hermes` 为
   `hermes ALL=(ALL) NOPASSWD: ALL`。
+
+## 服务自启与重启策略
+
+81 上与本项目相关的三个 systemd 服务，均为开机自启：
+
+| 服务 | 开机自启 | 异常退出 | 间隔 |
+| --- | --- | --- | --- |
+| `hermes-gateway.service` | enabled | `Restart=always` | 5 秒 |
+| `frps.service` | enabled | `Restart=always` | 5 秒 |
+| `nginx.service` | enabled | `Restart=on-failure` | 5 秒 |
+
+- Nginx 的自动拉起是 2026-09-15 通过 `/etc/systemd/system/nginx.service.d/restart-on-failure.conf`
+  追加的 drop-in，不是发行版默认；除 `Restart=on-failure` 与 `RestartSec=5s` 外还设了
+  `StartLimitIntervalSec=60s`、`StartLimitBurst=5`，即 60 秒内最多重启 5 次。它只在异常
+  退出时拉起，正常 stop 不会被重启。
+- 博客是 Nginx 提供的静态站点，没有单独的博客进程需要守护。
+- FRP 服务端自启与本机侧的 FRP 客户端无关，那是另一端的配置。
 
 ## Standard Checks
 
