@@ -86,6 +86,11 @@ Default model provider:
   所以 81 上是混合布局——图片和语音在 `~/.hermes/image_cache/`、
   `~/.hermes/audio_cache/`，视频和文件在 `~/.hermes/cache/videos/`、
   `~/.hermes/cache/documents/`。这是兼容行为，不需要迁移。
+- 这四个目录另有一层兜底：服务器本地的 `/etc/cron.weekly/hermes-cache-cleanup`
+  每周日 06:47 按 `audio_cache` 7 天、`image_cache` 14 天、`cache/videos` 7 天、
+  `cache/documents` 14 天清理（另含 `logs` 30 天）。网关正常运行时 24 小时那一层
+  更激进，文件活不到这些门槛，兜底只在网关长时间停止时才真正触发。该脚本按当前
+  混合布局写死路径，且**不在本仓库内**，布局变化时要单独同步。
 - QQ 语音和视频此前都会落进文档缓存。现在 `video/*` 附件走
   `cache_video_from_bytes()`，语音的三条路径（转换成功、转换失败回退、异常回退）
   统一走 `cache_audio_from_bytes()`。QQ 把普通文件上传标记为 `file`，这类即使
@@ -470,7 +475,7 @@ systemd unit，不重启网关、不改变聊天、角色卡、记忆或已有�
 | --- | --- | --- |
 | `hermes-backup-cleanup.timer` | 每年 1、4、7、10 月 1 日 03:30 | 仅清理 `/home/hermes/backups` 下超过 90 天的已识别旧备份或清单，保护最新一组手工备份 |
 | `hermes-session-cleanup.timer` | 见上节，约每 10 天 | 旧非活跃 transcript；不备份内容、不动活跃会话 |
-| `/etc/cron.weekly/hermes-cache-cleanup` | 每周日 06:47 | 日志、音频、图片缓存分别按 `find -mtime +30/+7/+14` 清理，不清理 backups |
+| `/etc/cron.weekly/hermes-cache-cleanup` | 每周日 06:47 | 白名单五项：`logs` 30 天、`audio_cache` 7 天、`image_cache` 14 天、`cache/videos` 7 天、`cache/documents` 14 天；不清理 backups |
 | root crontab 的 `/usr/local/bin/blog-sync-kbase.sh` | 每天 04:00 | 同步文章，失败时使用临时回滚副本；退出时清理临时目录，不保留长期备份 |
 
 Hermes 内部 `cron/jobs.json` 在本次核验时任务数为 0。以上不是整机或 Hermes
