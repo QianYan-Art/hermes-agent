@@ -12,7 +12,7 @@ own project unless a deliberate upstream merge is planned and tested.
 
 ## Runtime Shape
 
-- Server: `81.70.168.127`
+- Server: `81.70.xx.xx`（公开仓库中脱敏；真实地址见本机授权范围内的配置，不回填此处）
 - Runtime user/home: `/home/hermes`
 - Repo path: `/home/hermes/.hermes/hermes-agent`
 - Runtime home: `/home/hermes/.hermes`

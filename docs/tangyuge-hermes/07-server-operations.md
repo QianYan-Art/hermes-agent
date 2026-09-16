@@ -72,10 +72,28 @@ Default model provider:
   命名自定义 provider 运行时解析成 `custom`，所以 Kimi 这条靠 base_url 识别，
   相似主机名不会误命中。不在名单内的模型回落到缓存路径文本标记。
   内联预算两条路径共用：单文件 45 MiB、单轮合计 45 MiB，超出即回落。
-- QQ 视频缓存与文件缓存已分开。`video/*` 附件进 `cache/videos/`，由
-  `cleanup_video_cache()` 按 24 小时清理；QQ 把普通文件上传标记为 `file`，
-  这类即使扩展名像视频也仍按文件进 `cache/documents/`，与
-  `_process_attachments()` 决定是否进 `video_urls` 的判据一致。
+- 四类入站媒体各有独立缓存目录和各自的清理，互不混用：
+
+  | 类型 | 目录常量 | 清理函数 |
+  |---|---|---|
+  | 图片 | `IMAGE_CACHE_DIR` | `cleanup_image_cache()` |
+  | 语音 | `AUDIO_CACHE_DIR` | `cleanup_audio_cache()` |
+  | 视频 | `VIDEO_CACHE_DIR` | `cleanup_video_cache()` |
+  | 文件 | `DOCUMENT_CACHE_DIR` | `cleanup_document_cache()` |
+
+  四个清理都挂在 cron ticker 上，每小时扫一次，保留 24 小时。目录常量由
+  `get_hermes_dir(新路径, 旧路径)` 解析：**旧布局目录存在就继续用旧的**，
+  所以 81 上是混合布局——图片和语音在 `~/.hermes/image_cache/`、
+  `~/.hermes/audio_cache/`，视频和文件在 `~/.hermes/cache/videos/`、
+  `~/.hermes/cache/documents/`。这是兼容行为，不需要迁移。
+- QQ 语音和视频此前都会落进文档缓存。现在 `video/*` 附件走
+  `cache_video_from_bytes()`，语音的三条路径（转换成功、转换失败回退、异常回退）
+  统一走 `cache_audio_from_bytes()`。QQ 把普通文件上传标记为 `file`，这类即使
+  扩展名像视频或音频也仍按文件进文档缓存，与 `_process_attachments()` 决定是否
+  进 `video_urls` 的判据一致。
+- 邮件的两个缓存目录 `cache/mail_attachments/` 和
+  `cache/mail_verification_links/` 不在上述四类里，gateway 的清理不覆盖它们，
+  由 `mail_vps_fetch.py` 每次调用时按配置的 `retention_hours` 自行回收。
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.
@@ -335,8 +353,31 @@ Never overwrite or commit server runtime data:
 - `/home/hermes/.hermes/state.db`
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`
+- `/home/hermes/.hermes/mail_vps.toml`
 
 The repo is deployed from `main`. Runtime state is server-local.
+
+## 邮件 helper 的部署形态
+
+- 脚本本体在仓库里：`skills_builtin/mail-vps-ops/bin/mail_vps_fetch.py`，随 git 部署更新。
+- `~/.hermes/bin/mail_vps_fetch.py` 是指向 checkout 中该脚本的软链接，所以 skill 和
+  文档里的调用路径保持不变。
+- 连接参数（主机、端口、SSH 用户、私钥路径）和缓存保留期在服务器本地的
+  `~/.hermes/mail_vps.toml`，权限 600，不入仓库；格式见仓库中的
+  `skills_builtin/mail-vps-ops/mail_vps.example.toml`。
+- 仓库是公开的，脚本里不含任何真实主机、IP 或 SSH 用户名；配置缺失时 helper 返回
+  `config_error`，不回退到内置地址。
+
+## 运行账号与权限现状
+
+- 网关以 `hermes` 用户运行（`uid=1001`），附加组 `blogsync`（`gid=1002`）。
+- 博客同步依赖 `blogsync` 组：`/www/wwwroot/blog` 为 `drwxrwsr-x root:blogsync`（带
+  setgid），同步脚本 `/usr/local/bin/blog-sync-kbase.sh` 为 `-rwxr-x--- root:blogsync`，
+  代理私钥 `/etc/blog-sync/proxy.key` 为 `hermes:blogsync`，日志 `/var/log/blog-sync.log*`
+  同属该组。定时同步由 **root 的 crontab** 每天 04:00 触发。
+- sudo 配置有两份：`/etc/sudoers.d/hermes-gateway-control` 授权 `hermes` 以 root 执行
+  `hermes-gateway-control` 的 `status`、`restart`、`logs`；`/etc/sudoers.d/hermes` 为
+  `hermes ALL=(ALL) NOPASSWD: ALL`。
 
 ## Standard Checks
 

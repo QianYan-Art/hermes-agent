@@ -5,7 +5,7 @@
 
 This fork is deployed on the 81 server at:
 
-- Host: `81.70.168.127`
+- Host: `81.70.xx.xx`（公开仓库中脱敏；真实地址见本机授权范围内的配置，不回填此处）
 - SSH user: `root`
 - Repository: `/home/hermes/.hermes/hermes-agent`
 - Runtime venv: `/home/hermes/.hermes/venvs/hermes-agent`

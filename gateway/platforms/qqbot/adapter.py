@@ -68,6 +68,7 @@ from gateway.platforms.base import (
     SendResult,
     SUPPORTED_VIDEO_TYPES,
     _ssrf_redirect_guard,
+    cache_audio_from_bytes,
     cache_document_from_bytes,
     cache_image_from_bytes,
     cache_video_from_bytes,
@@ -2561,9 +2562,10 @@ class QQAdapter(BasePlatformAdapter):
                     source_url[:60],
                     ext,
                 )
-                return cache_document_from_bytes(audio_data, f"qq_voice{ext}")
+                # 转换失败也按音频缓存，保持与成功路径同一归属和清理周期。
+                return cache_audio_from_bytes(audio_data, ext)
         except Exception:
-            return cache_document_from_bytes(audio_data, f"qq_voice{ext}")
+            return cache_audio_from_bytes(audio_data, ext)
         finally:
             try:
                 os.unlink(src_path)
@@ -2574,7 +2576,7 @@ class QQAdapter(BasePlatformAdapter):
         try:
             wav_data = Path(wav_path).read_bytes()
             os.unlink(wav_path)
-            return cache_document_from_bytes(wav_data, "qq_voice.wav")
+            return cache_audio_from_bytes(wav_data, ".wav")
         except Exception as exc:
             logger.debug("[%s] Failed to read converted wav: %s", self._log_tag, exc)
             return None

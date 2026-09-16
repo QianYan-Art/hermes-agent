@@ -11,11 +11,18 @@ description: 当用户要求读取邮件 VPS 上的邮箱列表、最新邮件�
 
 当前邮件 VPS 连接目标：
 
-- `23.238.70.240:23333`
+- 连接参数（主机、端口、SSH 用户、私钥路径）不写进本公开仓库，统一放在服务器本地的
+  `~/.hermes/mail_vps.toml`，由 helper 读取。执行时无需知道地址，直接调用下面的固定命令即可。
 - 邮件服务主机名为 `mail.qianyan.me`，它不是邮箱域名白名单，也不是列表查询的默认过滤条件。
 - 邮件 VPS 可托管多个邮箱域名，包括 `mail.qianyan.me`、`sru.edu.kg`；实际域名和邮箱以当次查询结果为准，不把示例当作固定清单。
 
 ## 固定命令
+
+调用路径保持不变。`~/.hermes/bin/mail_vps_fetch.py` 是指向本仓库
+`skills_builtin/mail-vps-ops/bin/mail_vps_fetch.py` 的软链接，脚本随 git 部署更新，
+连接参数来自服务器本地的 `~/.hermes/mail_vps.toml`（格式见同目录
+`mail_vps.example.toml`）。附件和验证链接缓存由 helper 自己按保留期回收，
+gateway 的缓存清理不覆盖这两个目录。
 
 ```bash
 /home/hermes/.hermes/bin/mail_vps_fetch.py list-mailboxes
@@ -58,6 +65,14 @@ description: 当用户要求读取邮件 VPS 上的邮箱列表、最新邮件�
 /home/hermes/.hermes/bin/mail_vps_fetch.py read-mail --email user@mail.qianyan.me --require-link --want message_ref,subject,verification_links,snippet
 ```
 
+按发件人、主题或正文筛选时用 `--from-contains`、`--subject-contains`、`--body-contains`，
+它们是子串匹配，可与 `--require-code`、`--require-link`、`--has-attachment` 组合：
+
+```bash
+/home/hermes/.hermes/bin/mail_vps_fetch.py read-mail --email user@mail.qianyan.me --subject-contains 验证码 --limit 3
+/home/hermes/.hermes/bin/mail_vps_fetch.py read-mail --email user@mail.qianyan.me --from-contains github --require-link
+```
+
 读取 Qwen 等链接型注册邮件时，优先使用 `--require-link`，并读取 `verification_links` 字段；不要把页脚年份等普通数字当验证码。
 如果返回里存在 `verification_link_exports` / `preferred_media_tag`，说明系统已经把原始链接导出成 Hermes 本地 txt 文件；当链接较长、包含 token、或可能被模型自动脱敏时，优先把这个 txt 文件通过 QQ 发给用户。
 
@@ -67,10 +82,13 @@ description: 当用户要求读取邮件 VPS 上的邮箱列表、最新邮件�
 /home/hermes/.hermes/bin/mail_vps_fetch.py list-attachments --email user@mail.qianyan.me --message-ref cur/xxxx
 ```
 
-取回附件：
+取回附件。用 `--attachment-index` 按序号取，或用 `--attachment-name` 按文件名取；
+`--max-bytes` 限制单个附件的大小上限，默认 10 MiB，超出会被远端拒绝而不是截断：
 
 ```bash
 /home/hermes/.hermes/bin/mail_vps_fetch.py fetch-attachment --email user@mail.qianyan.me --message-ref cur/xxxx --attachment-index 1
+/home/hermes/.hermes/bin/mail_vps_fetch.py fetch-attachment --email user@mail.qianyan.me --message-ref cur/xxxx --attachment-name report.pdf
+/home/hermes/.hermes/bin/mail_vps_fetch.py fetch-attachment --email user@mail.qianyan.me --message-ref cur/xxxx --attachment-index 1 --max-bytes 20971520
 ```
 
 ## 通过 QQ 发附件
@@ -114,6 +132,13 @@ description: 当用户要求读取邮件 VPS 上的邮箱列表、最新邮件�
 
 ```bash
 /home/hermes/.hermes/bin/mail_vps_fetch.py reply-mail --email shi@mail.qianyan.me --message-ref cur/xxxx --from-email shi@mail.qianyan.me --body "回复正文"
+```
+
+默认只回复原发件人。需要连同抄送一并回复时加 `--reply-all`，执行前必须先向用户
+列明将要收到邮件的全部地址：
+
+```bash
+/home/hermes/.hermes/bin/mail_vps_fetch.py reply-mail --email shi@mail.qianyan.me --message-ref cur/xxxx --from-email shi@mail.qianyan.me --body "回复正文" --reply-all
 ```
 
 转发：

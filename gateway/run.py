@@ -20070,6 +20070,7 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
     """
     from cron.scheduler import tick as cron_tick
     from gateway.platforms.base import (
+        cleanup_audio_cache,
         cleanup_document_cache,
         cleanup_image_cache,
         cleanup_video_cache,
@@ -20128,6 +20129,12 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
                     logger.info("Video cache cleanup: removed %d stale file(s)", removed)
             except Exception as e:
                 logger.debug("Video cache cleanup error: %s", e)
+            try:
+                removed = cleanup_audio_cache(max_age_hours=24)
+                if removed:
+                    logger.info("Audio cache cleanup: removed %d stale file(s)", removed)
+            except Exception as e:
+                logger.debug("Audio cache cleanup error: %s", e)
 
         if tick_count % PASTE_SWEEP_EVERY == 0:
             try:

@@ -725,6 +725,30 @@ def cache_audio_from_bytes(data: bytes, ext: str = ".ogg") -> str:
     return str(filepath)
 
 
+def cleanup_audio_cache(max_age_hours: int = 24) -> int:
+    """Delete cached audio older than *max_age_hours*.
+
+    Mirrors ``cleanup_image_cache`` / ``cleanup_document_cache``. QQ voice
+    notes used to land in the document cache and were pruned by that sweep;
+    once they route to their own directory they need their own sweep.
+
+    Returns the number of files removed.
+    """
+    import time
+
+    cache_dir = get_audio_cache_dir()
+    cutoff = time.time() - (max_age_hours * 3600)
+    removed = 0
+    for f in cache_dir.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 async def cache_audio_from_url(url: str, ext: str = ".ogg", retries: int = 2) -> str:
     """
     Download an audio file from a URL and save it to the local cache.
