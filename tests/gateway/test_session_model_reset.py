@@ -61,7 +61,7 @@ def _make_runner():
     runner._session_db = None
     runner._agent_cache_lock = None  # disables _evict_cached_agent lock path
     runner._is_user_authorized = lambda _source: True
-    runner._format_session_info = lambda: ""
+    runner._format_session_info = lambda _session_key=None: ""
 
     return runner
 
@@ -79,12 +79,20 @@ async def test_new_command_clears_session_model_override():
         "api_key": "***",
         "base_url": "",
         "api_mode": "openai",
+        "context_length": 131072,
     }
     runner._session_reasoning_overrides[session_key] = {"enabled": True, "effort": "high"}
     runner._pending_model_notes[session_key] = "[Note: switched to gpt-4o.]"
 
     runner._session_db = MagicMock()
 
+    seen = []
+
+    def capture_info(key=None):
+        seen.append((key, dict(runner._session_model_overrides)))
+        return ""
+
+    runner._format_session_info = capture_info
     await runner._handle_new_command(_make_event("/new"))
 
     assert session_key not in runner._session_model_overrides
@@ -94,6 +102,7 @@ async def test_new_command_clears_session_model_override():
         "sess-1",
         sessions_dir=runner.config.sessions_dir,
     )
+    assert seen == [(session_key, {})]
 
 
 @pytest.mark.asyncio
@@ -160,16 +169,25 @@ async def test_reset_command_preserves_session_model_override_and_old_session():
         "api_key": "***",
         "base_url": "",
         "api_mode": "openai",
+        "context_length": 131072,
     }
     runner._session_reasoning_overrides[session_key] = {"enabled": True, "effort": "high"}
     runner._pending_model_notes[session_key] = "[Note: switched to gpt-4o.]"
 
+    seen = []
+
+    def capture_info(key=None):
+        seen.append((key, dict(runner._session_model_overrides)))
+        return ""
+
+    runner._format_session_info = capture_info
     await runner._handle_reset_command(_make_event("/reset"))
 
     assert session_key in runner._session_model_overrides
     assert session_key in runner._session_reasoning_overrides
     assert session_key not in runner._pending_model_notes
     runner._session_db.delete_session.assert_not_called()
+    assert seen == [(session_key, {session_key: runner._session_model_overrides[session_key]})]
 
 
 @pytest.mark.asyncio

@@ -37,8 +37,8 @@ during deploys:
 
 On the current 81 runtime, active generated-image and TTS files still land in
 `image_cache/` and `audio_cache/` because those legacy directories already
-exist on that host. `cache/documents/` remains active for document uploads and
-the current QQ inbound video temp path.
+exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进入
+`cache/videos/`，入站语音进入 `audio_cache/`，四类媒体分别清理。
 
 ## Core Fork Behavior
 
@@ -72,6 +72,9 @@ the current QQ inbound video temp path.
   包括上下文窗口——会话级 `/model` 不再把自动探测值写进全局
   `model.context_length`。`/context` 的单位是二进制（`k = 1024`、
   `m = 1024²`），不带单位的整数保持原值，探测失败回落到 `256000`。
+- Kimi Code 请求使用 `Tangyuge-Hermes/<版本>` 标识和会话/任务级
+  `prompt_cache_key`；缓存统计兼容官方返回字段。接入范围、订阅使用边界及
+  验证方式见 `docs/tangyuge-hermes/07-server-operations.md`。
 - `/restart` is exposed to allowed/admin chat operators. In DM, exact plaintext
   such as `restart gateway` is also routed to `/restart`. It uses the gateway's
   built-in graceful restart handler, not arbitrary shell execution.

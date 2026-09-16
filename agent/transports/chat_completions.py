@@ -685,14 +685,12 @@ class ChatCompletionsTransport(ProviderTransport):
         return True
 
     def extract_cache_stats(self, response: Any) -> dict[str, int] | None:
-        """Extract OpenRouter/OpenAI cache stats from prompt_tokens_details."""
+        """读取 OpenAI 嵌套字段及 Kimi 顶层字段中的真实缓存统计。"""
         usage = getattr(response, "usage", None)
         if usage is None:
             return None
         details = getattr(usage, "prompt_tokens_details", None)
-        if details is None:
-            return None
-        cached = getattr(details, "cached_tokens", 0) or 0
+        cached = getattr(details, "cached_tokens", 0) or getattr(usage, "cached_tokens", 0) or 0
         written = getattr(details, "cache_write_tokens", 0) or 0
         if cached or written:
             return {"cached_tokens": cached, "creation_tokens": written}

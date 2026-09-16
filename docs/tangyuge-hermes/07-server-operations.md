@@ -255,9 +255,8 @@ Plugin policy:
 - On the current 81 runtime, active generated-image and TTS files still land in
   `/home/hermes/.hermes/image_cache/` and `/home/hermes/.hermes/audio_cache/`
   because those legacy directories already exist on that host. The shared
-  `/home/hermes/.hermes/cache/` tree remains active for `cache/documents/`,
-  mail-skill caches, and the current QQ inbound video temp path. `video_cache/`
-  exists in code but is not the current QQ inbound attachment path on 81.
+  `/home/hermes/.hermes/cache/` 下，`documents/` 保存 QQ 普通文件，
+  `videos/` 保存 QQ 入站视频，邮件缓存单独由 helper 管理。
 - QQBot daily expression supports two practical paths: Unicode emoji directly
   in text, or existing local sticker/image files under
   `/home/hermes/.hermes/emojis/` sent with `MEDIA:/absolute/path`. Bracketed
@@ -573,15 +572,16 @@ on the server, then checkout `main`.
 - 切换 Kimi Code 的完整写法是
   `/model kimi-for-coding --provider kimi-code`，provider 直接写
   `kimi-code`，**不要**加 `custom:` 前缀。
-- 上下文窗口跟随同一作用域：会话级 `/model` 不再写全局
-  `model.context_length`，只有 `--global` 才落盘。回显后缀相应为
-  `(session only)` 或 `(auto-saved)`。修这条之前，任何一次临时 `/model`
-  都会把自动探测值写进全局配置，显式配置的 262144 会被 Kimi 自报的
-  1048576 覆盖。CLI 的 `/model` 采用同一作用域规则。
+- 上下文窗口跟随同一作用域：会话级 `/model` 保存会话覆盖，
+  `--global` 将 `model.context_length` 落盘。回显后缀相应为
+  `(session only)` 或 `(auto-saved)`。CLI 采用同一作用域规则。
 - 需要单独调窗口用 `/context <tokens|256k|1m|auto> [--global]`。单位是
   二进制：`k = 1024`、`m = 1024²`，所以 `512k` 是 524288；不带单位的整数
   按原值处理，`512000` 仍是 512000。探测失败时回落到常量 `256000`
   （裸整数，不是 `256k`）。
+- `/new`、`/reset` 的窗口回显也使用二进制 K/M，并附精确 token 数；
+  `262144` 显示为 `256K (262,144 tokens; ...)`。无法整除单位的数值直接
+  显示精确 token 数。`/reset` 回显保留的会话覆盖，`/new` 回显全局配置。
 - `/context auto` 绕过全局 `model.context_length`，但仍遵守
   `providers.kimi-code.models.kimi-for-coding.context_length` 的 262144。
 - 会自动改写 `config.yaml` 的路径只有 `/model` 与 `/context` 的持久化分支，两者现在都只在 `--global` 时落盘。`model_catalog`（默认开启，每 24 小时拉一次上游清单）只写磁盘缓存
@@ -594,6 +594,110 @@ on the server, then checkout `main`.
   `tests/gateway/test_model_command_custom_providers.py::test_handle_model_command_lists_saved_custom_provider`
   断言列表会展示自定义 provider，在本项目中长期失败，属于该取舍的已知结果，
   不是回归，也不要为了让它通过而放开白名单。
+
+## Kimi Code 请求与缓存
+
+核验日期：2026-09-16。实际端点为 `https://api.kimi.com/coding/v1`，
+采用 OpenAI Chat Completions 协议。
+
+### 身份与会话
+
+- 请求以 `Tangyuge-Hermes/<hermes_cli.__version__>` 标识客户端。客户端身份
+  描述调用软件，角色卡描述对话人格，两者承担不同职责。
+- 主对话以实际 `session_id` 派生 `prompt_cache_key`，同一会话恢复后保持
+  稳定；会话轮换时更换。派生键使用 SHA-256，内容不包含明文用户资料。
+- 独立辅助操作使用任务级缓存键；其身份标识与主对话一致。共享客户端和连接池
+  不代表共享业务会话。重试属于同一任务，应沿用其键。
+- OpenCode Go 文档的 `x-opencode-session` 属于该服务的接入协议。
+  本项目直连 Kimi，依据 Kimi 的 `prompt_cache_key` 契约发送请求。
+
+### 请求体与验证边界
+
+- 主模型使用 `kimi-for-coding`、`reasoning_effort: low` 与
+  `thinking.type: enabled`；全局和 per-model 上下文上限均为 262144。
+  辅助任务的参数按自身调用链解析，不能从主模型配置推断其实际发出的思考参数。
+- assistant 历史中的 `reasoning_content` 与工具调用消息按现有回传链路保留。
+  角色、SOUL、MEMORY、USER 的基础提示是会话快照；工具 schema 独立发送，
+  动态平台上下文按请求追加。稳定缓存键是路由线索，前缀内容变化仍会影响命中。
+- 用量兼容 `usage.prompt_tokens_details.cached_tokens` 和顶层
+  `usage.cached_tokens`，两者同时存在时不重复计数。响应缺少缓存统计时只能
+  说明服务没有报告，不能宣称已经命中，也不能根据订阅费用展示反推命中率。
+- 真实连通验收使用最小编程请求和独立任务键，不发送用户聊天历史。
+  HTTP 200 证明该次请求被接受；缓存命中、QQ 投递和人物表现分别验收。
+- Kimi Code 订阅面向编程场景。其他用途的许可应以账号条款及官方确认为准；
+  协议适配与真实客户端标识不构成账户风控或订阅使用范围的保证。
+
+### 维护资料
+
+- Kimi API 字段：<https://platform.kimi.com/docs/api/chat>。
+- Kimi Code 接入与身份要求：<https://www.kimi.com/code/docs/>。
+- 官方 CLI 请求构造：<https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/llm.py>。
+- 官方请求适配器：<https://github.com/MoonshotAI/kimi-cli/blob/main/packages/kosong/src/kosong/chat_provider/kimi.py>。
+- OpenCode Go 协议：<https://opencode.ai/docs/go/>。
+- 实现与回归入口：`agent/kimi_code.py`、CustomProfile、辅助客户端、
+  `tests/agent/transports/test_kimi_code_custom_profile.py`、
+  `tests/agent/test_kimi_cache_usage.py`。
+
+## 运行记忆维护
+
+`memories/MEMORY.md` 保存本机路径和工具流程，`memories/USER.md` 保存称呼、
+沟通和时间偏好，`SOUL.md` 补充工作风格；角色卡负责身份、关系和人格。
+工具能力与可接受参数以当前 schema 和实际配置为准。
+
+路径速查使用本页四类媒体缓存表。`text_to_speech` 的提供方由运行配置确定，
+工作站场景与参考音频的选择见下一节。日常时间默认采用北京时间，
+用户指定其他时区时按要求换算并标明。
+
+这些文件在基础提示构建时读取。维护文件不直接覆盖活动会话的冻结提示；
+需要立即采用最新记忆时，由阿颜执行 `/reset`，保留旧记录并建立新会话。
+部署和核验不代为执行会话删除或重置。
+
+## 工作站 TTS 参数
+
+TTS 运行在另一台 Windows 工作站，部署目录为
+`C:\service\tangyuge_tts_workstation_bundle`，由 `TangyugeTTS` 服务管理。
+服务器 `127.0.0.1:19880` 经 SSH 反向隧道连接工作站 bridge `9881`，
+bridge 再调用 GPT-SoVITS `9880`。工作站离线时合成不可用，Hermes 其他能力独立运行。
+本地训练与协议源码位于 `D:\MCP_Server\galgame-skills\Tangyuge-TTS-assets`。
+
+`text_to_speech` 接受 `text`、可选 `output_path`，在
+`remote_gptsovits` 命令提供方下另接受：
+
+- `scene`：场景别名，例如 `soft`、`morning`、`romantic`、`question`、
+  `narration`、`intimate`；工具 schema 列出可用别名。
+- `profile`：工作站已有配置名称，例如 `soft_daily`、`morning`、
+  `romantic_soft`、`main_hybrid_mid`。
+- `reference`：工作站参考音频清单中的 `id`，不是文件路径。
+
+选择优先级为 `reference > profile > scene > 文本自动选择`。
+完整配置和参考清单可在工作站在线时，经服务器访问
+`http://127.0.0.1:19880/profiles` 与 `/references` 读取；不要猜测参考 ID。
+模型可按语境自主选择已有风格；未指定参数时保留自动选择。
+其他提供方接到这些选择参数会明确报错，避免无声忽略。
+
+命令提供方为参数生成临时 JSON，通过 `{metadata_path}` 传递。
+实际入口为仓库 `scripts/tts_remote_gptsovits_bridge.py`；
+runtime `/home/hermes/.hermes/tts_remote_gptsovits_bridge.py` 是其软链接。
+运行配置：
+
+```yaml
+tts:
+  provider: remote_gptsovits
+  providers:
+    remote_gptsovits:
+      type: command
+      command: python3 /home/hermes/.hermes/tts_remote_gptsovits_bridge.py {input_path} {output_path} {metadata_path}
+      timeout: 300
+      max_text_length: 2000
+      voice_compatible: true
+      format: wav
+```
+
+转发入口固定向本机隧道发送一次 `/tts` 请求，指定非流式 WAV，
+校验音频容器后写入文件；由 Hermes 既有音频转换流程生成语音格式。
+临时文本和 metadata 在成功或失败后清理；合成超时不自动重发。
+`tests/tools/test_tts_remote_metadata.py` 离线覆盖参数到 HTTP 请求的完整链路，
+不代表工作站真实合成或 QQ 实际投递已通过。
 
 ## Documentation Rule
 

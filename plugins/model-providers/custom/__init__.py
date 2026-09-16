@@ -7,7 +7,8 @@ Ollama instances. Key quirks:
 """
 
 from typing import Any
-from urllib.parse import urlsplit
+
+from agent.kimi_code import build_kimi_request_options, is_kimi_code_endpoint
 
 from providers import register_provider
 from providers.base import ProviderProfile
@@ -15,12 +16,7 @@ from providers.base import ProviderProfile
 
 def _is_kimi_code_base_url(base_url: str | None) -> bool:
     """仅识别 Kimi Code 官方主机及其精确 coding 路径。"""
-    if not base_url:
-        return False
-    parsed = urlsplit(str(base_url).strip())
-    hostname = (parsed.hostname or "").lower()
-    path = parsed.path.rstrip("/")
-    return hostname == "api.kimi.com" and path in {"/coding", "/coding/v1"}
+    return is_kimi_code_endpoint(base_url)
 
 
 class CustomProfile(ProviderProfile):
@@ -36,10 +32,11 @@ class CustomProfile(ProviderProfile):
         extra_body: dict[str, Any] = {}
 
         if _is_kimi_code_base_url(ctx.get("base_url")):
+            options = build_kimi_request_options(ctx.get("session_id"))
             config = reasoning_config if isinstance(reasoning_config, dict) else {}
             effort = str(config.get("effort") or "").strip().lower()
             if config.get("enabled", True) is False or effort == "none":
-                return {"thinking": {"type": "disabled"}}, {}
+                return {"thinking": {"type": "disabled"}}, options
 
             kimi_effort = {
                 "minimal": "low",
@@ -51,7 +48,7 @@ class CustomProfile(ProviderProfile):
             }.get(effort, "max")
             return (
                 {"thinking": {"type": "enabled"}},
-                {"reasoning_effort": kimi_effort},
+                {**options, "reasoning_effort": kimi_effort},
             )
 
         # Ollama context window

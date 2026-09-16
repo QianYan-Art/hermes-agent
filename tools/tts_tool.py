@@ -784,6 +784,7 @@ def _generate_command_tts(
     provider_name: str,
     config: Dict[str, Any],
     tts_config: Dict[str, Any],
+    request_metadata: Optional[Dict[str, str]] = None,
 ) -> str:
     """Generate speech by running a user-configured shell command.
 
@@ -809,8 +810,16 @@ def _generate_command_tts(
     with tempfile.TemporaryDirectory() as tmpdir:
         text_path = Path(tmpdir) / "input.txt"
         text_path.write_text(text, encoding="utf-8")
+        metadata_path = Path(tmpdir) / "metadata.json"
+        metadata = {"text": text}
+        if request_metadata:
+            metadata.update(request_metadata)
+        metadata_path.write_text(
+            json.dumps(metadata, ensure_ascii=False), encoding="utf-8",
+        )
 
         placeholders = {
+            "metadata_path": str(metadata_path),
             "input_path": str(text_path),
             "text_path": str(text_path),
             "output_path": str(output),
@@ -824,10 +833,12 @@ def _generate_command_tts(
         try:
             _run_command_tts(command, timeout)
         except subprocess.TimeoutExpired as exc:
+            output.unlink(missing_ok=True)
             raise RuntimeError(
                 f"TTS provider '{provider_name}' timed out after {timeout:g}s"
             ) from exc
         except subprocess.CalledProcessError as exc:
+            output.unlink(missing_ok=True)
             detail_parts = []
             if exc.stderr:
                 detail_parts.append(f"stderr: {exc.stderr.strip()}")
@@ -838,6 +849,9 @@ def _generate_command_tts(
                 f"TTS provider '{provider_name}' exited with code "
                 f"{exc.returncode}: {detail}"
             ) from exc
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
 
     if not output.exists() or output.stat().st_size <= 0:
         raise RuntimeError(
@@ -1838,12 +1852,15 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
 def text_to_speech_tool(
     text: str,
     output_path: Optional[str] = None,
+    scene: Optional[str] = None,
+    profile: Optional[str] = None,
+    reference: Optional[str] = None,
 ) -> str:
     """
     Convert text to speech audio.
 
     Reads provider/voice config from ~/.hermes/config.yaml (tts: section).
-    The model sends text; the user configures voice and provider.
+    提供方由用户配置；remote_gptsovits 可按语境选择场景和参考配置。
 
     On messaging platforms, the returned MEDIA:<path> tag is intercepted
     by the send pipeline and delivered as a native voice message.
@@ -1867,6 +1884,20 @@ def text_to_speech_tool(
     # so a user's ``tts.providers.openai.command`` can't override the real
     # OpenAI handler.
     command_provider_config = _resolve_command_provider_config(provider, tts_config)
+    selections = {}
+    for key, value in (("scene", scene), ("profile", profile), ("reference", reference)):
+        if value is not None:
+            if not isinstance(value, str) or not value.strip() or len(value) > 128:
+                return tool_error(f"{key} 必须是 1 至 128 字符的非空名称", success=False)
+            selections[key] = value.strip()
+    if selections:
+        if provider != "remote_gptsovits" or command_provider_config is None:
+            return tool_error(
+                "scene/profile/reference 仅适用于 remote_gptsovits 命令提供方",
+                success=False,
+            )
+        if "{metadata_path}" not in command_provider_config.get("command", ""):
+            return tool_error("TTS 命令必须包含 {metadata_path} 占位符", success=False)
 
     # Truncate very long text with a warning. The cap is per-provider
     # (OpenAI 4096, xAI 15k, MiniMax 10k, ElevenLabs model-aware, etc.).
@@ -1940,6 +1971,7 @@ def text_to_speech_tool(
             )
             file_str = _generate_command_tts(
                 text, file_str, provider, command_provider_config, tts_config,
+                **({"request_metadata": selections} if selections else {}),
             )
 
         # Plugin-registered TTS backend (issue #30398). Fires when the
@@ -2522,7 +2554,7 @@ from tools.registry import registry, tool_error
 
 TTS_SCHEMA = {
     "name": "text_to_speech",
-    "description": "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. Voice and provider are user-configured (built-in providers like edge/openai or custom command providers under tts.providers.<name>), not model-selected.",
+    "description": "将文本转为语音，返回由平台投递的 MEDIA 路径。提供方由用户配置。remote_gptsovits 支持按语境选择 scene、profile 或 reference；优先级为 reference > profile > scene，省略时由工作站自动选择。其他提供方只接受 text 和 output_path。",
     "parameters": {
         "type": "object",
         "properties": {
@@ -2532,7 +2564,23 @@ TTS_SCHEMA = {
             },
             "output_path": {
                 "type": "string",
-                "description": f"Optional custom file path to save the audio. Defaults to {display_hermes_home()}/audio_cache/<timestamp>.mp3"
+                "description": f"可选输出路径；默认保存在 {display_hermes_home()}/audio_cache/，扩展名取决于提供方配置及平台音频转换。"
+            },
+            "scene": {
+                "type": "string",
+                "description": "remote_gptsovits 场景别名；按语境选择，未指定时自动选择。",
+                "enum": ["main", "morning", "neutral", "soft", "question",
+                         "firm_question", "lively", "invite", "narration",
+                         "apology", "bright", "exclaim", "intimate", "command",
+                         "food", "romantic", "ordering", "happy", "low_energy"]
+            },
+            "profile": {
+                "type": "string",
+                "description": "remote_gptsovits 已有配置名称，如 soft_daily、morning、romantic_soft、main_hybrid_mid。完整清单见工作站 bridge 的 GET /profiles，不传文件路径。"
+            },
+            "reference": {
+                "type": "string",
+                "description": "remote_gptsovits GET /references 中已有的参考音频 id；优先于 profile/scene。不要猜测 id 或传本地文件路径。"
             }
         },
         "required": ["text"]
@@ -2545,7 +2593,10 @@ registry.register(
     schema=TTS_SCHEMA,
     handler=lambda args, **kw: text_to_speech_tool(
         text=args.get("text", ""),
-        output_path=args.get("output_path")),
+        output_path=args.get("output_path"),
+        scene=args.get("scene"),
+        profile=args.get("profile"),
+        reference=args.get("reference")),
     check_fn=check_tts_requirements,
     emoji="🔊",
 )

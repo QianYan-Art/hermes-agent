@@ -1,16 +1,4 @@
-"""Tests for transport auto-detection in agent.auxiliary_client.
-
-Auxiliary clients must pick the correct wire protocol (OpenAI
-chat.completions vs native Anthropic Messages) based on the endpoint,
-regardless of which resolve_provider_client branch built them.
-
-Regression target (April 2026): Kimi Coding Plan's ``api.kimi.com/coding``
-endpoint only speaks Anthropic Messages — sending ``kimi-for-coding`` over
-chat.completions returns 404 "resource_not_found_error".  The named
-``kimi-coding`` provider branch in resolve_provider_client used to build a
-plain OpenAI client, so title generation / vision / compression /
-web_extract all failed on Kimi Coding Plan users.
-"""
+"""验证辅助客户端协议：Kimi Code 默认 Chat Completions，显式协议优先。"""
 
 from __future__ import annotations
 
@@ -34,8 +22,8 @@ def _clean_env(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("url,expected,label", [
-    ("https://api.kimi.com/coding/v1", True, "Kimi Coding Plan /v1"),
-    ("https://api.kimi.com/coding", True, "Kimi Coding Plan no /v1"),
+    ("https://api.kimi.com/coding/v1", False, "Kimi Coding Plan /v1"),
+    ("https://api.kimi.com/coding", False, "Kimi Coding Plan no /v1"),
     ("https://api.moonshot.ai/v1", False, "Moonshot legacy"),
     ("https://api.minimax.io/anthropic", True, "MiniMax /anthropic"),
     ("https://litellm.example.com/v1/anthropic", True, "/anthropic suffix"),
@@ -59,8 +47,8 @@ def test_endpoint_speaks_anthropic_messages(url, expected, label):
 # ---------------------------------------------------------------------------
 
 def test_maybe_wrap_anthropic_rewraps_kimi_coding_url():
-    """Plain OpenAI client pointed at api.kimi.com/coding gets rewrapped."""
-    from agent.auxiliary_client import _maybe_wrap_anthropic, AnthropicAuxiliaryClient
+    """Kimi Code 添加请求元数据，使用 Chat Completions 协议。"""
+    from agent.auxiliary_client import _maybe_wrap_anthropic, _KimiAuxiliaryClient
 
     plain_client = MagicMock(name="plain_openai")
     fake_anthropic = MagicMock(name="anthropic_sdk_client")
@@ -73,7 +61,7 @@ def test_maybe_wrap_anthropic_rewraps_kimi_coding_url():
             plain_client, "kimi-for-coding", "sk-kimi-test",
             "https://api.kimi.com/coding", api_mode=None,
         )
-    assert isinstance(result, AnthropicAuxiliaryClient)
+    assert isinstance(result, _KimiAuxiliaryClient)
 
 
 def test_maybe_wrap_anthropic_rewraps_slash_anthropic_url():
@@ -111,7 +99,7 @@ def test_maybe_wrap_anthropic_skips_openai_wire_urls():
 
 def test_maybe_wrap_anthropic_respects_explicit_chat_completions():
     """api_mode=chat_completions overrides URL heuristics."""
-    from agent.auxiliary_client import _maybe_wrap_anthropic, AnthropicAuxiliaryClient
+    from agent.auxiliary_client import _maybe_wrap_anthropic, AnthropicAuxiliaryClient, _KimiAuxiliaryClient
 
     plain_client = MagicMock(name="plain_openai")
     result = _maybe_wrap_anthropic(
@@ -119,7 +107,7 @@ def test_maybe_wrap_anthropic_respects_explicit_chat_completions():
         "https://api.kimi.com/coding",
         api_mode="chat_completions",  # explicit override
     )
-    assert result is plain_client, "Explicit chat_completions must bypass wrap"
+    assert isinstance(result, _KimiAuxiliaryClient)
     assert not isinstance(result, AnthropicAuxiliaryClient)
 
 
@@ -194,7 +182,7 @@ def test_maybe_wrap_anthropic_sdk_missing_falls_back():
         try:
             result = _maybe_wrap_anthropic(
                 plain_client, "kimi-for-coding", "sk-kimi-test",
-                "https://api.kimi.com/coding", api_mode=None,
+                "https://api.anthropic.com", api_mode=None,
             )
         finally:
             if saved is not None:
@@ -210,28 +198,27 @@ def test_maybe_wrap_anthropic_sdk_missing_falls_back():
 # Integration: resolve_provider_client for named kimi-coding provider
 # ---------------------------------------------------------------------------
 
-def test_resolve_provider_client_kimi_coding_wraps_anthropic(monkeypatch, tmp_path):
-    """End-to-end: resolve_provider_client('kimi-coding', 'kimi-for-coding')
-    must return AnthropicAuxiliaryClient because /coding speaks Anthropic.
-
-    This is the primary regression guard: the bug that caused title
-    generation 404s on every Kimi Coding Plan user after the "main model
-    for every user" aux design shipped.
-    """
+def test_resolve_named_kimi_client_uses_chat_completions(monkeypatch, tmp_path):
+    """命名自定义 Kimi 配置沿当前请求协议解析，不依赖内置 provider。"""
+    import yaml
     from agent.auxiliary_client import (
         resolve_provider_client,
-        AnthropicAuxiliaryClient,
+        _KimiAuxiliaryClient,
     )
 
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    # sk-kimi- prefix triggers /coding endpoint auto-detection
-    monkeypatch.setenv("KIMI_API_KEY", "sk-kimi-faketesttoken123")
-
-    client, model = resolve_provider_client("kimi-coding", "kimi-for-coding")
-    assert client is not None, "Should resolve a client"
-    assert isinstance(client, AnthropicAuxiliaryClient), (
-        "Kimi Coding Plan endpoint (api.kimi.com/coding) speaks Anthropic "
-        "Messages — aux client MUST be AnthropicAuxiliaryClient, got "
-        f"{type(client).__name__}"
-    )
-    assert "kimi.com/coding" in str(client.base_url)
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({
+        "model": {"default": "kimi-for-coding", "provider": "custom:kimi"},
+        "custom_providers": [{
+            "name": "kimi", "base_url": "https://api.kimi.com/coding/v1",
+            "api_key": "test-key", "api_mode": "chat_completions",
+        }],
+    }), encoding="utf-8")
+    client, model = resolve_provider_client("custom:kimi", "kimi-for-coding")
+    try:
+        assert isinstance(client, _KimiAuxiliaryClient)
+        assert "kimi.com/coding" in str(client.base_url)
+        assert model == "kimi-for-coding"
+    finally:
+        if client:
+            client.close()

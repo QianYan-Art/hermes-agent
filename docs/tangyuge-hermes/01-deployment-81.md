@@ -37,8 +37,9 @@ template at load time, but the deployed runtime file should still be kept clean.
 
 On the current 81 host, active generated-image and TTS files still land in the
 top-level `image_cache/` and `audio_cache/` directories because those legacy
-paths already exist. `cache/documents/` stays active for document uploads and
-the current QQ inbound video temp path.
+paths already exist. QQ 普通文件进入 `cache/documents/`，入站视频进入
+`cache/videos/`，入站语音进入 `audio_cache/`。以 `hermes` 身份验证路径，
+避免 root 探针提前创建缓存目录导致网关无法写入。
 
 ## Sparse Server Checkout
 

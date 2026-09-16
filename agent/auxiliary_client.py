@@ -101,6 +101,7 @@ class _OpenAIProxy:
 OpenAI = _OpenAIProxy()  # module-level name, resolves lazily on call/isinstance
 
 from agent.credential_pool import load_pool
+from agent.kimi_code import build_kimi_request_options, is_kimi_code_endpoint
 from hermes_cli.config import get_hermes_home
 from hermes_constants import OPENROUTER_BASE_URL
 from utils import base_url_host_matches, base_url_hostname, normalize_proxy_env_vars
@@ -1088,6 +1089,119 @@ class AnthropicAuxiliaryClient:
             close_fn()
 
 
+def _apply_kimi_request_options(
+    kwargs: Dict[str, Any],
+    request_options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """注入 Kimi Code 请求元数据，不修改调用方持有的选项。"""
+    existing_prompt_cache_key = str(kwargs.get("prompt_cache_key") or "").strip()
+    options = request_options or build_kimi_request_options(existing_prompt_cache_key or None)
+    extra_headers = {
+        key: value
+        for key, value in dict(kwargs.get("extra_headers") or {}).items()
+        if str(key).lower() != "user-agent"
+    }
+    for key, value in dict(options.get("extra_headers") or {}).items():
+        if str(key).lower() == "user-agent":
+            extra_headers["User-Agent"] = value
+        else:
+            extra_headers[key] = value
+    kwargs["extra_headers"] = extra_headers
+    prompt_cache_key = existing_prompt_cache_key or str(
+        options.get("prompt_cache_key") or ""
+    ).strip()
+    if prompt_cache_key:
+        kwargs["prompt_cache_key"] = prompt_cache_key
+    return kwargs
+
+
+class _KimiCompletionsAdapter:
+    """为直接使用同步 client 的调用注入逐请求 Kimi Code 元数据。"""
+
+    def __init__(self, real_completions: Any):
+        self._real_completions = real_completions
+
+    def create(self, **kwargs) -> Any:
+        request_kwargs = dict(kwargs)
+        _apply_kimi_request_options(request_kwargs)
+        return self._real_completions.create(**request_kwargs)
+
+
+class _KimiChatShim:
+    def __init__(self, adapter: _KimiCompletionsAdapter):
+        self.completions = adapter
+
+
+class _AsyncKimiCompletionsAdapter:
+    """同步 Kimi 元数据适配器的异步版本。"""
+
+    def __init__(self, real_completions: Any):
+        self._real_completions = real_completions
+
+    async def create(self, **kwargs) -> Any:
+        request_kwargs = dict(kwargs)
+        _apply_kimi_request_options(request_kwargs)
+        return await self._real_completions.create(**request_kwargs)
+
+
+class _AsyncKimiChatShim:
+    def __init__(self, adapter: _AsyncKimiCompletionsAdapter):
+        self.completions = adapter
+
+
+class _KimiAuxiliaryClient:
+    """为同步 OpenAI 兼容 client 增加 Kimi Code 请求元数据。"""
+
+    def __init__(self, real_client: Any):
+        self._real_client = real_client
+        self.chat = _KimiChatShim(
+            _KimiCompletionsAdapter(real_client.chat.completions)
+        )
+        self.api_key = real_client.api_key
+        self.base_url = real_client.base_url
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real_client, name)
+
+    def close(self):
+        close_fn = getattr(self._real_client, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+
+class _AsyncKimiAuxiliaryClient:
+    """为异步 OpenAI 兼容 client 增加 Kimi Code 请求元数据。"""
+
+    def __init__(self, real_client: Any):
+        self._real_client = real_client
+        self.chat = _AsyncKimiChatShim(
+            _AsyncKimiCompletionsAdapter(real_client.chat.completions)
+        )
+        self.api_key = real_client.api_key
+        self.base_url = real_client.base_url
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real_client, name)
+
+    async def close(self):
+        close_fn = getattr(self._real_client, "close", None)
+        if callable(close_fn):
+            result = close_fn()
+            if hasattr(result, "__await__"):
+                await result
+
+
+def _wrap_kimi_client(client_obj: Any, base_url: str) -> Any:
+    """只包装 Kimi Code client，其他 provider 原样返回。"""
+    if not is_kimi_code_endpoint(base_url):
+        return client_obj
+    if isinstance(client_obj, (_KimiAuxiliaryClient, _AsyncKimiAuxiliaryClient)):
+        return client_obj
+    if isinstance(client_obj, (CodexAuxiliaryClient, AnthropicAuxiliaryClient)):
+        return client_obj
+    return _KimiAuxiliaryClient(client_obj)
+
+
 class _AsyncAnthropicCompletionsAdapter:
     def __init__(self, sync_adapter: _AnthropicCompletionsAdapter):
         self._sync = sync_adapter
@@ -1124,9 +1238,8 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
 
     - Any URL ending in ``/anthropic`` (MiniMax, Zhipu GLM, LiteLLM proxies,
       Anthropic-compatible gateways).
-    - ``api.kimi.com/coding`` (Kimi Coding Plan — the /coding route only
-      speaks Claude-Code's native Anthropic shape; ``chat.completions``
-      returns 404 on Anthropic-only model aliases like ``kimi-for-coding``).
+    - Kimi Code 不在此列表中：``api.kimi.com/coding/v1`` 是 OpenAI Chat
+      Completions endpoint，由下方 Kimi 请求元数据 wrapper 处理。
     - ``api.anthropic.com`` (native Anthropic).
     """
     normalized = (base_url or "").strip().lower().rstrip("/")
@@ -1136,8 +1249,6 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
         return True
     hostname = base_url_hostname(normalized)
     if hostname == "api.anthropic.com":
-        return True
-    if hostname == "api.kimi.com" and "/coding" in normalized:
         return True
     return False
 
@@ -1183,6 +1294,9 @@ def _maybe_wrap_anthropic(
             return client_obj
     except ImportError:
         pass
+
+    if is_kimi_code_endpoint(base_url) and api_mode != "anthropic_messages":
+        return _wrap_kimi_client(client_obj, base_url)
 
     # Explicit non-anthropic api_mode wins over URL heuristics.
     if api_mode and api_mode != "anthropic_messages":
@@ -1459,9 +1573,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                 if is_native_gemini_base_url(base_url):
                     return GeminiNativeClient(api_key=api_key, base_url=base_url), model
             extra = {}
-            if base_url_host_matches(base_url, "api.kimi.com"):
-                extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
-            elif base_url_host_matches(base_url, "api.githubcopilot.com"):
+            if base_url_host_matches(base_url, "api.githubcopilot.com"):
                 from hermes_cli.models import copilot_default_headers
 
                 extra["default_headers"] = copilot_default_headers()
@@ -1496,9 +1608,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
             if is_native_gemini_base_url(base_url):
                 return GeminiNativeClient(api_key=api_key, base_url=base_url), model
         extra = {}
-        if base_url_host_matches(base_url, "api.kimi.com"):
-            extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
-        elif base_url_host_matches(base_url, "api.githubcopilot.com"):
+        if base_url_host_matches(base_url, "api.githubcopilot.com"):
             from hermes_cli.models import copilot_default_headers
 
             extra["default_headers"] = copilot_default_headers()
@@ -2695,7 +2805,7 @@ def _recoverable_pool_provider(
         return "anthropic"
     if base_url_host_matches(base, "api.githubcopilot.com"):
         return "copilot"
-    if base_url_host_matches(base, "api.kimi.com"):
+    if is_kimi_code_endpoint(base):
         return "kimi-coding"
     if base_url_host_matches(base, "api.x.ai"):
         return "xai-oauth"
@@ -2783,6 +2893,7 @@ def _retry_same_provider_sync(
     tools: Optional[list],
     effective_timeout: float,
     effective_extra_body: dict,
+    kimi_request_options: Optional[Dict[str, Any]] = None,
 ) -> Any:
     if task == "vision":
         _, retry_client, retry_model = resolve_vision_provider_client(
@@ -2817,6 +2928,7 @@ def _retry_same_provider_sync(
         timeout=effective_timeout,
         extra_body=effective_extra_body,
         base_url=retry_base or resolved_base_url,
+        kimi_request_options=kimi_request_options,
     )
     if _is_anthropic_compat_endpoint(resolved_provider, retry_base):
         retry_kwargs["messages"] = _convert_openai_images_to_anthropic(retry_kwargs["messages"])
@@ -2840,6 +2952,7 @@ async def _retry_same_provider_async(
     tools: Optional[list],
     effective_timeout: float,
     effective_extra_body: dict,
+    kimi_request_options: Optional[Dict[str, Any]] = None,
 ) -> Any:
     if task == "vision":
         _, retry_client, retry_model = resolve_vision_provider_client(
@@ -2874,6 +2987,7 @@ async def _retry_same_provider_async(
         timeout=effective_timeout,
         extra_body=effective_extra_body,
         base_url=retry_base or resolved_base_url,
+        kimi_request_options=kimi_request_options,
     )
     if _is_anthropic_compat_endpoint(resolved_provider, retry_base):
         retry_kwargs["messages"] = _convert_openai_images_to_anthropic(retry_kwargs["messages"])
@@ -3291,8 +3405,6 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
         async_kwargs["default_headers"] = copilot_request_headers(
             is_agent_turn=True, is_vision=is_vision
         )
-    elif base_url_host_matches(sync_base_url, "api.kimi.com"):
-        async_kwargs["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
     elif base_url_host_matches(sync_base_url, "integrate.api.nvidia.com"):
         async_kwargs["default_headers"] = build_nvidia_nim_headers(sync_base_url)
     else:
@@ -3309,7 +3421,10 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
                     async_kwargs["default_headers"] = dict(_ph_async.default_headers)
         except Exception:
             pass
-    return AsyncOpenAI(**async_kwargs), model
+    async_client = AsyncOpenAI(**async_kwargs)
+    if is_kimi_code_endpoint(sync_base_url):
+        async_client = _AsyncKimiAuxiliaryClient(async_client)
+    return async_client, model
 
 
 def _normalize_resolved_model(model_name: Optional[str], provider: str) -> Optional[str]:
@@ -3577,9 +3692,7 @@ def resolve_provider_client(
             _clean_base, _dq = _extract_url_query_params(custom_base)
             if _dq:
                 extra["default_query"] = _dq
-            if base_url_host_matches(custom_base, "api.kimi.com"):
-                extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
-            elif base_url_host_matches(custom_base, "api.githubcopilot.com"):
+            if base_url_host_matches(custom_base, "api.githubcopilot.com"):
                 from hermes_cli.copilot_auth import copilot_request_headers
                 extra["default_headers"] = copilot_request_headers(
                     is_agent_turn=True, is_vision=is_vision
@@ -3827,9 +3940,7 @@ def resolve_provider_client(
 
         # Provider-specific headers
         headers = {}
-        if base_url_host_matches(base_url, "api.kimi.com"):
-            headers["User-Agent"] = "claude-code/0.1.0"
-        elif base_url_host_matches(base_url, "api.githubcopilot.com"):
+        if base_url_host_matches(base_url, "api.githubcopilot.com"):
             from hermes_cli.copilot_auth import copilot_request_headers
 
             headers.update(copilot_request_headers(
@@ -4914,6 +5025,7 @@ def _build_call_kwargs(
     timeout: float = 30.0,
     extra_body: Optional[dict] = None,
     base_url: Optional[str] = None,
+    kimi_request_options: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Build kwargs for .chat.completions.create() with model/provider adjustments."""
     kwargs: Dict[str, Any] = {
@@ -4989,6 +5101,9 @@ def _build_call_kwargs(
     if merged_extra:
         kwargs["extra_body"] = merged_extra
 
+    if is_kimi_code_endpoint(base_url):
+        _apply_kimi_request_options(kwargs, kimi_request_options)
+
     return kwargs
 
 
@@ -5062,6 +5177,7 @@ def call_llm(
     Raises:
         RuntimeError: If no provider is configured.
     """
+    kimi_request_options = build_kimi_request_options()
     resolved_provider, resolved_model, resolved_base_url, resolved_api_key, resolved_api_mode = _resolve_task_provider_model(
         task, provider, model, base_url, api_key)
     effective_extra_body = _get_task_extra_body(task)
@@ -5141,7 +5257,8 @@ def call_llm(
         resolved_provider, final_model, messages,
         temperature=temperature, max_tokens=max_tokens,
         tools=tools, timeout=effective_timeout, extra_body=effective_extra_body,
-        base_url=_base_info or resolved_base_url)
+        base_url=_base_info or resolved_base_url,
+        kimi_request_options=kimi_request_options)
 
     # Convert image blocks for Anthropic-compatible endpoints (e.g. MiniMax)
     _client_base = str(getattr(client, "base_url", "") or "")
@@ -5318,6 +5435,7 @@ def call_llm(
                     tools=tools,
                     effective_timeout=effective_timeout,
                     effective_extra_body=effective_extra_body,
+                    kimi_request_options=kimi_request_options,
                 )
 
         # ── Same-provider credential-pool recovery ─────────────────────
@@ -5360,6 +5478,7 @@ def call_llm(
                         tools=tools,
                         effective_timeout=effective_timeout,
                         effective_extra_body=effective_extra_body,
+                        kimi_request_options=kimi_request_options,
                     )
                 except Exception as retry2_err:
                     # The rotated key also hit a quota/auth wall.  Mark it
@@ -5446,7 +5565,8 @@ def call_llm(
                     temperature=temperature, max_tokens=max_tokens,
                     tools=tools, timeout=effective_timeout,
                     extra_body=effective_extra_body,
-                    base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    base_url=str(getattr(fb_client, "base_url", "") or ""),
+                    kimi_request_options=kimi_request_options)
                 return _validate_llm_response(
                     fb_client.chat.completions.create(**fb_kwargs), task)
             # All fallback layers exhausted — emit a single user-visible
@@ -5546,6 +5666,7 @@ async def async_call_llm(
 
     Same as call_llm() but async. See call_llm() for full documentation.
     """
+    kimi_request_options = build_kimi_request_options()
     resolved_provider, resolved_model, resolved_base_url, resolved_api_key, resolved_api_mode = _resolve_task_provider_model(
         task, provider, model, base_url, api_key)
     effective_extra_body = _get_task_extra_body(task)
@@ -5611,7 +5732,8 @@ async def async_call_llm(
         resolved_provider, final_model, messages,
         temperature=temperature, max_tokens=max_tokens,
         tools=tools, timeout=effective_timeout, extra_body=effective_extra_body,
-        base_url=_client_base or resolved_base_url)
+        base_url=_client_base or resolved_base_url,
+        kimi_request_options=kimi_request_options)
 
     # Convert image blocks for Anthropic-compatible endpoints (e.g. MiniMax)
     if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
@@ -5777,6 +5899,7 @@ async def async_call_llm(
                     tools=tools,
                     effective_timeout=effective_timeout,
                     effective_extra_body=effective_extra_body,
+                    kimi_request_options=kimi_request_options,
                 )
 
         # ── Same-provider credential-pool recovery (mirrors sync) ─────
@@ -5814,6 +5937,7 @@ async def async_call_llm(
                         tools=tools,
                         effective_timeout=effective_timeout,
                         effective_extra_body=effective_extra_body,
+                        kimi_request_options=kimi_request_options,
                     )
                 except Exception as retry2_err:
                     if (_is_payment_error(retry2_err) or _is_auth_error(retry2_err)
@@ -5869,7 +5993,8 @@ async def async_call_llm(
                     temperature=temperature, max_tokens=max_tokens,
                     tools=tools, timeout=effective_timeout,
                     extra_body=effective_extra_body,
-                    base_url=str(getattr(fb_client, "base_url", "") or ""))
+                    base_url=str(getattr(fb_client, "base_url", "") or ""),
+                    kimi_request_options=kimi_request_options)
                 # Convert sync fallback client to async
                 async_fb, async_fb_model = _to_async_client(
                     fb_client, fb_model or "", is_vision=(task == "vision")

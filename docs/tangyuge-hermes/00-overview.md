@@ -36,12 +36,13 @@ Server runtime data must stay outside the repository and must not be overwritten
 - `/home/hermes/.hermes/pairing/`
 - `/home/hermes/.hermes/auth.json`
 
-Deployments should use the `main` branch and `git reset`/forced checkout for code updates. The recommended virtual environment path is outside the repo at `/home/hermes/.hermes/venvs/hermes-agent` so dependency installation does not mix with runtime state or tracked source files.
+部署使用 `main`，核对工作区后执行 `git merge --ff-only`，不强制 reset 或覆盖运行配置。
+外置虚拟环境使用 `/home/hermes/.hermes/venvs/hermes-agent`，避免依赖与源码、运行数据混用。
 
 On the current 81 host, active generated-image and TTS files still land in the
 top-level `image_cache/` and `audio_cache/` directories because those legacy
-paths already exist. `cache/documents/` stays active for document uploads and
-the current QQ inbound video temp path.
+paths already exist. QQ 普通文件进入 `cache/documents/`，入站视频进入
+`cache/videos/`，入站语音进入 `audio_cache/`。
 
 ## Documentation Layout
 

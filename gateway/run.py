@@ -9007,7 +9007,7 @@ class GatewayRunner:
                             f"Adjust reset timing in config.yaml under session_reset."
                         )
                         try:
-                            session_info = self._format_session_info()
+                            session_info = self._format_session_info(session_key)
                             if session_info:
                                 notice = f"{notice}\n\n{session_info}"
                         except Exception:
@@ -9912,14 +9912,14 @@ class GatewayRunner:
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)
 
-    def _format_session_info(self) -> str:
+    def _format_session_info(self, session_key: Optional[str] = None) -> str:
         """Resolve current model config and return a formatted info block.
 
         Surfaces model, provider, context length, and endpoint so gateway
         users can immediately see if context detection went wrong (e.g.
         local models falling to the 128K default).
         """
-        from agent.model_metadata import get_model_context_length, DEFAULT_FALLBACK_CONTEXT
+        from hermes_cli.context_window import DEFAULT_CONTEXT_WINDOW, resolve_context_window
 
         model = _resolve_gateway_model()
         config_context_length = None
@@ -9949,6 +9949,44 @@ class GatewayRunner:
                     custom_provs = data.get("custom_providers")
         except Exception:
             pass
+
+        # 先解析 runtime 默认凭据，再应用 session 覆盖，确保会话自己的
+        # API key/provider 组合保持优先。
+        try:
+            runtime = _resolve_runtime_agent_kwargs()
+            provider = provider or runtime.get("provider")
+            base_url = base_url or runtime.get("base_url")
+            api_key = runtime.get("api_key")
+        except Exception:
+            pass
+
+        # 在解析上下文前应用当前会话的 model/provider 组合。/new 在调用前
+        # 清掉该组合，/reset 保留它，因而回显对应实际活动会话。
+        session_context_length = None
+        session_overrides = getattr(self, "_session_model_overrides", {}) or {}
+        session_override = (
+            session_overrides.get(session_key)
+            if session_key and isinstance(session_overrides, dict)
+            else None
+        )
+        if isinstance(session_override, dict):
+            if session_override.get("model"):
+                model = session_override["model"]
+            for key in ("provider", "base_url", "api_key"):
+                if key in session_override and session_override[key] is not None:
+                    if key == "provider":
+                        provider = session_override[key]
+                    elif key == "base_url":
+                        base_url = session_override[key]
+                    else:
+                        api_key = session_override[key]
+            raw_session_context = session_override.get("context_length")
+            try:
+                parsed_session_context = int(raw_session_context)
+                if parsed_session_context > 0:
+                    session_context_length = parsed_session_context
+            except (TypeError, ValueError):
+                pass
 
         # Also check custom_providers for context_length when top-level model.context_length is not set
         if config_context_length is None and data:
@@ -9985,44 +10023,63 @@ class GatewayRunner:
             except Exception:
                 pass
 
-        # Resolve runtime credentials for probing
-        try:
-            runtime = _resolve_runtime_agent_kwargs()
-            provider = provider or runtime.get("provider")
-            base_url = base_url or runtime.get("base_url")
-            api_key = runtime.get("api_key")
-        except Exception:
-            pass
+        if session_context_length is not None:
+            config_context_length = session_context_length
 
-        context_length = get_model_context_length(
-            model,
+        # 复用 /context 共用解析器，同时保留顶层和 per-model 配置覆盖的
+        # 现有来源提示。
+        resolver_config = data
+        if config_context_length is not None:
+            resolver_config = dict(data or {})
+            raw_model_cfg = resolver_config.get("model")
+            if isinstance(raw_model_cfg, dict):
+                resolver_model_cfg = dict(raw_model_cfg)
+            elif isinstance(raw_model_cfg, str) and raw_model_cfg.strip():
+                resolver_model_cfg = {"default": raw_model_cfg.strip()}
+            else:
+                resolver_model_cfg = {}
+            resolver_model_cfg["context_length"] = config_context_length
+            resolver_config["model"] = resolver_model_cfg
+
+        resolved_context = resolve_context_window(
+            model=model,
+            provider=provider or "",
             base_url=base_url or "",
             api_key=api_key or "",
-            config_context_length=config_context_length,
-            provider=provider or "",
             custom_providers=custom_provs,
+            config=resolver_config,
         )
+        context_length = resolved_context.value
 
-        # Format context source hint
-        if config_context_length is not None:
+        if session_context_length is not None:
+            ctx_source = "session override"
+        elif resolved_context.source == "config":
             ctx_source = "config"
-        elif context_length == DEFAULT_FALLBACK_CONTEXT:
+        elif resolved_context.source == "fallback" or (
+            resolved_context.source == "detected"
+            and context_length == DEFAULT_CONTEXT_WINDOW
+            and config_context_length is None
+        ):
             ctx_source = "default — set model.context_length in config to override"
         else:
             ctx_source = "detected"
 
-        # Format context length for display
-        if context_length >= 1_000_000:
-            ctx_display = f"{context_length / 1_000_000:.1f}M"
-        elif context_length >= 1_000:
-            ctx_display = f"{context_length // 1_000}K"
+        context_exact = f"{context_length:,} tokens"
+        kib = 1024
+        mib = kib * kib
+        if context_length >= mib and context_length % mib == 0:
+            ctx_display = f"{context_length // mib}M"
+            ctx_line = f"{ctx_display} ({context_exact}; {ctx_source})"
+        elif context_length >= kib and context_length % kib == 0:
+            ctx_display = f"{context_length // kib}K"
+            ctx_line = f"{ctx_display} ({context_exact}; {ctx_source})"
         else:
-            ctx_display = str(context_length)
+            ctx_line = f"{context_exact} ({ctx_source})"
 
         lines = [
             f"◆ Model: `{model}`",
             f"◆ Provider: {provider or 'openrouter'}",
-            f"◆ Context: {ctx_display} tokens ({ctx_source})",
+            f"◆ Context: {ctx_line}",
         ]
 
         # Show endpoint for local/custom setups
@@ -10135,7 +10192,7 @@ class GatewayRunner:
 
         # Resolve session config info to surface to the user
         try:
-            session_info = self._format_session_info()
+            session_info = self._format_session_info(session_key)
         except Exception:
             session_info = ""
 

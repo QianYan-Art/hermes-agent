@@ -1,13 +1,13 @@
 ---
 name: hermes-md-locator
-description: 用户要求查找 Tangyuge-Hermes 文档、当前状态或维护规则时必须使用。包括生图旁路、CLIProxyAPI、NetCup、/auxmodel image、Image-2.5、gpt-5.6-luna 编排模型、image_model_unavailable、HTTP200正文错误、usage估算、multipart、usage.model为空、图生图、mask、QQBot发图、MEDIA、尺寸不一致和 data URL。也覆盖项目总览、81部署、sparse checkout、精简边界、依赖漏洞、provider/插件白名单、唐语歌角色卡与身份注入、SOUL、表情包、tangyuge-roleplay、内置skills、patch/RTK、/new与/reset、/view与/context、/reasoning与max档位、辅助模型、自动记忆、异步subagent、QQ消息与媒体路由、MiniMax视频阈值、缓存目录、session清理timer、网关重启、升级冻结、邮箱列表、多域名邮箱、sru.edu.kg、邮件与附件、KBase/nmem/Serena写入授权、doc-maintenance和备份清理。按正文路由到仓库 docs/tangyuge-hermes，不把 KBase 当作 bot 查询源。
+description: 查找 Tangyuge-Hermes 当前状态、开发文档和维护规则的入口。覆盖 QQBot、角色卡与提示词、MEMORY/USER/SOUL、Kimi Code 请求与缓存、模型和上下文命令、工作站 TTS scene/profile/reference、媒体和生图、邮件、RTK、部署与清理。按正文路由读取仓库 docs/tangyuge-hermes，写入和发布按本次授权执行。
 ---
 
 # Tangyuge-Hermes 文档入口
 
 ## 目标
 
-本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 也应读取 repo `docs/tangyuge-hermes/`，不再依赖 home 目录文档副本。
+本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 读取 repo `docs/tangyuge-hermes/`。
 
 路由优先级：
 
@@ -29,7 +29,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - 服务器状态与维护：`docs/tangyuge-hermes/07-server-operations.md`
 - 邮件 VPS 集成：`docs/tangyuge-hermes/08-mail-vps.md`
 
-本地 KBase 只保留人工记录，不作为 bot 定位源；81 服务器不再维护 home 目录下的旧文档副本。
+本地 KBase 保存人工运维记录；bot 的文档定位源是上述仓库路径。
 
 ## 快速路由表
 
@@ -37,6 +37,9 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 | 用户常用说法 | 读取文档 |
 | --- | --- |
+| "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
+| "Kimi 请求头", "User-Agent", "prompt_cache_key", "缓存命中", "cached_tokens", "官方订阅", "OpenCode Go", "x-opencode-session" | `docs/tangyuge-hermes/07-server-operations.md` 的“Kimi Code 请求与缓存” |
+| "memory 路径", "USER 语音参数", "运行记忆对齐", "TTS schema", "262k还是256k", "二进制回显" | `docs/tangyuge-hermes/07-server-operations.md` 的“运行记忆维护”与模型命令说明；身份边界读 `03-identity-prompt.md` |
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
 | "记忆写入授权", "更新 nmem", "Serena 记忆", "KBase 能提交吗", "博客同步", ".doc-maintenance" | `docs/tangyuge-hermes/00-overview.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "提示词拼接链路", "外部记忆注入", "插件上下文", "提示规则更新后保留历史", "/reset 应用新提示词", "角色刷新保留会话" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/07-server-operations.md` |
