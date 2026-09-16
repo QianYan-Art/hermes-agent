@@ -60,13 +60,22 @@ Default model provider:
   `custom:ollama_vision`, so QQ images are summarized by the auxiliary vision
   backend instead of being sent to the main model. 图片链路与主模型无关，
   切换默认模型不影响它。
-- QQ videos are routed independently from images. 原生 `video` block 直连由
-  `gateway/run.py` 的 `_supports_native_video_input()` 判定，条件是
-  provider 属于 `{minimax, minimax-cn}` **且** 模型名以 `minimax-m3` 开头。
-  默认模型切到 `kimi-code` / `kimi-for-coding` 后该条件不成立，QQ 视频不再
-  内联上传，而是以缓存文件路径的文本标记出现在提示里。需要视频直连时，用
-  `/model minimax-m3 --provider minimax-cn` 切回。MiniMax 路径下的内联预算
-  仍是单文件 45 MiB、单轮合计 45 MiB。
+- QQ videos are routed independently from images. 能否内联上传由
+  `agent/image_routing.py` 的 `supports_native_video_input()` 判定，目前有两条
+  已验证路径：
+  - MiniMax：provider 属于 `{minimax, minimax-cn}` 且模型名以 `minimax-m3`
+    开头，视频作为 Anthropic 兼容的原生 `video` block 上传。
+  - Kimi Code：端点为 `api.kimi.com` 的 `/coding` 或 `/coding/v1`，且模型是
+    `kimi-for-coding`、`kimi-for-coding-highspeed` 或 `k3`，视频作为
+    OpenAI 兼容的 `video_url` base64 data URL 上传，与图片同形。
+    **`k3-256k` 按官方模型对比表不支持视频**，不在名单内。
+  命名自定义 provider 运行时解析成 `custom`，所以 Kimi 这条靠 base_url 识别，
+  相似主机名不会误命中。不在名单内的模型回落到缓存路径文本标记。
+  内联预算两条路径共用：单文件 45 MiB、单轮合计 45 MiB，超出即回落。
+- QQ 视频缓存与文件缓存已分开。`video/*` 附件进 `cache/videos/`，由
+  `cleanup_video_cache()` 按 24 小时清理；QQ 把普通文件上传标记为 `file`，
+  这类即使扩展名像视频也仍按文件进 `cache/documents/`，与
+  `_process_attachments()` 决定是否进 `video_urls` 的判据一致。
 - Built-in API-key provider env discovery is disabled by default. Do not set
   `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` on the 81 deployment unless the
   intent is to restore legacy built-in provider auto-listing from env vars.

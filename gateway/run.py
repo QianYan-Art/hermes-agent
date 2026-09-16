@@ -8602,7 +8602,7 @@ class GatewayRunner:
                         self._pending_native_video_paths_by_session = pending_native_videos
                     pending_native_videos[session_key] = list(video_paths)
                     logger.info(
-                        "Video routing: native (MiniMax M3). %d video(s) will be attached inline.",
+                        "Video routing: native. %d video(s) will be attached inline.",
                         len(video_paths),
                     )
                 else:
@@ -8770,15 +8770,27 @@ class GatewayRunner:
         return list(pending_native.pop(session_key, []) or [])
 
     def _supports_native_video_input(self) -> bool:
-        """True for providers whose current transport accepts native video blocks."""
+        """True for providers whose current transport accepts native video blocks.
+
+        Covers both verified paths — MiniMax's Anthropic-compatible ``video``
+        blocks and Kimi Code's OpenAI-compatible ``video_url`` — see
+        ``agent.image_routing.supports_native_video_input`` for the actual
+        capability table.
+        """
         try:
-            from agent.auxiliary_client import _read_main_provider, _read_main_model
+            from agent.auxiliary_client import (
+                _read_main_base_url,
+                _read_main_model,
+                _read_main_provider,
+            )
+            from agent.image_routing import supports_native_video_input
             provider = (_read_main_provider() or "").strip().lower()
             model = (_read_main_model() or "").strip().lower()
+            base_url = (_read_main_base_url() or "").strip()
         except (ImportError, RuntimeError, ValueError) as exc:
             logger.debug("video_routing: provider/model lookup failed — %s", exc)
             return False
-        return provider in {"minimax", "minimax-cn"} and model.startswith("minimax-m3")
+        return supports_native_video_input(provider, model, base_url)
 
     def _cache_session_source(self, session_key: str, source) -> None:
         if not session_key or source is None:
@@ -20057,7 +20069,11 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
     once per hour.
     """
     from cron.scheduler import tick as cron_tick
-    from gateway.platforms.base import cleanup_image_cache, cleanup_document_cache
+    from gateway.platforms.base import (
+        cleanup_document_cache,
+        cleanup_image_cache,
+        cleanup_video_cache,
+    )
     from hermes_cli.debug import _sweep_expired_pastes
 
     IMAGE_CACHE_EVERY = 60   # ticks — once per hour at default 60s interval
@@ -20106,6 +20122,12 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
                     logger.info("Document cache cleanup: removed %d stale file(s)", removed)
             except Exception as e:
                 logger.debug("Document cache cleanup error: %s", e)
+            try:
+                removed = cleanup_video_cache(max_age_hours=24)
+                if removed:
+                    logger.info("Video cache cleanup: removed %d stale file(s)", removed)
+            except Exception as e:
+                logger.debug("Video cache cleanup error: %s", e)
 
         if tick_count % PASTE_SWEEP_EVERY == 0:
             try:

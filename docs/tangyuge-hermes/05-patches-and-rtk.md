@@ -68,12 +68,24 @@ external patch files to replay:
   白名单。
 - Inbound QQ images still respect the explicit auxiliary vision backend
   (`custom:ollama_vision`) when `agent.image_input_mode` is `auto`; images are
-  summarized before reaching the main model — 与主模型是谁无关。Inbound QQ
-  videos are separate: `_supports_native_video_input()` 只在 provider 属于
-  `{minimax, minimax-cn}` 且模型名以 `minimax-m3` 开头时才成立，此时缓存的本地
-  视频作为 Anthropic 兼容的原生 `video` block 内联上传，预算为单文件 45 MiB、
-  单轮合计 45 MiB。默认模型为 `kimi-code` / `kimi-for-coding` 时该条件不成立，
-  视频统一回落到缓存路径文本标记。
+  summarized before reaching the main model — 与主模型是谁无关。
+- Inbound QQ videos are separate. 能力判定集中在
+  `agent/image_routing.py:supports_native_video_input()`，由 gateway 的
+  `_supports_native_video_input()` 调用，输入是当前主 provider、模型和
+  base_url（`agent/auxiliary_client.py:_read_main_base_url()` 提供，优先
+  runtime override，再 `model.base_url`，再 `providers.<slug>.base_url`）。
+  两条已验证路径：MiniMax（`{minimax, minimax-cn}` + `minimax-m3` 前缀，
+  Anthropic 原生 `video` block）和 Kimi Code（`api.kimi.com` 的 `/coding`
+  或 `/coding/v1` + `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，
+  OpenAI 的 `video_url` base64）。`k3-256k` 官方不支持视频，排除在外。
+  `build_native_content_parts()` 原本产出的就是 OpenAI 风格的 `video_url`，
+  Anthropic 侧由 `agent/anthropic_adapter.py` 转成 `video` block，所以两条
+  路径共用同一套内联编码与 45 MiB 单文件 / 单轮预算。
+- QQ 的 `video/*` 附件现在进 `cache/videos/`（`cache_video_from_bytes`），
+  不再混进 `cache/documents/`。配套新增 `cleanup_video_cache()` 并挂到 cron
+  的每小时清理里，保持与文档缓存相同的 24 小时保留期——视频此前靠文档清理
+  被动回收，单独建目录后必须有自己的清理，否则会无限堆积。QQ 把普通文件上传
+  统一标记为 `file`，这类仍按文件进文档缓存，即使扩展名看起来是视频。
 - Built-in API-key provider discovery from generic env vars is disabled by
   default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
   legacy auto-discovery of built-in providers from env names such as

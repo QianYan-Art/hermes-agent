@@ -54,6 +54,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "/reasoning", "推理强度", "思考深度", "max档位", "reasoning_effort", "会话与全局设置" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "Kimi Code", "kimi-code", "kimi-for-coding", "KIMI_CODE_API_KEY", "当前用什么模型", "默认模型", "换模型", "切模型", "/model", "--global", "provider前缀", "custom前缀", "命名自定义provider", "262144", "256k上下文", "上下文单位", "k是1024还是1000", "512k", "二进制单位", "会话级还是全局", "自动探测覆盖配置", "/model列表是空的", "模型列表看不到", "provider白名单过滤" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”“模型与上下文命令的作用域”，实现细节另读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "grok-search", "GROK_MODEL", "grok-4.3-fast", "搜索模型", "x_search", "grok-4.20-reasoning", "搜索用哪个模型" | `docs/tangyuge-hermes/07-server-operations.md`；`grok-search` skill 的 `.env` 与 runtime `x_search` 是两个独立入口，不要混改 |
+| "视频能不能看", "视频理解", "发视频", "视频传不上去", "Kimi 看视频", "video_url", "视频缓存", "cache/videos", "视频和文件分开", "视频清理", "k3-256k 不支持视频" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”，实现与判定另读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "维护手册", "全局状态", "当前状态", "服务器状态", "服务器全局状态", "运行状态", "重启网关命令", "typing_indicator", "输入状态", "正在输入", "thinking状态", "缓存目录", "cache目录", "image_cache", "audio_cache", "video_cache", "document_cache", "cache/documents", "邮件缓存", "session清理", "自动清理session任务", "session cleanup", "retention cleanup", "timer", "memory/user文档", "检查网关" | `docs/tangyuge-hermes/07-server-operations.md` |
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "邮箱列表", "有哪些邮箱", "列出全部邮箱", "多域名邮箱", "新域名邮箱漏列", "mail.qianyan.me", "sru.edu.kg", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
@@ -110,6 +111,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “MiniMax”“minimax-m3”“视频链路”“视频阈值”“45 MiB”“图片识别”“媒体路由”“native video”“视频直传”“视频预算”
 - “Kimi Code”“kimi-code”“kimi-for-coding”“KIMI_CODE_API_KEY”“默认模型”“当前用什么模型”“换模型”“切模型”“/model”“--global”“命名自定义provider”“262144”“上下文单位”“k是1024还是1000”“512k”“会话级还是全局”“自动探测覆盖配置”“/model列表是空的”“模型列表看不到”
 - “grok-search”“GROK_MODEL”“grok-4.3-fast”“搜索模型”“x_search”“grok-4.20-reasoning”
+- “视频能不能看”“视频理解”“发视频”“视频传不上去”“Kimi 看视频”“video_url”“视频缓存”“cache/videos”“视频和文件分开”“视频清理”
 - “语歌，全局状态”“语歌，看维护手册”“语歌，看邮箱文档”“语歌，查邮件文档”
 - “语歌，看唐语歌内核方案”“语歌，看精简方案”“语歌，看 RTK 和 patch 文档”
 - “语歌，看部署方案”“语歌，看二开总方案”“语歌，看内置 skills 方案”

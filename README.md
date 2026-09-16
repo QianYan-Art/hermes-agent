@@ -113,9 +113,12 @@ the current QQ inbound video temp path.
 - MiniMax M3 media routing is built in for QQBot: images can remain on the
   configured auxiliary vision path, while supported QQ videos are attached to
   the MiniMax Anthropic-compatible request as native video blocks within a
-  45 MiB per-file and per-turn inline budget. 原生视频直连只在 provider 属于
-  `{minimax, minimax-cn}` 且模型名以 `minimax-m3` 开头时成立；默认模型为
-  Kimi Code 时视频回落到缓存路径文本标记，图片链路不受影响。
+  45 MiB per-file and per-turn inline budget. 视频内联上传支持两条路径：
+  MiniMax（`minimax-m3`，Anthropic 原生 `video` block）和 Kimi Code
+  （`kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，OpenAI `video_url`
+  base64；`k3-256k` 官方不支持视频）。其他模型回落到缓存路径文本标记，图片
+  链路不受影响。QQ 的 `video/*` 附件存入独立的 `cache/videos/` 并按 24 小时
+  清理，与普通文件上传分开。
 - Child-agent tool access is constrained: leaf subagents cannot call
   `delegate_task`, `clarify`, `memory`, `send_message`, or `execute_code`;
   orchestrator subagents may delegate within configured depth but still cannot

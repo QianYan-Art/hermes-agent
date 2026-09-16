@@ -1737,6 +1737,44 @@ def _read_main_provider() -> str:
     return ""
 
 
+def _read_main_base_url() -> str:
+    """Read the base URL of the active main provider.
+
+    Runtime override first (same mechanism as ``_read_main_model``), then
+    ``model.base_url``, then the ``base_url`` of the named custom provider
+    that ``model.provider`` points at. Named custom providers resolve to the
+    internal provider id ``custom``, so the endpoint is the only thing that
+    identifies which upstream is actually in use — callers that gate on
+    provider capabilities (e.g. native video input) need it.
+
+    Returns "" when nothing is configured, which is normal for built-in
+    providers that derive their endpoint internally.
+    """
+    override = _RUNTIME_MAIN_BASE_URL
+    if isinstance(override, str) and override.strip():
+        return override.strip()
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config()
+        model_cfg = cfg.get("model", {})
+        if not isinstance(model_cfg, dict):
+            return ""
+        base_url = model_cfg.get("base_url", "")
+        if isinstance(base_url, str) and base_url.strip():
+            return base_url.strip()
+        slug = model_cfg.get("provider", "")
+        providers = cfg.get("providers", {})
+        if isinstance(slug, str) and slug.strip() and isinstance(providers, dict):
+            entry = providers.get(slug.strip())
+            if isinstance(entry, dict):
+                entry_url = entry.get("base_url", "")
+                if isinstance(entry_url, str) and entry_url.strip():
+                    return entry_url.strip()
+    except Exception:
+        pass
+    return ""
+
+
 # Process-local override set by AIAgent at session/turn start. Single-threaded
 # per turn — no lock needed. Cleared by ``clear_runtime_main()``.
 _RUNTIME_MAIN_PROVIDER: str = ""

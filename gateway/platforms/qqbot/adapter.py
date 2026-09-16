@@ -66,9 +66,11 @@ from gateway.platforms.base import (
     MessageEvent,
     MessageType,
     SendResult,
+    SUPPORTED_VIDEO_TYPES,
     _ssrf_redirect_guard,
     cache_document_from_bytes,
     cache_image_from_bytes,
+    cache_video_from_bytes,
     classify_send_error,
 )
 from gateway.platforms.helpers import strip_markdown
@@ -2023,6 +2025,15 @@ class QQAdapter(BasePlatformAdapter):
             # QQ voice messages are typically .amr or .silk format.
             # Convert to .wav using ffmpeg so STT engines can process it.
             return await self._convert_audio_to_wav(data, url)
+        elif content_type.startswith("video/"):
+            # Videos get their own cache so they are not swept on the document
+            # schedule and can be told apart from plain file uploads. The
+            # ``video/`` check matches _process_attachments, which is what
+            # decides whether a path enters ``video_urls``; QQ marks ordinary
+            # file uploads as ``file``, and those stay documents on purpose
+            # even when the extension looks like media.
+            ext = self._video_ext_for(content_type, original_name, url)
+            return cache_video_from_bytes(data, ext)
         else:
             filename = (
                 original_name
@@ -2030,6 +2041,22 @@ class QQAdapter(BasePlatformAdapter):
                 or "qq_attachment"
             )
             return cache_document_from_bytes(data, filename)
+
+    @staticmethod
+    def _video_ext_for(content_type: str, original_name: str, url: str) -> str:
+        """Pick a video file extension from the attachment metadata.
+
+        Prefers a recognized extension on the declared filename, then the URL
+        path, then the MIME type, and finally ``.mp4``. Keeping the real
+        container matters because the inline-video encoder only accepts the
+        extensions in ``SUPPORTED_VIDEO_TYPES``.
+        """
+        for candidate in (original_name, urlparse(url).path):
+            ext = os.path.splitext(candidate or "")[1].lower()
+            if ext in SUPPORTED_VIDEO_TYPES:
+                return ext
+        guessed = (mimetypes.guess_extension(content_type) or "").lower()
+        return guessed if guessed in SUPPORTED_VIDEO_TYPES else ".mp4"
 
     @staticmethod
     def _is_voice_content_type(content_type: str, filename: str) -> bool:

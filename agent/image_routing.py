@@ -41,6 +41,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +425,53 @@ def _file_to_data_url(path: Path) -> Optional[str]:
     return f"data:{mime};base64,{b64}"
 
 
+# Kimi Code 上支持视频理解的模型。按官方模型对比表，k3-256k 是唯一不支持
+# 视频的变体，因此这里逐个列出而不是前缀匹配。
+_KIMI_VIDEO_MODELS = frozenset({
+    "k3",
+    "kimi-for-coding",
+    "kimi-for-coding-highspeed",
+})
+
+
+def _is_kimi_code_endpoint(base_url: str) -> bool:
+    """精确识别 Kimi Code 官方端点，避免相似主机名误命中。
+
+    与 ``plugins/model-providers/custom`` 中判断思考参数时用的是同一组端点
+    特征；两处用途不同（一个决定 ``thinking``/``reasoning_effort``，一个决定
+    能否内联视频），各自独立判断。
+    """
+    if not base_url:
+        return False
+    parsed = urlsplit(str(base_url).strip())
+    return (parsed.hostname or "").lower() == "api.kimi.com" and parsed.path.rstrip("/") in {
+        "/coding",
+        "/coding/v1",
+    }
+
+
+def supports_native_video_input(provider: str, model: str, base_url: str = "") -> bool:
+    """当前主模型是否接受内联视频。
+
+    两条已验证的路径：
+
+    * MiniMax 的 Anthropic 兼容端点 —— 视频作为原生 ``video`` block 上传。
+    * Kimi Code 的 OpenAI 兼容端点 —— 视频作为 ``video_url`` 的 base64
+      data URL 上传，与图片同形。
+
+    命名自定义 provider 解析后的内部 id 是 ``custom``，所以 Kimi 这条必须靠
+    ``base_url`` identify，不能只看 provider 名。其他 provider 一律返回
+    False，调用方回落到"缓存路径文本标记"。
+    """
+    prov = (provider or "").strip().lower()
+    mdl = (model or "").strip().lower()
+    if prov in {"minimax", "minimax-cn"} and mdl.startswith("minimax-m3"):
+        return True
+    if mdl in _KIMI_VIDEO_MODELS and _is_kimi_code_endpoint(base_url):
+        return True
+    return False
+
+
 def _video_file_to_data_url(
     path: Path,
     *,
@@ -583,4 +631,5 @@ __all__ = [
     "decide_image_input_mode",
     "build_native_content_parts",
     "extract_image_refs",
+    "supports_native_video_input",
 ]
