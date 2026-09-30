@@ -46,11 +46,14 @@ Default model provider:
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
   该分支只匹配主机 `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，
   其他自定义 provider 行为不变。
-- CN API-key provider 已退役：配置、凭据、认证入口、模型目录和专属发现逻辑
-  已移除。国际 `minimax` 和 `minimax-oauth` 的通用支持仍保留。
+- `minimax-cn` CN API-key provider 已退役：配置、`MINIMAX_CN_API_KEY`、
+  认证入口、模型目录和专属“不自动发现模型”逻辑已移除。
+  国际 `minimax` 和 `minimax-oauth` 的通用支持仍保留。
 - The old main-model custom providers `openrouter`, `siliconflow`,
   `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
-  生图与 TTS 设置独立，本轮保持不变；旧独立视觉服务已移除。
+  生图与 TTS 设置独立，本轮保持不变；旧 `providers.ollama_vision` 配置及
+  `AUXILIARY_VISION_API_KEY` 专属凭据已移除，不再经过独立 Ollama 视觉服务。
+  这些退役标识仅用于检索迁移说明，不是可恢复使用的当前配置入口。
 - `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
   main model does not use it.
 - `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
@@ -63,7 +66,7 @@ Default model provider:
   显式 `supports_vision: false`、`image_input_mode: text` 或独立视觉覆盖仍优先。
 - QQ videos are routed independently from images. 能否内联上传由
   `agent/image_routing.py` 的 `supports_native_video_input()` 判定，目前有两条
-  已验证路径：
+  实现路径：
   - 国际 MiniMax：provider 为 `minimax` 且模型名以 `minimax-m3`
     开头，视频作为 Anthropic 兼容的原生 `video` block 上传。
   - Kimi Code：HTTPS 官方端点为 `api.kimi.com` 或 `api.kimi.ai` 的
@@ -74,6 +77,8 @@ Default model provider:
   命名自定义 provider 运行时解析成 `custom`，所以 Kimi 这条靠 base_url 识别，
   相似主机名不会误命中。不在名单内的模型回落到缓存路径文本标记。
   内联预算两条路径共用：单文件 45 MiB、单轮合计 45 MiB，超出即回落。
+  本轮真实 Kimi 媒体 HTTP 验收仅使用 `kimi-for-coding`；名单中的其他 Kimi
+  模型属于能力判定范围，不代表已逐一执行真实请求或 QQ 投递验收。
 - Kimi 官方能力依据：`https://www.kimi.com/code/docs/kimi-code/models.html`；
   请求内容类型对应官方 kimi-cli 的 `ImageURLPart` / `VideoURLPart` 适配器。
 - `/auxmodel` 显示本会话主模型媒体能力、生图与 TTS 配置，以及搜索和提取实际

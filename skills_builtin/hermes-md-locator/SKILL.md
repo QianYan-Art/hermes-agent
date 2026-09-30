@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 查找 Tangyuge-Hermes 当前状态、开发文档和维护规则的入口。覆盖 QQBot、角色卡与提示词、MEMORY/USER/SOUL、Kimi Code 请求与缓存、模型和上下文命令、工作站 TTS scene/profile/reference、媒体和生图、邮件、RTK、部署与清理。按正文路由读取仓库 docs/tangyuge-hermes，写入和发布按本次授权执行。
+description: 定位 Tangyuge-Hermes 文档、模型、媒体、会话及 auxmodel/Tavily 状态.
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -37,6 +37,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 | 用户常用说法 | 读取文档 |
 | --- | --- |
+| "auxmodel", "/auxmodel", "auxmodel 状态", "辅助模型状态", "Tavily 状态", "联网后端", "搜索后端", "提取后端", "TAVILY_API_KEY", "TAVILY_BASE_URL" | 先读 `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；实现变更再读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
+| "ollama-vision", "ollama_vision", "providers.ollama_vision", "AUXILIARY_VISION_API_KEY", "minimax-cn", "MINIMAX_CN_API_KEY", "退役配置", "旧视觉key", "模型发现机制" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”和 `docs/tangyuge-hermes/05-patches-and-rtk.md`；这些标识是退役索引，不是当前配置入口 |
 | "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
 | "Kimi 请求头", "User-Agent", "prompt_cache_key", "缓存命中", "cached_tokens", "官方订阅", "OpenCode Go", "x-opencode-session" | `docs/tangyuge-hermes/07-server-operations.md` 的“Kimi Code 请求与缓存” |
 | "k3-256k", "250K还是256K", "探测失败", "retained", "fallback", "切换后窗口不一致" | `docs/tangyuge-hermes/07-server-operations.md` 的模型与上下文命令；实现边界读 `05-patches-and-rtk.md` |
@@ -64,6 +66,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 ## 组合路由
 
+- "auxmodel、/auxmodel、辅助模型状态、Tavily 状态、联网后端、搜索后端、提取后端"：先读 `07-server-operations.md` 的“Current Runtime Shape”，实现变化再读 `05-patches-and-rtk.md`。区分本地配置、key 数和实际在线验证，不因状态查询发起网络探测。
+- "ollama-vision、ollama_vision、providers.ollama_vision、AUXILIARY_VISION_API_KEY、minimax-cn、MINIMAX_CN_API_KEY、退役配置、旧视觉key、模型发现机制"：先读 `07-server-operations.md` 的退役说明，再按需读 `05-patches-and-rtk.md`；不要建议重新配置已移除的服务或凭据。
 - "提示词拼接链路、外部记忆注入、插件上下文、提示规则更新后保留历史、/reset 应用新提示词、角色刷新保留会话"：先读 `03-identity-prompt.md` 的拼接、作用域和缓存规则；操作前再读 `07-server-operations.md`。不要把重启网关视作旧提示已刷新，不自动执行会话重置。
 
 - "CLIProxyAPI、NetCup、Image-2.5、编排模型、image_model_unavailable、HTTP200正文错误、usage估算、multipart、usage.model为空、编辑费用没记上、尺寸不一致、data URL"：先读 `07-server-operations.md` 的“生图旁路与 Usage”，再按需读 `05-patches-and-rtk.md`。区分请求模型、旁路编排模型和实际执行模型；usage 展示或 HTTP 200 不证明 2.5 可用，不自动切换默认模型。
@@ -97,6 +101,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 用户说以下内容时，优先使用本技能：
 
+- “auxmodel”“/auxmodel”“auxmodel 状态”“辅助模型状态”“Tavily 状态”“联网后端”“搜索后端”“提取后端”“TAVILY_API_KEY”“TAVILY_BASE_URL”
+- “ollama-vision”“ollama_vision”“providers.ollama_vision”“AUXILIARY_VISION_API_KEY”“minimax-cn”“MINIMAX_CN_API_KEY”“退役配置”“旧视觉key”“模型发现机制”
 - “提示词拼接链路”“外部记忆注入”“插件上下文”“提示规则更新后保留历史”“/reset 应用新提示词”“角色刷新保留会话”
 - “CLIProxyAPI”“NetCup”“Image-2.5”“gpt-image-2.5”“gpt-5.6-luna”“编排模型”“image_model_unavailable”“HTTP200正文错误”“usage估算”“multipart”“usage.model为空”“编辑费用没记上”“尺寸不一致”“data URL”
 - “记忆写入授权”“更新 nmem”“Serena 记忆”“KBase 能提交吗”“博客同步”“.doc-maintenance”

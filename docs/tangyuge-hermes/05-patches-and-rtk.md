@@ -56,10 +56,12 @@ external patch files to replay:
   command handling, runtime provider resolution, and auxiliary client routing.
   The 81 deployment now uses the named custom provider `kimi-code` for the main
   model (`kimi-for-coding`, transport `chat_completions`); the built-in
-  CN API-key provider 已退役，其认证、模型发现和配置入口不再保留。The older
+  `minimax-cn` CN API-key provider 已退役，其 `MINIMAX_CN_API_KEY`、
+  认证、专属不自动发现机制和配置入口不再保留。The older
   main-model custom providers `openrouter`, `siliconflow`, `deepseek-direct`,
   and `xiaomi-token-plan-cn` are removed from server runtime config;
-  生图和 TTS 设置保持不变；旧独立视觉配置及专属 key 已从运行配置移除。
+  生图和 TTS 设置保持不变；旧 `providers.ollama_vision` 配置及
+  `AUXILIARY_VISION_API_KEY` 已从运行配置移除，媒体不再先交给 Ollama 摘要。
   `/auxmodel` 展示本会话主模型的图片/视频能力、辅助生图/TTS，以及真实选择的搜索/
   提取后端和 Tavily key 数量；只读配置，不发联网探测。
 - QQ `/model` 的无参数列表被 `_filter_dialog_model_providers()` 限定在
