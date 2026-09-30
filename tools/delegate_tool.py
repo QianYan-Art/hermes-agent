@@ -1074,8 +1074,7 @@ def _build_child_agent(
         else (getattr(parent_agent, "acp_args", []) or [])
     )
 
-    # When override_provider is set (e.g. delegation.provider: minimax-cn),
-    # the subagent must use direct API calls — not the parent's ACP transport.
+    # 显式覆盖 provider 时，子代理使用直连 API，而不是父代理的 ACP 传输。
     # Inheriting acp_command unconditionally causes run_agent.py to initialize
     # CopilotACPClient, bypassing override credentials entirely (issue #16816).
     if override_provider and not override_acp_command:

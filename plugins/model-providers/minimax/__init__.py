@@ -1,7 +1,7 @@
-"""MiniMax provider profiles (international + China).
+"""MiniMax 国际 API 与 OAuth provider profiles。
 
-Both use anthropic_messages api_mode — their inference_base_url
-ends with /anthropic which triggers auto-detection to anthropic_messages.
+它们的 inference_base_url 均以 /anthropic 结尾，因此使用
+anthropic_messages API 模式。
 """
 
 from providers import register_provider
@@ -13,16 +13,6 @@ minimax = ProviderProfile(
     api_mode="anthropic_messages",
     env_vars=("MINIMAX_API_KEY",),
     base_url="https://api.minimax.io/anthropic",
-    auth_type="api_key",
-    default_aux_model="MiniMax-M3",
-)
-
-minimax_cn = ProviderProfile(
-    name="minimax-cn",
-    aliases=("minimax-china", "minimax_cn"),
-    api_mode="anthropic_messages",
-    env_vars=("MINIMAX_CN_API_KEY",),
-    base_url="https://api.minimaxi.com/anthropic",
     auth_type="api_key",
     default_aux_model="MiniMax-M3",
 )
@@ -41,5 +31,4 @@ minimax_oauth = ProviderProfile(
 )
 
 register_provider(minimax)
-register_provider(minimax_cn)
 register_provider(minimax_oauth)

@@ -112,4 +112,4 @@ grep -E 'You are Hermes Agent|created by Nous Research' /home/hermes/.hermes/SOU
 Both git commands must return the same commit. `ExecStart` must use the external
 venv path under `/home/hermes/.hermes/venvs/hermes-agent`. The grep command
 should print nothing. Plugin list should show only retained standalone plugins,
-and provider output should be `custom,deepseek,minimax,minimax-cn,minimax-oauth`.
+and provider output should be `custom,deepseek,minimax,minimax-oauth`.

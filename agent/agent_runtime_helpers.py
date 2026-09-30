@@ -1224,16 +1224,11 @@ def anthropic_prompt_cache_policy(
     # cache_control support (0.1× read pricing, 5-minute TTL).  The
     # blanket is_claude gate above excludes these — opt them in
     # explicitly via provider id or host match so users on
-    # provider=minimax / minimax-cn (or custom endpoints pointing at
-    # api.minimax.io/anthropic / api.minimaxi.com/anthropic) get the
-    # same cost reduction as Claude traffic.
+    # 国际 MiniMax 的兼容端点沿用相同的提示缓存协议。
     # Docs: https://platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache
     if is_anthropic_wire:
-        is_minimax_provider = provider_lower in {"minimax", "minimax-cn"}
-        is_minimax_host = (
-            base_url_host_matches(eff_base_url, "api.minimax.io")
-            or base_url_host_matches(eff_base_url, "api.minimaxi.com")
-        )
+        is_minimax_provider = provider_lower == "minimax"
+        is_minimax_host = base_url_host_matches(eff_base_url, "api.minimax.io")
         if is_minimax_provider or is_minimax_host:
             return True, True
 

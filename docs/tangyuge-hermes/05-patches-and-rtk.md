@@ -38,9 +38,9 @@ external patch files to replay:
   `/reset` starts a fresh session while preserving the current session model
   configuration. `/new` also deletes the previous session DB row/transcript so
   the old conversation is no longer resumable; `/reset` keeps the old session
-  record. Both commands bypass the running-agent queue path, interrupt active
-  work first, clear pending queued text, and then dispatch the reset handler so
-  stale slash-command text is not fed back to the agent. Gateway `/new` and
+  record. 两个命令在忙闲状态都先经过破坏性操作确认，批准后才中断当前运行、
+  清空旧队列并执行边界处理；取消不影响运行、队列或历史。关闭确认时直接执行。
+  重启后首次 `/new` 也先加载旧索引，确保旧 DB 行和 transcript 被删除。Gateway `/new` and
   `/reset` replies do not append random `hermes_cli.tips` discovery tips, so
   irrelevant platform hints such as Telegram webhook setup do not appear in QQ
   new-session replies.
@@ -56,26 +56,28 @@ external patch files to replay:
   command handling, runtime provider resolution, and auxiliary client routing.
   The 81 deployment now uses the named custom provider `kimi-code` for the main
   model (`kimi-for-coding`, transport `chat_completions`); the built-in
-  `minimax-cn` / `minimax-m3` pair stays configured as a fallback. The older
+  CN API-key provider 已退役，其认证、模型发现和配置入口不再保留。The older
   main-model custom providers `openrouter`, `siliconflow`, `deepseek-direct`,
   and `xiaomi-token-plan-cn` are removed from server runtime config;
-  auxiliary/vision, image generation, and TTS settings are separate and must be
-  preserved.
+  生图和 TTS 设置保持不变；旧独立视觉配置及专属 key 已从运行配置移除。
+  `/auxmodel` 展示本会话主模型的图片/视频能力、辅助生图/TTS，以及真实选择的搜索/
+  提取后端和 Tavily key 数量；只读配置，不发联网探测。
 - QQ `/model` 的无参数列表被 `_filter_dialog_model_providers()` 限定在
   `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn` 三个 slug 上。这三个
   在 81 runtime 都不使用，所以过滤后列表为空，这是有意保留的取舍：切模型一律
   显式写 `/model <model> --provider <slug>`。不要为了让上游列表用例通过而放开
   白名单。
-- Inbound QQ images still respect the explicit auxiliary vision backend
-  (`custom:ollama_vision`) when `agent.image_input_mode` is `auto`; images are
-  summarized before reaching the main model — 与主模型是谁无关。
+- QQ 图片在 `agent.image_input_mode: auto` 下，无独立视觉覆盖且本会话模型支持
+  视觉时原生直传。Kimi Code 图片能力由官方端点和明确模型表识别，不依赖
+  models.dev 是否收录命名自定义 provider。显式模式和能力覆盖优先。
 - Inbound QQ videos are separate. 能力判定集中在
   `agent/image_routing.py:supports_native_video_input()`，由 gateway 的
   `_supports_native_video_input()` 调用，输入是当前主 provider、模型和
-  base_url（`agent/auxiliary_client.py:_read_main_base_url()` 提供，优先
-  runtime override，再 `model.base_url`，再 `providers.<slug>.base_url`）。
-  两条已验证路径：MiniMax（`{minimax, minimax-cn}` + `minimax-m3` 前缀，
-  Anthropic 原生 `video` block）和 Kimi Code（`api.kimi.com` 的 `/coding`
+  base_url（`GatewayRunner._resolve_session_agent_runtime()` 提供，尊重本会话
+  `/model` 覆盖，不使用进程全局的其他会话状态）。
+  两条路径：国际 MiniMax（`minimax` + `minimax-m3` 前缀，
+  Anthropic 原生 `video` block）和 Kimi Code（`api.kimi.com` 或
+  `api.kimi.ai` HTTPS 官方端点的 `/coding`
   或 `/coding/v1` + `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，
   OpenAI 的 `video_url` base64）。`k3-256k` 官方不支持视频，排除在外。
   `build_native_content_parts()` 原本产出的就是 OpenAI 风格的 `video_url`，
@@ -89,7 +91,7 @@ external patch files to replay:
 - Built-in API-key provider discovery from generic env vars is disabled by
   default. `HERMES_BUILTIN_ENV_PROVIDER_DISCOVERY=1` is required to restore
   legacy auto-discovery of built-in providers from env names such as
-  `MINIMAX_CN_API_KEY` or `DEEPSEEK_API_KEY`; explicit provider selection and user-defined
+  `DEEPSEEK_API_KEY`; explicit provider selection and user-defined
   `providers:` entries continue to work without that flag.
 - `/context` is a native CLI/gateway command for showing or setting
   `model.context_length`. `/context <size> --global` persists the context

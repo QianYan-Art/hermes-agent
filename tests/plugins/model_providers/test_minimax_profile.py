@@ -1,7 +1,8 @@
-"""Unit tests for the MiniMax provider profile.
+"""MiniMax provider profile 的单元测试。
 
-Three MiniMax provider profiles (`minimax` direct API, `minimax-cn` China direct
-API, `minimax-oauth` browser OAuth) all advertise a `default_aux_model` on
+当前保留的两个 MiniMax provider profiles（`minimax` 直连 API 与
+`minimax-oauth` 浏览器 OAuth）均通过 `ProviderProfile` 声明
+`default_aux_model`。
 their `ProviderProfile`. The previous M2.7 / M2.7-highspeed values were
 stale relative to the current frontier model (M3, released 2026-06-01) and
 inconsistent with the `_PROVIDER_MODELS["minimax"]` catalog top entry in
@@ -23,7 +24,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture(params=["minimax", "minimax-cn", "minimax-oauth"])
+@pytest.fixture(params=["minimax", "minimax-oauth"])
 def minimax_profile(request):
     """Resolve each registered MiniMax profile.
 
@@ -56,7 +57,6 @@ class TestMinimaxAuxModelM3:
         "provider_id,expected",
         [
             ("minimax", "MiniMax-M3"),
-            ("minimax-cn", "MiniMax-M3"),
             # minimax-oauth sticks with M2.7: the OAuth / Coding Plan
             # tier historically used -highspeed (PR #6082 collapsed that
             # to plain M2.7 to avoid the 2x TPS surcharge). M3 is not on
@@ -106,7 +106,7 @@ class TestMinimaxAuxModelNotHighspeed:
     silently re-introduce that 2x-cost path.
     """
 
-    @pytest.mark.parametrize("provider_id", ["minimax", "minimax-cn", "minimax-oauth"])
+    @pytest.mark.parametrize("provider_id", ["minimax", "minimax-oauth"])
     def test_default_aux_model_is_not_highspeed(self, provider_id):
         import model_tools  # noqa: F401
         import providers

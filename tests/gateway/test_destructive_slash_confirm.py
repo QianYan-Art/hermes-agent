@@ -259,3 +259,81 @@ async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch):
     assert resolved is not None
     assert "✨ fresh" in resolved
     assert "config.yaml" in resolved
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["new", "reset"])
+@pytest.mark.parametrize("choice", ["cancel", "once"])
+async def test_busy_boundary_confirmation_keeps_run_until_approved(monkeypatch, command, choice):
+    from gateway.run import _AGENT_PENDING_SENTINEL
+    from tools import slash_confirm
+
+    runner = _make_runner()
+    key = build_session_key(_make_source())
+    runner._session_key_for_source = lambda _: key
+    runner._is_user_authorized = lambda _: True
+    runner._check_slash_access = lambda *_: None
+    runner._is_telegram_topic_root_lobby = lambda _: False
+    runner._running_agents = {key: _AGENT_PENDING_SENTINEL}
+    runner._running_agents_ts = {}
+    queued = _make_event("稍后执行")
+    runner._pending_messages = {key: queued}
+    runner._read_user_config = lambda: {"approvals": {"destructive_slash_confirm": True}}
+    runner._interrupt_and_clear_session = AsyncMock()
+    handler = AsyncMock(return_value="新会话已创建")
+    setattr(runner, f"_handle_{command}_command", handler)
+    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
+    slash_confirm.clear(key)
+    try:
+        prompt = await runner._handle_message(_make_event(f"/{command}"))
+        assert f"Confirm /{command}" in prompt
+        runner._interrupt_and_clear_session.assert_not_awaited()
+        handler.assert_not_awaited()
+        assert runner._running_agents[key] is _AGENT_PENDING_SENTINEL
+        assert runner._pending_messages[key] is queued
+
+        reply = await runner._handle_message(
+            _make_event("/approve" if choice == "once" else "/cancel")
+        )
+        assert slash_confirm.get_pending(key) is None
+        if choice == "once":
+            runner._interrupt_and_clear_session.assert_awaited_once()
+            handler.assert_awaited_once()
+            assert reply == "新会话已创建"
+        else:
+            runner._interrupt_and_clear_session.assert_not_awaited()
+            handler.assert_not_awaited()
+            assert runner._pending_messages[key] is queued
+            assert "cancelled" in reply.lower()
+    finally:
+        slash_confirm.clear(key)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["new", "reset"])
+async def test_busy_boundary_opt_out_interrupts_before_handler(monkeypatch, command):
+    from gateway.run import _AGENT_PENDING_SENTINEL
+
+    runner = _make_runner()
+    key = build_session_key(_make_source())
+    runner._session_key_for_source = lambda _: key
+    runner._is_user_authorized = lambda _: True
+    runner._check_slash_access = lambda *_: None
+    runner._is_telegram_topic_root_lobby = lambda _: False
+    runner._running_agents = {key: _AGENT_PENDING_SENTINEL}
+    runner._running_agents_ts = {}
+    runner._read_user_config = lambda: {"approvals": {"destructive_slash_confirm": False}}
+    calls = []
+
+    async def interrupt(*args, **kwargs):
+        calls.append("中断")
+
+    async def handle(_):
+        calls.append(command)
+        return "完成"
+
+    runner._interrupt_and_clear_session = interrupt
+    setattr(runner, f"_handle_{command}_command", handle)
+    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
+    assert await runner._handle_message(_make_event(f"/{command}")) == "完成"
+    assert calls == ["中断", command]

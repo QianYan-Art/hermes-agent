@@ -207,3 +207,35 @@ async def test_new_and_reset_do_not_append_random_tips(monkeypatch):
     for result in (new_result, reset_result):
         assert "TELEGRAM_WEBHOOK_SECRET" not in result
         assert "Tip:" not in result
+
+
+@pytest.mark.asyncio
+async def test_new_loads_existing_index_before_deleting_old_session(tmp_path, monkeypatch):
+    from hermes_state import SessionDB
+    from gateway.session import SessionStore
+
+    runner = _make_runner()
+    runner.config.sessions_dir = tmp_path / "sessions"
+    db = SessionDB(db_path=tmp_path / "state.db")
+    runner._session_db = db
+    monkeypatch.setattr("hermes_state.SessionDB", lambda: db)
+    try:
+        first_store = SessionStore(runner.config.sessions_dir, runner.config)
+        old = first_store.get_or_create_session(_make_source())
+        first_store.append_to_transcript(old.session_id, {"role": "user", "content": "旧记录"})
+        transcript = runner.config.sessions_dir / f"{old.session_id}.jsonl"
+        transcript.write_text('{"role":"user","content":"旧记录"}\n', encoding="utf-8")
+        assert transcript.exists()
+        runner.session_store = SessionStore(runner.config.sessions_dir, runner.config)
+        assert runner.session_store._loaded is False
+        assert runner.session_store._entries == {}
+
+        await runner._handle_new_command(_make_event("/new"))
+
+        new_entry = runner.session_store.get_or_create_session(_make_source())
+        assert new_entry.session_id != old.session_id
+        assert db.get_session(old.session_id) is None
+        assert db.get_session(new_entry.session_id) is not None
+        assert not transcript.exists()
+    finally:
+        db.close()

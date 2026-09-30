@@ -1365,9 +1365,7 @@ def list_authenticated_providers(
         if not isinstance(pdata, dict):
             continue
 
-        # Prefer auth.py PROVIDER_REGISTRY for env var names — it's our
-        # source of truth.  models.dev can have wrong mappings (e.g.
-        # minimax-cn → MINIMAX_API_KEY instead of MINIMAX_CN_API_KEY).
+        # 优先使用 auth.py PROVIDER_REGISTRY 中的环境变量名作为来源；models.dev 的映射可能不准确。
         pconfig = PROVIDER_REGISTRY.get(hermes_id)
         # Skip non-API-key auth providers here — they are handled in
         # section 2 (HERMES_OVERLAYS) with proper auth store checking.

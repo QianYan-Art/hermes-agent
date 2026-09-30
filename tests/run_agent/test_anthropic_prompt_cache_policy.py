@@ -120,14 +120,14 @@ class TestMiniMaxAnthropicWire:
         )
         assert agent._anthropic_prompt_cache_policy() == (True, True)
 
-    def test_minimax_m25_on_provider_minimax_cn_caches_native_layout(self):
+    def test_retired_minimax_cn_does_not_enable_native_prompt_cache(self):
         agent = _make_agent(
             provider="minimax-cn",
             base_url="https://api.minimaxi.com/anthropic",
             api_mode="anthropic_messages",
             model="minimax-m2.5",
         )
-        assert agent._anthropic_prompt_cache_policy() == (True, True)
+        assert agent._anthropic_prompt_cache_policy() == (False, False)
 
     def test_custom_provider_pointed_at_minimax_host_caches(self):
         # User wires a custom provider manually at MiniMax's Anthropic URL;
@@ -140,14 +140,14 @@ class TestMiniMaxAnthropicWire:
         )
         assert agent._anthropic_prompt_cache_policy() == (True, True)
 
-    def test_minimax_host_china_endpoint_caches(self):
+    def test_retired_china_endpoint_does_not_enable_native_prompt_cache(self):
         agent = _make_agent(
             provider="custom",
             base_url="https://api.minimaxi.com/anthropic",
             api_mode="anthropic_messages",
             model="minimax-m2.1",
         )
-        assert agent._anthropic_prompt_cache_policy() == (True, True)
+        assert agent._anthropic_prompt_cache_policy() == (False, False)
 
     def test_minimax_provider_on_openai_wire_does_not_cache(self):
         # chat_completions transport — MiniMax's cache_control support is

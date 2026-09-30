@@ -454,8 +454,6 @@ class TrajectoryCompressor:
             return "kimi-coding"
         if base_url_host_matches(url, "arcee.ai"):
             return "arcee"
-        if base_url_host_matches(url, "minimaxi.com"):
-            return "minimax-cn"
         if base_url_host_matches(url, "minimax.io"):
             return "minimax"
         # Unknown base_url — not a known provider

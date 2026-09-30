@@ -7540,21 +7540,9 @@ class GatewayRunner:
         except Exception:
             _tool_approval_live = False
         if _pending_confirm and not _tool_approval_live:
-            _raw_reply = (event.text or "").strip()
-            _cmd_reply = event.get_command()
-            _confirm_choice = None
-            if _cmd_reply in {"approve", "yes", "ok", "confirm"}:
-                _confirm_choice = "once"
-            elif _cmd_reply in {"always", "remember"}:
-                _confirm_choice = "always"
-            elif _cmd_reply in {"cancel", "no", "deny", "nevermind"}:
-                _confirm_choice = "cancel"
-            elif _raw_reply.lower() in {"approve", "approve once", "once"}:
-                _confirm_choice = "once"
-            elif _raw_reply.lower() in {"always", "always approve"}:
-                _confirm_choice = "always"
-            elif _raw_reply.lower() in {"cancel", "nevermind", "no"}:
-                _confirm_choice = "cancel"
+            _confirm_choice = _slash_confirm_mod.parse_choice_reply(
+                event.text, event.get_command(),
+            )
             if _confirm_choice is not None:
                 _resolved = await _slash_confirm_mod.resolve(
                     _quick_key, _pending_confirm.get("confirm_id"), _confirm_choice,
@@ -7650,6 +7638,10 @@ class GatewayRunner:
             if _evt_cmd and _cmd_def_inner is not None:
                 _denied = self._check_slash_access(source, _cmd_def_inner.name)
                 if _denied is not None:
+                    if _cmd_def_inner.name in {"new", "reset"}:
+                        return EphemeralReply(
+                            _denied, ttl_seconds=0, session_boundary_completed=False,
+                        )
                     return _denied
 
             # Telegram sends /start for bot launches/deep-links. Treat it as a
@@ -7677,26 +7669,11 @@ class GatewayRunner:
                 logger.info("STOP for session %s — agent interrupted, session lock released", _quick_key)
                 return EphemeralReply(t("gateway.stop.stopped"))
 
-            # /reset and /new must bypass the running-agent guard so they
-            # actually dispatch as commands instead of being queued as user
-            # text (which would be fed back to the agent with the same
-            # broken history — #2170).  Interrupt the agent first, then
-            # clear the adapter's pending queue so the stale "/reset" text
-            # doesn't get re-processed as a user message after the
-            # interrupt completes.
+            # 会话边界命令直接进入确认流程；批准后才中断并清空旧队列。
             if _cmd_def_inner and _cmd_def_inner.name in {"new", "reset"}:
-                # Clear any pending messages so the old text doesn't replay
-                await self._interrupt_and_clear_session(
-                    _quick_key,
-                    source,
-                    interrupt_reason=_INTERRUPT_REASON_RESET,
-                    invalidation_reason=f"{_cmd_def_inner.name}_command",
+                return await self._confirm_session_boundary_command(
+                    event, command=_cmd_def_inner.name,
                 )
-                # Clean up the running agent entry so the reset handler
-                # doesn't think an agent is still active.
-                if _cmd_def_inner.name == "reset":
-                    return await self._handle_reset_command(event)
-                return await self._handle_new_command(event)
 
             # /queue <prompt> — queue without interrupting.
             # Semantics: each /queue invocation produces its own full agent
@@ -8072,34 +8049,9 @@ class GatewayRunner:
                     canonical = _cmd_def.name if _cmd_def else command
                     break
 
-        if canonical == "new":
-            if self._is_telegram_topic_root_lobby(source):
-                return self._telegram_topic_root_new_message()
-            async def _do_new():
-                return await self._handle_new_command(event)
-            return await self._maybe_confirm_destructive_slash(
-                event=event,
-                command="new",
-                title="/new",
-                detail=(
-                    "This starts a fresh session, returns model settings to "
-                    "global defaults, and deletes the previous session."
-                ),
-                execute=_do_new,
-            )
-
-        if canonical == "reset":
-            async def _do_reset():
-                return await self._handle_reset_command(event)
-            return await self._maybe_confirm_destructive_slash(
-                event=event,
-                command="reset",
-                title="/reset",
-                detail=(
-                    "This starts a fresh session but keeps this session's "
-                    "current model configuration."
-                ),
-                execute=_do_reset,
+        if canonical in {"new", "reset"}:
+            return await self._confirm_session_boundary_command(
+                event, command=canonical,
             )
 
         if canonical == "topic":
@@ -8576,7 +8528,7 @@ class GatewayRunner:
             if image_paths:
                 # Decide routing: native (attach pixels) vs text (vision_analyze
                 # pre-run + prepend description).  See agent/image_routing.py.
-                _img_mode = self._decide_image_input_mode()
+                _img_mode = self._decide_image_input_mode(session_key=session_key)
                 if _img_mode == "native":
                     # Defer attachment to the run_conversation call site.
                     pending_native = getattr(self, "_pending_native_image_paths_by_session", None)
@@ -8599,7 +8551,7 @@ class GatewayRunner:
                     )
 
             if video_paths:
-                if self._supports_native_video_input():
+                if self._supports_native_video_input(session_key=session_key):
                     pending_native_videos = getattr(self, "_pending_native_video_paths_by_session", None)
                     if pending_native_videos is None:
                         pending_native_videos = {}
@@ -8777,7 +8729,7 @@ class GatewayRunner:
             return []
         return list(pending_native.pop(session_key, []) or [])
 
-    def _supports_native_video_input(self) -> bool:
+    def _supports_native_video_input(self, *, session_key: Optional[str] = None) -> bool:
         """True for providers whose current transport accepts native video blocks.
 
         Covers both verified paths — MiniMax's Anthropic-compatible ``video``
@@ -8786,15 +8738,10 @@ class GatewayRunner:
         capability table.
         """
         try:
-            from agent.auxiliary_client import (
-                _read_main_base_url,
-                _read_main_model,
-                _read_main_provider,
-            )
             from agent.image_routing import supports_native_video_input
-            provider = (_read_main_provider() or "").strip().lower()
-            model = (_read_main_model() or "").strip().lower()
-            base_url = (_read_main_base_url() or "").strip()
+            model, runtime = self._resolve_session_agent_runtime(session_key=session_key)
+            provider = (runtime.get("provider") or "").strip().lower()
+            base_url = (runtime.get("base_url") or "").strip()
         except (ImportError, RuntimeError, ValueError) as exc:
             logger.debug("video_routing: provider/model lookup failed — %s", exc)
             return False
@@ -10118,7 +10065,9 @@ class GatewayRunner:
 
         # Snapshot the old entry so on_session_finalize can report the
         # expiring session id before reset_session() rotates it.
-        old_entry = self.session_store._entries.get(session_key)
+        with self.session_store._lock:
+            self.session_store._ensure_loaded_locked()
+            old_entry = self.session_store._entries.get(session_key)
 
         # Close tool resources on the old agent (terminal sandboxes, browser
         # daemons, background processes) before evicting from cache.
@@ -10278,6 +10227,51 @@ class GatewayRunner:
         if session_info:
             return EphemeralReply(f"{header}\n\n{session_info}")
         return EphemeralReply(header)
+
+    async def _confirm_session_boundary_command(
+        self, event: MessageEvent, *, command: str,
+    ) -> Union[str, EphemeralReply, None]:
+        """忙闲路径共享确认，避免确认前破坏当前运行或队列。"""
+        if command == "new" and self._is_telegram_topic_root_lobby(event.source):
+            return EphemeralReply(
+                self._telegram_topic_root_new_message(),
+                ttl_seconds=0, session_boundary_completed=False,
+            )
+
+        async def _execute():
+            session_key = self._session_key_for_source(event.source)
+            if session_key in self._running_agents:
+                await self._interrupt_and_clear_session(
+                    session_key, event.source,
+                    interrupt_reason=_INTERRUPT_REASON_RESET,
+                    invalidation_reason=f"{command}_command",
+                )
+            handler = self._handle_new_command if command == "new" else self._handle_reset_command
+            result = await handler(event)
+            adapter = self.adapters.get(event.source.platform)
+            complete_boundary = getattr(adapter, "complete_session_boundary", None)
+            if asyncio.iscoroutinefunction(complete_boundary):
+                await complete_boundary(session_key)
+            return EphemeralReply(
+                str(result), ttl_seconds=getattr(result, "ttl_seconds", None),
+                session_boundary_completed=True,
+            )
+
+        detail = (
+            "这会创建新会话，恢复全局模型设置，并删除上一段会话。"
+            if command == "new"
+            else "这会创建新会话，保留当前模型设置和上一段会话记录。"
+        )
+        result = await self._maybe_confirm_destructive_slash(
+            event=event, command=command, title=f"/{command}",
+            detail=detail, execute=_execute,
+        )
+        if getattr(result, "session_boundary_completed", None) is not True:
+            return EphemeralReply(
+                result or "", ttl_seconds=0, session_boundary_completed=False,
+                slash_confirm_id=getattr(result, "slash_confirm_id", None),
+            )
+        return result
 
     async def _handle_reset_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
         """Handle /reset command."""
@@ -11831,7 +11825,7 @@ class GatewayRunner:
         return "\n".join(lines)
 
     async def _handle_auxmodel_command(self, event: MessageEvent) -> Optional[str]:
-        """Show or switch auxiliary vision / image / TTS model names only."""
+        """显示主模型媒体能力、辅助模型和联网配置，仅切换已配置的辅助模型名。"""
         import os
         import shlex
         import yaml
@@ -11842,11 +11836,11 @@ class GatewayRunner:
         def _usage() -> str:
             return (
                 "用法：\n"
-                "`/auxmodel` - 查看当前辅助模型\n"
-                "`/auxmodel vision <model>` - 切换视觉辅助模型名\n"
+                "`/auxmodel` - 查看主模型媒体、辅助模型和联网配置\n"
                 "`/auxmodel image <model>` - 切换生图模型名\n"
                 "`/auxmodel tts <model>` - 切换 TTS 模型名\n\n"
-                "只会改模型名，不会改 provider、URL 或 API key。"
+                "主模型视觉跟随 `/model`；已有独立视觉配置时才可切换 vision 模型名。\n"
+                "只会改辅助模型名，不会改 provider、URL 或 API key。"
             )
 
         def _split_keys(raw_value: str | None) -> list[str]:
@@ -11938,32 +11932,76 @@ class GatewayRunner:
 
         def _endpoint_summary(provider_name: str, provider_cfg: dict, section_cfg: dict, target: str) -> str:
             if target == "vision":
-                return str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
+                return _public_endpoint(provider_cfg.get("base_url") or section_cfg.get("base_url"))
             if target == "image":
-                return str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
+                return _public_endpoint(provider_cfg.get("base_url") or section_cfg.get("base_url"))
             if target == "tts":
                 if _provider_slug(provider_name) == "nvidia":
                     return str(provider_cfg.get("server") or "unset")
                 base = str(provider_cfg.get("base_url") or section_cfg.get("base_url") or "unset")
                 endpoint = str(provider_cfg.get("tts_endpoint") or "").strip()
                 if base != "unset" and endpoint:
-                    return f"{base.rstrip('/')}{endpoint}"
-                return base
+                    return _public_endpoint(f"{base.rstrip('/')}{endpoint}")
+                return _public_endpoint(base)
             return "unset"
+
+        def _public_endpoint(value) -> str:
+            """状态回复不回显 URL 用户信息、查询参数或片段中的凭据。"""
+            from urllib.parse import urlsplit, urlunsplit
+
+            raw = str(value or "unset").strip()
+            if raw == "unset":
+                return raw
+            try:
+                parsed = urlsplit(raw)
+                if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                    return "无效端点"
+                return urlunsplit((
+                    parsed.scheme, parsed.netloc.rsplit("@", 1)[-1],
+                    parsed.path, "", "",
+                ))
+            except ValueError:
+                return "无效端点"
 
         def _current_lines() -> list[str]:
             image_provider = image_cfg.get("provider", "unset")
             image_slug, image_provider_cfg = _provider_entry(str(image_provider), image_cfg)
             tts_provider = tts_cfg.get("provider", "unset")
             tts_slug, tts_provider_cfg = _provider_entry(str(tts_provider), tts_cfg)
-            vision_provider = vision_cfg.get("provider", "unset")
-            vision_slug, vision_provider_cfg = _provider_entry(str(vision_provider), vision_cfg)
-            return [
-                "当前辅助模型配置：",
-                f"vision: {vision_cfg.get('model', 'unset')}",
-                f"  provider: {vision_provider}",
-                f"  endpoint: {_endpoint_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
-                f"  auth: {_auth_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
+            from agent.image_routing import (
+                _explicit_aux_vision_override,
+                decide_image_input_mode,
+                supports_native_video_input,
+            )
+            lines = ["当前媒体、辅助模型与联网配置："]
+            try:
+                main_model, runtime = self._resolve_session_agent_runtime(
+                    source=event.source, user_config=cfg,
+                )
+                main_provider = runtime.get("provider") or ""
+                main_endpoint = runtime.get("base_url") or ""
+                native_images = decide_image_input_mode(
+                    main_provider, main_model, cfg, base_url=main_endpoint,
+                ) == "native"
+                native_video = supports_native_video_input(main_provider, main_model, main_endpoint)
+                lines.extend([
+                    f"主模型: {main_model}",
+                    f"  图片: {'原生直传' if native_images else '辅助分析'}",
+                    f"  视频: {'原生直传' if native_video else '不支持原生输入'}",
+                ])
+            except Exception as exc:
+                logger.debug("auxmodel: 主模型状态读取失败: %s", exc)
+                lines.append("主模型媒体能力: 暂无法判定")
+            if _explicit_aux_vision_override(cfg):
+                vision_provider = vision_cfg.get("provider", "auto")
+                _, vision_provider_cfg = _provider_entry(str(vision_provider), vision_cfg)
+                lines.extend([
+                    f"vision: {vision_cfg.get('model') or '默认'}",
+                    f"  provider: {vision_provider}",
+                    f"  endpoint: {_endpoint_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
+                    f"  auth: {_auth_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
+                ])
+            lines.extend([
                 f"image: {image_provider_cfg.get('model') or image_cfg.get('model', 'unset')}",
                 f"  provider: {image_provider}",
                 f"  endpoint: {_endpoint_summary(str(image_provider), image_provider_cfg, image_cfg, 'image')}",
@@ -11972,9 +12010,32 @@ class GatewayRunner:
                 f"  provider: {tts_provider}",
                 f"  endpoint: {_endpoint_summary(str(tts_provider), tts_provider_cfg, tts_cfg, 'tts')}",
                 f"  auth: {_auth_summary(str(tts_provider), tts_provider_cfg, tts_cfg, 'tts')}",
+            ])
+            from agent.web_search_registry import (
+                get_active_extract_provider,
+                get_active_search_provider,
+            )
+            from plugins.web.tavily.provider import _split_tavily_api_keys
+
+            search = get_active_search_provider()
+            extract = get_active_extract_provider()
+            tavily_keys = _split_tavily_api_keys(os.getenv("TAVILY_API_KEY"))
+            tavily_auth = (
+                f"轮换 {len(tavily_keys)} 个 key，失败依次回退"
+                if len(tavily_keys) > 1
+                else "已设置 1 个 key" if tavily_keys else "未设置"
+            )
+            lines.extend([
+                f"联网搜索: {search.name if search else '无可用后端'}",
+                f"网页提取: {extract.name if extract else '无可用后端'}",
+                "Tavily:",
+                f"  endpoint: {_public_endpoint(os.getenv('TAVILY_BASE_URL') or 'https://api.tavily.com')}",
+                f"  auth: TAVILY_API_KEY（{tavily_auth}）",
+                "  状态: 仅检查配置，未联网校验",
                 "",
-                "使用 `/auxmodel vision|image|tts <model>` 只切模型名。",
-            ]
+                "使用 `/auxmodel image|tts <model>` 只切辅助模型名。",
+            ])
+            return lines
 
         if not parts:
             return "\n".join(_current_lines())
@@ -12005,6 +12066,9 @@ class GatewayRunner:
         warning = ""
         auth = "无"
         if target == "vision":
+            from agent.image_routing import _explicit_aux_vision_override
+            if not _explicit_aux_vision_override(cfg):
+                return "图片和视频由主模型处理，视觉模型请通过 `/model` 切换；未修改配置。"
             aux_section = cfg.setdefault("auxiliary", {})
             if not isinstance(aux_section, dict):
                 return "config.yaml 无效：auxiliary 必须是对象"
@@ -15306,6 +15370,11 @@ class GatewayRunner:
 
         async def _on_confirm(choice: str):
             if choice == "cancel":
+                if command in {"new", "reset"}:
+                    return EphemeralReply(
+                        f"/{command} cancelled. 会话和当前运行未改变。",
+                        ttl_seconds=0, session_boundary_completed=False,
+                    )
                 return f"🟡 /{command} cancelled. Conversation unchanged."
             if choice == "always":
                 try:
@@ -15326,6 +15395,11 @@ class GatewayRunner:
                     "without confirmation. Re-enable via "
                     "`approvals.destructive_slash_confirm: true` in config.yaml."
                 )
+                if isinstance(result, EphemeralReply):
+                    return EphemeralReply(
+                        str(result) + note, ttl_seconds=result.ttl_seconds,
+                        session_boundary_completed=result.session_boundary_completed,
+                    )
                 if isinstance(result, str):
                     return result + note
                 # EphemeralReply or other — leave untouched; the opt-out note
@@ -15407,6 +15481,9 @@ class GatewayRunner:
                 )
                 if button_result and getattr(button_result, "success", False):
                     used_buttons = True
+            except asyncio.CancelledError:
+                _slash_confirm_mod.clear(session_key, confirm_id=confirm_id)
+                raise
             except Exception as exc:
                 logger.debug(
                     "send_slash_confirm failed for %s on %s: %s",
@@ -15417,7 +15494,7 @@ class GatewayRunner:
             # Buttons rendered — no redundant text ack.
             return None
         # Text fallback — return the prompt message as the direct reply.
-        return message
+        return EphemeralReply(message, ttl_seconds=0, slash_confirm_id=confirm_id)
 
     def _read_user_config(self) -> Dict[str, Any]:
         """Read the user's raw config.yaml (cached) for gate lookups.
@@ -16347,25 +16424,20 @@ class GatewayRunner:
         ctx = copy_context()
         return await loop.run_in_executor(None, ctx.run, func, *args)
 
-    def _decide_image_input_mode(self) -> str:
-        """Resolve the image-input routing for the currently active model.
-
-        Returns ``"native"`` (attach pixels on the user turn) or ``"text"``
-        (pre-analyze with vision_analyze and prepend the description). See
-        agent/image_routing.py for the full decision table.
-
-        The active provider/model are read from config.yaml so the decision
-        tracks ``/model`` switches automatically on the next message.
-        """
+    def _decide_image_input_mode(self, *, session_key: Optional[str] = None) -> str:
+        """按当前会话的实际模型与端点决定图片是否直传。"""
         try:
             from agent.image_routing import decide_image_input_mode
-            from agent.auxiliary_client import _read_main_model, _read_main_provider
             from hermes_cli.config import load_config
 
             cfg = load_config()
-            provider = _read_main_provider()
-            model = _read_main_model()
-            return decide_image_input_mode(provider, model, cfg)
+            model, runtime = self._resolve_session_agent_runtime(
+                session_key=session_key, user_config=cfg,
+            )
+            return decide_image_input_mode(
+                runtime.get("provider") or "", model, cfg,
+                base_url=runtime.get("base_url") or "",
+            )
         except Exception as exc:
             logger.debug("image_routing: decision failed, falling back to text — %s", exc)
             return "text"

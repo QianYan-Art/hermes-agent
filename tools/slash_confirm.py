@@ -48,6 +48,24 @@ _lock = threading.RLock()
 DEFAULT_TIMEOUT_SECONDS = 300
 
 
+def parse_choice_reply(text: str, command: Optional[str] = None) -> Optional[str]:
+    """统一适配器旁路与网关确认回复的识别，支持命令和纯文字。"""
+    if command in {"approve", "yes", "ok", "confirm"}:
+        return "once"
+    if command in {"always", "remember"}:
+        return "always"
+    if command in {"cancel", "no", "deny", "nevermind"}:
+        return "cancel"
+    raw = (text or "").strip().lower()
+    if raw in {"approve", "approve once", "once"}:
+        return "once"
+    if raw in {"always", "always approve"}:
+        return "always"
+    if raw in {"cancel", "nevermind", "no"}:
+        return "cancel"
+    return None
+
+
 def register(
     session_key: str,
     confirm_id: str,
@@ -75,9 +93,13 @@ def get_pending(session_key: str) -> Optional[Dict[str, Any]]:
         return dict(entry) if entry else None
 
 
-def clear(session_key: str) -> None:
-    """Drop the pending confirm for ``session_key`` without running it."""
+def clear(session_key: str, *, confirm_id: Optional[str] = None) -> None:
+    """撤销待确认项；指定 ID 时不影响并发替换的新提示。"""
     with _lock:
+        if confirm_id is not None:
+            entry = _pending.get(session_key)
+            if not entry or entry.get("confirm_id") != confirm_id:
+                return
         _pending.pop(session_key, None)
 
 

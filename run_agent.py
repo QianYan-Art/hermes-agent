@@ -4071,7 +4071,9 @@ class AIAgent:
             cfg = load_config()
             provider = (getattr(self, "provider", "") or "").strip()
             model = (getattr(self, "model", "") or "").strip()
-            return _lookup_supports_vision(provider, model, cfg) is True
+            return _lookup_supports_vision(
+                provider, model, cfg, base_url=getattr(self, "base_url", ""),
+            ) is True
         except Exception:
             return False
 
@@ -4350,7 +4352,7 @@ class AIAgent:
         Regression for #11976; mirrors the opencode-go fix for #5211
         (commit f77be22c), which extended this same allowlist."""
         if (getattr(self, "provider", "") or "").lower() in {
-            "alibaba", "minimax", "minimax-cn",
+            "alibaba", "minimax",
             "opencode-go", "opencode-zen",
             "zai", "bedrock",
             "xiaomi",

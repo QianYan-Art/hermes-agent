@@ -125,7 +125,7 @@ def build_top_level_parser():
         "--provider",
         default=None,
         help=(
-            "Provider override for this invocation (e.g. minimax-cn, deepseek). "
+            "Provider override for this invocation (e.g. minimax, deepseek). "
             "Applies to -z/--oneshot. The persistent provider lives in config.yaml "
             "under model.provider — use `hermes setup` or edit the file to change it."
         ),

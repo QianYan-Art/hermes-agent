@@ -126,10 +126,6 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
         auth_type="oauth_external",
         base_url_override="https://api.minimax.io/anthropic",
     ),
-    "minimax-cn": HermesOverlay(
-        transport="anthropic_messages",
-        base_url_env_var="MINIMAX_CN_BASE_URL",
-    ),
     "deepseek": HermesOverlay(
         transport="openai_chat",
         base_url_env_var="DEEPSEEK_BASE_URL",
@@ -271,10 +267,6 @@ ALIASES: Dict[str, str] = {
     # stepfun
     "step": "stepfun",
     "stepfun-coding-plan": "stepfun",
-
-    # minimax-cn
-    "minimax-china": "minimax-cn",
-    "minimax_cn": "minimax-cn",
 
     # anthropic
     "claude": "anthropic",

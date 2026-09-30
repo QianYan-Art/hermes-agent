@@ -169,8 +169,6 @@ _PROVIDER_ALIASES = {
     "moonshot-cn": "kimi-coding-cn",
     "gmi-cloud": "gmi",
     "gmicloud": "gmi",
-    "minimax-china": "minimax-cn",
-    "minimax_cn": "minimax-cn",
     "claude": "anthropic",
     "claude-code": "anthropic",
     "github": "copilot",
@@ -3460,7 +3458,7 @@ def resolve_provider_client(
     Args:
         provider: Provider identifier.  One of:
             "openrouter", "nous", "openai-codex" (or "codex"),
-            "zai", "kimi-coding", "minimax", "minimax-cn",
+            "zai", "kimi-coding", "minimax",
             "custom" (OPENAI_BASE_URL + OPENAI_API_KEY),
             "auto" (full auto-detection chain).
         model: Model slug override.  If None, uses the provider's default
@@ -4153,7 +4151,9 @@ def _main_model_supports_vision(provider: str, model: Optional[str]) -> bool:
     except ImportError:
         return True
     try:
-        supports = _lookup_supports_vision(provider, model, load_config())
+        supports = _lookup_supports_vision(
+            provider, model, load_config(), base_url=_read_main_base_url(),
+        )
     except Exception:  # pragma: no cover - defensive
         return True
     if supports is None:
@@ -4915,7 +4915,7 @@ def _get_task_extra_body(task: str) -> Dict[str, Any]:
 
 # Providers that use Anthropic-compatible endpoints (via OpenAI SDK wrapper).
 # Their image content blocks must use Anthropic format, not OpenAI format.
-_ANTHROPIC_COMPAT_PROVIDERS = frozenset({"minimax", "minimax-oauth", "minimax-cn"})
+_ANTHROPIC_COMPAT_PROVIDERS = frozenset({"minimax", "minimax-oauth"})
 
 
 def _is_anthropic_compat_endpoint(provider: str, base_url: str) -> bool:

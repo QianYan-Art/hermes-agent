@@ -1186,18 +1186,16 @@ def test_minimax_v1_url_uses_chat_completions(monkeypatch):
     assert resolved["base_url"] == "https://api.minimax.chat/v1"
 
 
-def test_minimax_cn_v1_url_uses_chat_completions(monkeypatch):
-    """MiniMax-CN with /v1 base URL should use chat_completions (user override)."""
-    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "minimax-cn")
-    monkeypatch.setattr(rp, "_get_model_config", lambda: {})
+def test_retired_minimax_cn_provider_is_rejected(monkeypatch):
+    """旧 MiniMax-CN 环境变量不应恢复已退役的 provider。"""
+    from hermes_cli.auth import AuthError
+
     monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-cn-key")
     monkeypatch.setenv("MINIMAX_CN_BASE_URL", "https://api.minimaxi.com/v1")
 
-    resolved = rp.resolve_runtime_provider(requested="minimax-cn")
-
-    assert resolved["provider"] == "minimax-cn"
-    assert resolved["api_mode"] == "chat_completions"
-    assert resolved["base_url"] == "https://api.minimaxi.com/v1"
+    with pytest.raises(AuthError) as exc_info:
+        rp.resolve_runtime_provider(requested="minimax-cn")
+    assert exc_info.value.code == "invalid_provider"
 
 
 def test_minimax_explicit_api_mode_respected(monkeypatch):

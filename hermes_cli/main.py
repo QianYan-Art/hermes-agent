@@ -1943,7 +1943,6 @@ def select_provider_and_model(args=None):
         "zai",
         "kimi-coding-cn",
         "minimax",
-        "minimax-cn",
         "kilocode",
         "opencode-zen",
         "opencode-go",

@@ -40,7 +40,6 @@ class TestProviderRegistry:
         ("kimi-coding", "Kimi / Moonshot", "api_key"),
         ("stepfun", "StepFun Step Plan", "api_key"),
         ("minimax", "MiniMax", "api_key"),
-        ("minimax-cn", "MiniMax (China)", "api_key"),
         ("kilocode", "Kilo Code", "api_key"),
         ("gmi", "GMI Cloud", "api_key"),
     ])
@@ -92,11 +91,6 @@ class TestProviderRegistry:
         assert pconfig.api_key_env_vars == ("STEPFUN_API_KEY",)
         assert pconfig.base_url_env_var == "STEPFUN_BASE_URL"
 
-    def test_minimax_cn_env_vars(self):
-        pconfig = PROVIDER_REGISTRY["minimax-cn"]
-        assert pconfig.api_key_env_vars == ("MINIMAX_CN_API_KEY",)
-        assert pconfig.base_url_env_var == "MINIMAX_CN_BASE_URL"
-
     def test_kilocode_env_vars(self):
         pconfig = PROVIDER_REGISTRY["kilocode"]
         assert pconfig.api_key_env_vars == ("KILOCODE_API_KEY",)
@@ -119,7 +113,6 @@ class TestProviderRegistry:
         assert PROVIDER_REGISTRY["kimi-coding"].inference_base_url == "https://api.moonshot.ai/v1"
         assert PROVIDER_REGISTRY["stepfun"].inference_base_url == STEPFUN_STEP_PLAN_INTL_BASE_URL
         assert PROVIDER_REGISTRY["minimax"].inference_base_url == "https://api.minimax.io/anthropic"
-        assert PROVIDER_REGISTRY["minimax-cn"].inference_base_url == "https://api.minimaxi.com/anthropic"
         assert PROVIDER_REGISTRY["kilocode"].inference_base_url == "https://api.kilo.ai/api/gateway"
         assert PROVIDER_REGISTRY["gmi"].inference_base_url == "https://api.gmi-serving.com/v1"
         assert PROVIDER_REGISTRY["huggingface"].inference_base_url == "https://router.huggingface.co/v1"
@@ -185,9 +178,6 @@ class TestResolveProvider:
     def test_explicit_minimax(self):
         assert resolve_provider("minimax") == "minimax"
 
-    def test_explicit_minimax_cn(self):
-        assert resolve_provider("minimax-cn") == "minimax-cn"
-
     def test_explicit_gmi(self):
         assert resolve_provider("gmi") == "gmi"
 
@@ -208,9 +198,6 @@ class TestResolveProvider:
 
     def test_alias_step(self):
         assert resolve_provider("step") == "stepfun"
-
-    def test_alias_minimax_underscore(self):
-        assert resolve_provider("minimax_cn") == "minimax-cn"
 
     def test_alias_gmi_cloud(self):
         assert resolve_provider("gmi-cloud") == "gmi"
@@ -288,10 +275,12 @@ class TestResolveProvider:
         monkeypatch.setenv("MINIMAX_API_KEY", "test-mm-key")
         assert resolve_provider("auto") == "minimax"
 
-    def test_auto_detects_minimax_cn_key(self, monkeypatch):
+    def test_legacy_minimax_cn_key_does_not_auto_detect(self, monkeypatch):
         self._enable_builtin_env_discovery(monkeypatch)
         monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-mm-cn-key")
-        assert resolve_provider("auto") == "minimax-cn"
+        with pytest.raises(AuthError) as exc_info:
+            resolve_provider("auto")
+        assert exc_info.value.code == "no_provider_configured"
 
     def test_auto_detects_gmi_key(self, monkeypatch):
         self._enable_builtin_env_discovery(monkeypatch)
@@ -532,13 +521,6 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["provider"] == "minimax"
         assert creds["api_key"] == "mm-secret-key"
         assert creds["base_url"] == "https://api.minimax.io/anthropic"
-
-    def test_resolve_minimax_cn_with_key(self, monkeypatch):
-        monkeypatch.setenv("MINIMAX_CN_API_KEY", "mmcn-secret-key")
-        creds = resolve_api_key_provider_credentials("minimax-cn")
-        assert creds["provider"] == "minimax-cn"
-        assert creds["api_key"] == "mmcn-secret-key"
-        assert creds["base_url"] == "https://api.minimaxi.com/anthropic"
 
     def test_resolve_kilocode_with_key(self, monkeypatch):
         monkeypatch.setenv("KILOCODE_API_KEY", "kilo-secret-key")

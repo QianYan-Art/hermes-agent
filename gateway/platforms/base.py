@@ -1629,10 +1629,18 @@ class EphemeralReply(str):
     """
 
     ttl_seconds: Optional[int]
+    session_boundary_completed: Optional[bool]
+    slash_confirm_id: Optional[str]
 
-    def __new__(cls, text: str, ttl_seconds: Optional[int] = None):
+    def __new__(
+        cls, text: str, ttl_seconds: Optional[int] = None,
+        *, session_boundary_completed: Optional[bool] = None,
+        slash_confirm_id: Optional[str] = None,
+    ):
         instance = super().__new__(cls, text)
         instance.ttl_seconds = ttl_seconds
+        instance.session_boundary_completed = session_boundary_completed
+        instance.slash_confirm_id = slash_confirm_id
         return instance
 
     @property
@@ -3847,11 +3855,28 @@ class BasePlatformAdapter(ABC):
             return
         self._start_session_processing(pending_event, session_key)
 
+    async def _send_handler_reply(
+        self, response: Optional[str], session_key: str, **send_kwargs,
+    ) -> "SendResult":
+        """确认提示发送失败或中止时，只撤销本次提示的授权。"""
+        confirm_id = getattr(response, "slash_confirm_id", None)
+        delivered = False
+        try:
+            result = await self._send_with_retry(**send_kwargs)
+            delivered = bool(getattr(result, "success", False))
+            return result
+        finally:
+            if confirm_id and not delivered:
+                from tools import slash_confirm
+                slash_confirm.clear(session_key, confirm_id=confirm_id)
+
     async def _dispatch_active_session_command(
         self,
         event: MessageEvent,
         session_key: str,
         cmd: str,
+        *,
+        cancel_on_unmarked: bool = True,
     ) -> None:
         """Dispatch a reset-like bypass command while preserving guard ordering.
 
@@ -3873,8 +3898,13 @@ class BasePlatformAdapter(ABC):
         )
 
         current_guard = self._active_sessions.get(session_key)
+        original_task = self._session_tasks.get(session_key)
         command_guard = asyncio.Event()
         self._active_sessions[session_key] = command_guard
+        command_guards = getattr(self, "_session_command_guards", None)
+        if command_guards is None:
+            command_guards = self._session_command_guards = {}
+        command_guards[session_key] = command_guard
         thread_meta = _thread_metadata_for_source(event.source, _reply_anchor_for_event(event))
 
         try:
@@ -3893,7 +3923,8 @@ class BasePlatformAdapter(ABC):
                     len(_text),
                     event.source.chat_id,
                 )
-                _r = await self._send_with_retry(
+                _r = await self._send_handler_reply(
+                    response, session_key,
                     chat_id=event.source.chat_id,
                     content=_text,
                     reply_to=_reply_anchor_for_event(event),
@@ -3905,6 +3936,24 @@ class BasePlatformAdapter(ABC):
                         message_id=_r.message_id,
                         ttl_seconds=_eph_ttl,
                     )
+            completed = getattr(response, "session_boundary_completed", None)
+            if completed is False or (completed is None and not cancel_on_unmarked):
+                # 提示、取消和非边界确认不应取消旧任务；完成中的旧任务仍自行收尾。
+                task = self._session_tasks.get(session_key)
+                if (
+                    self._active_sessions.get(session_key) is command_guard
+                    and current_guard is not None
+                    and task is original_task
+                    and task is not None
+                    and not task.done()
+                ):
+                    self._active_sessions[session_key] = current_guard
+                    return
+                if task is not None and not task.done():
+                    return
+                await self._drain_pending_after_session_command(session_key, command_guard)
+                return
+            self._discard_text_debounce(session_key)
             # Old adapter task (if any) is cancelled AFTER the response has
             # been sent — keeps ordering deterministic and avoids the race.
             await self.cancel_session_processing(
@@ -3912,17 +3961,32 @@ class BasePlatformAdapter(ABC):
                 release_guard=False,
                 discard_pending=False,
             )
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             # On failure, restore the original guard if one still exists so
             # we don't leave the session in a half-reset state.
             if self._active_sessions.get(session_key) is command_guard:
-                if session_key in self._session_tasks and current_guard is not None:
+                task = self._session_tasks.get(session_key)
+                if task is original_task and task is not None and not task.done() and current_guard is not None:
                     self._active_sessions[session_key] = current_guard
-                else:
-                    self._release_session_guard(session_key, guard=command_guard)
+                elif task is None or task.done():
+                    await self._drain_pending_after_session_command(session_key, command_guard)
             raise
+        finally:
+            if command_guards.get(session_key) is command_guard:
+                command_guards.pop(session_key, None)
 
         await self._drain_pending_after_session_command(session_key, command_guard)
+
+    async def complete_session_boundary(self, session_key: str) -> None:
+        """按钮回调不经过命令旁路时，也取消旧任务并释放其守卫。"""
+        if session_key in getattr(self, "_session_command_guards", {}):
+            return
+        guard = self._active_sessions.get(session_key)
+        await self.cancel_session_processing(
+            session_key, release_guard=False, discard_pending=False,
+        )
+        if guard is not None:
+            await self._drain_pending_after_session_command(session_key, guard)
 
     async def handle_message(self, event: MessageEvent) -> None:
         """
@@ -3970,6 +4034,20 @@ class BasePlatformAdapter(ABC):
             # (see PR #4926).
             cmd = event.get_command()
             from hermes_cli.commands import should_bypass_active_session
+            from tools import slash_confirm
+
+            if (
+                slash_confirm.get_pending(session_key)
+                and slash_confirm.parse_choice_reply(event.text, cmd) is not None
+            ):
+                try:
+                    await self._dispatch_active_session_command(
+                        event, session_key, cmd or "confirm",
+                        cancel_on_unmarked=False,
+                    )
+                except Exception as e:
+                    logger.error("[%s] 确认回复处理失败: %s", self.name, e, exc_info=True)
+                return
 
             if should_bypass_active_session(cmd):
                 # /stop, /new, /reset must cancel the in-flight adapter task
@@ -3977,7 +4055,6 @@ class BasePlatformAdapter(ABC):
                 # through the dedicated handoff path that serializes
                 # cancellation + runner response + pending drain.
                 if cmd in {"stop", "new", "reset"}:
-                    self._discard_text_debounce(session_key)
                     try:
                         await self._dispatch_active_session_command(event, session_key, cmd)
                     except Exception as e:
@@ -3999,7 +4076,8 @@ class BasePlatformAdapter(ABC):
                     response = await self._message_handler(event)
                     _text, _eph_ttl = self._unwrap_ephemeral(response)
                     if _text:
-                        _r = await self._send_with_retry(
+                        _r = await self._send_handler_reply(
+                            response, session_key,
                             chat_id=event.source.chat_id,
                             content=_text,
                             reply_to=_reply_anchor_for_event(event),
@@ -4049,7 +4127,8 @@ class BasePlatformAdapter(ABC):
                         response = await self._message_handler(event)
                         _text, _eph_ttl = self._unwrap_ephemeral(response)
                         if _text:
-                            _r = await self._send_with_retry(
+                            _r = await self._send_handler_reply(
+                                response, session_key,
                                 chat_id=event.source.chat_id,
                                 content=_text,
                                 reply_to=_reply_anchor_for_event(event),
@@ -4193,11 +4272,14 @@ class BasePlatformAdapter(ABC):
                 # cancelling, let this message-processing task unwind now.
                 pass
         
+        undelivered_confirm_id = None
         try:
             await self._run_processing_hook("on_processing_start", event)
 
             # Call the handler (this can take a while with tool calls)
             response = await self._message_handler(event)
+            handler_response = response
+            undelivered_confirm_id = getattr(response, "slash_confirm_id", None)
             is_ephemeral_response = isinstance(response, EphemeralReply)
 
             # Slash-command handlers may return an EphemeralReply sentinel to
@@ -4350,13 +4432,16 @@ class BasePlatformAdapter(ABC):
                         _thread_metadata["notify"] = True
                     else:
                         _thread_metadata = {"notify": True}
-                    result = await self._send_with_retry(
+                    result = await self._send_handler_reply(
+                        handler_response, session_key,
                         chat_id=event.source.chat_id,
                         content=text_content,
                         reply_to=_reply_anchor,
                         metadata=_thread_metadata,
                     )
                     _record_delivery(result)
+                    if getattr(result, "success", False):
+                        undelivered_confirm_id = None
 
                     # Schedule auto-deletion of system-notice replies.
                     # Detached so the handler returns immediately; errors
@@ -4604,6 +4689,9 @@ class BasePlatformAdapter(ABC):
                         await _post_result
                 except Exception:
                     pass
+            if undelivered_confirm_id:
+                from tools import slash_confirm
+                slash_confirm.clear(session_key, confirm_id=undelivered_confirm_id)
             # Stop typing indicator
             await _stop_typing_task()
             # Also cancel any platform-level persistent typing tasks (e.g. Discord)

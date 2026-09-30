@@ -7,7 +7,7 @@ description: 查找 Tangyuge-Hermes 当前状态、开发文档和维护规则�
 
 ## 目标
 
-本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 读取 repo `docs/tangyuge-hermes/`。
+本技能是顶层文档入口，负责把用户的自然说法映射到仓库内的固定文档。服务器上的 bot 读取 repo `docs/tangyuge-hermes/`；本部署现场仓库根目录通常是 `$HERMES_HOME/hermes-agent`，当前工作目录下没有 docs 时先查这个绝对路径。
 
 路由优先级：
 

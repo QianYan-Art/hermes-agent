@@ -51,10 +51,10 @@ class TestMinimaxM3StaleCacheGuard:
         import importlib
         import agent.model_metadata as mm
         importlib.reload(mm)
-        base = "https://api.minimaxi.com/anthropic"
+        base = "https://api.minimax.io/anthropic"
         mm.save_context_length("MiniMax-M3", base, 204_800)
         ctx = mm.get_model_context_length(
-            "MiniMax-M3", base_url=base, api_key="", provider="minimax-cn"
+            "MiniMax-M3", base_url=base, api_key="", provider="minimax"
         )
         # Invariant: the stale 204,800 catch-all value must be DROPPED and
         # re-resolved to M3's real, larger context. The exact value depends on
@@ -69,10 +69,10 @@ class TestMinimaxM3StaleCacheGuard:
         import importlib
         import agent.model_metadata as mm
         importlib.reload(mm)
-        base = "https://api.minimaxi.com/anthropic"
+        base = "https://api.minimax.io/anthropic"
         mm.save_context_length("MiniMax-M3", base, 1_000_000)
         ctx = mm.get_model_context_length(
-            "MiniMax-M3", base_url=base, api_key="", provider="minimax-cn"
+            "MiniMax-M3", base_url=base, api_key="", provider="minimax"
         )
         assert ctx == 1_000_000
 
@@ -81,12 +81,12 @@ class TestMinimaxM3StaleCacheGuard:
         import importlib
         import agent.model_metadata as mm
         importlib.reload(mm)
-        base = "https://api.minimaxi.com/anthropic"
+        base = "https://api.minimax.io/anthropic"
         # 204,800 is the CORRECT value for M2.x — guard must not touch it.
         for slug in ("MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1"):
             mm.save_context_length(slug, base, 204_800)
             ctx = mm.get_model_context_length(
-                slug, base_url=base, api_key="", provider="minimax-cn"
+                slug, base_url=base, api_key="", provider="minimax"
             )
             assert ctx == 204_800, f"{slug} should stay 204800, got {ctx}"
 
@@ -143,7 +143,7 @@ class TestMinimaxThinkingSupport:
 class TestMinimaxAuxModel:
     """Verify auxiliary model is the current frontier standard (not highspeed).
 
-    As of M3's release (2026-06-01) the minimax / minimax-cn provider
+    As of M3's release (2026-06-01) the minimax provider
     profiles advertise ``MiniMax-M3`` as their ``default_aux_model`` (the
     same model users see in ``_PROVIDER_MODELS["minimax"]`` and in the
     user-facing ``model.default`` for a Token-Plan install).  The OAuth
@@ -168,13 +168,13 @@ class TestMinimaxAuxModel:
         import model_tools  # noqa: F401
         from agent.auxiliary_client import _get_aux_model_for_provider
         assert _get_aux_model_for_provider("minimax") == "MiniMax-M3"
-        assert _get_aux_model_for_provider("minimax-cn") == "MiniMax-M3"
+        assert _get_aux_model_for_provider("minimax-cn") == ""
 
     def test_minimax_aux_not_highspeed(self):
         import model_tools  # noqa: F401
         from agent.auxiliary_client import _get_aux_model_for_provider
         assert "highspeed" not in _get_aux_model_for_provider("minimax")
-        assert "highspeed" not in _get_aux_model_for_provider("minimax-cn")
+        assert _get_aux_model_for_provider("minimax-cn") == ""
 
 
 class TestMinimaxBetaHeaders:
@@ -287,9 +287,9 @@ class TestMinimaxApiMode:
         from hermes_cli.providers import determine_api_mode
         assert determine_api_mode("minimax") == "anthropic_messages"
 
-    def test_minimax_cn_returns_anthropic_messages(self):
+    def test_retired_minimax_cn_has_no_provider_specific_api_mode(self):
         from hermes_cli.providers import determine_api_mode
-        assert determine_api_mode("minimax-cn") == "anthropic_messages"
+        assert determine_api_mode("minimax-cn") == "chat_completions"
 
     def test_minimax_with_url_also_works(self):
         from hermes_cli.providers import determine_api_mode
@@ -345,11 +345,11 @@ class TestMinimaxPreserveDots:
         from run_agent import AIAgent
         assert AIAgent._anthropic_preserve_dots(agent) is True
 
-    def test_minimax_cn_provider_preserves_dots(self):
+    def test_retired_minimax_cn_has_no_provider_specific_dot_handling(self):
         from types import SimpleNamespace
         agent = SimpleNamespace(provider="minimax-cn", base_url="")
         from run_agent import AIAgent
-        assert AIAgent._anthropic_preserve_dots(agent) is True
+        assert AIAgent._anthropic_preserve_dots(agent) is False
 
     def test_minimax_url_preserves_dots(self):
         from types import SimpleNamespace

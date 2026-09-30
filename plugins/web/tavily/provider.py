@@ -216,7 +216,7 @@ class TavilyWebSearchProvider(WebSearchProvider):
 
     def is_available(self) -> bool:
         """Return True when ``TAVILY_API_KEY`` is set to a non-empty value."""
-        return bool(os.getenv("TAVILY_API_KEY", "").strip())
+        return bool(_split_tavily_api_keys(os.getenv("TAVILY_API_KEY")))
 
     def supports_search(self) -> bool:
         return True

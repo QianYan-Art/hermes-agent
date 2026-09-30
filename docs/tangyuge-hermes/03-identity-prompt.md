@@ -142,7 +142,7 @@ PY
 
 python - <<'PY'
 from run_agent import AIAgent
-a = AIAgent(provider="minimax-cn", model="minimax-m3", api_mode="anthropic_messages", quiet_mode=True, platform="qqbot")
+a = AIAgent(provider="minimax", model="MiniMax-M3", api_mode="anthropic_messages", quiet_mode=True, platform="qqbot")
 s = a._build_system_prompt_parts()["stable"]
 assert s.startswith("# Tangyuge Identity")
 assert "You are Hermes Agent" not in s

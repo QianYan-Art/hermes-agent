@@ -187,6 +187,8 @@ def _supports_vision_override(
     cfg: Optional[Dict[str, Any]],
     provider: str,
     model: str,
+    *,
+    base_url: Optional[str] = None,
 ) -> Optional[bool]:
     """Resolve user-declared vision capability from config.yaml.
 
@@ -204,11 +206,29 @@ def _supports_vision_override(
     if not isinstance(cfg, dict):
         return None
 
-    # 1. Top-level shortcut
     model_cfg_raw = cfg.get("model")
     model_cfg: Dict[str, Any] = model_cfg_raw if isinstance(model_cfg_raw, dict) else {}
+    config_provider = str(model_cfg.get("provider") or "").strip()
+    providers_raw = cfg.get("providers")
+    providers_cfg: Dict[str, Any] = providers_raw if isinstance(providers_raw, dict) else {}
+    declared_provider = providers_cfg.get(config_provider) or {}
+    declared_endpoint = model_cfg.get("base_url") or (
+        declared_provider.get("base_url") if isinstance(declared_provider, dict) else ""
+    )
+    configured_model = str(model_cfg.get("default") or "").strip()
+    same_route = (
+        (
+            not config_provider or provider == config_provider
+            or (provider == "custom" and config_provider in providers_cfg)
+        )
+        and (
+            base_url is None or not declared_endpoint
+            or str(declared_endpoint).strip().rstrip("/") == str(base_url).strip().rstrip("/")
+        )
+    )
+    # 顶层声明只属于全局默认模型，不跨会话模型或端点继承。
     top = _coerce_capability_bool(model_cfg.get("supports_vision"))
-    if top is not None:
+    if top is not None and same_route and (not configured_model or configured_model == model):
         return top
 
     # 2. Per-provider, per-model. Named custom providers (e.g. "my-vllm")
@@ -216,10 +236,7 @@ def _supports_vision_override(
     # (hermes_cli/runtime_provider.py:_resolve_named_custom_runtime), so the
     # config still holds the user-declared name under model.provider. Try
     # both as candidate provider keys.
-    config_provider = str(model_cfg.get("provider") or "").strip()
-    providers_raw = cfg.get("providers")
-    providers_cfg: Dict[str, Any] = providers_raw if isinstance(providers_raw, dict) else {}
-    for p in dict.fromkeys(filter(None, (provider, config_provider))):
+    for p in dict.fromkeys(filter(None, (provider, config_provider if same_route else ""))):
         entry_raw = providers_cfg.get(p)
         entry: Dict[str, Any] = entry_raw if isinstance(entry_raw, dict) else {}
         models_raw = entry.get("models")
@@ -271,18 +288,36 @@ def _lookup_supports_vision(
     provider: str,
     model: str,
     cfg: Optional[Dict[str, Any]] = None,
+    *,
+    base_url: Optional[str] = None,
 ) -> Optional[bool]:
-    """Return True/False if we can resolve caps, None if unknown.
+    """优先尊重显式能力覆盖，再查 Kimi 官方端点与模型表，最后查 models.dev。
 
-    Consults the user's ``supports_vision`` override in config.yaml first
-    (so custom/local models declared as vision-capable don't fall through to
-    text routing in ``auto`` mode), then falls back to models.dev.
+    ``base_url`` 是实际会话端点；仅在未传入时从配置补齐，空字符串不回退。
+    未知能力返回 None，不凭 Kimi 模型名推断第三方端点的能力。
     """
-    override = _supports_vision_override(cfg, provider, model)
+    override = _supports_vision_override(cfg, provider, model, base_url=base_url)
     if override is not None:
         return override
     if not provider or not model:
         return None
+    # 实际会话端点优先，不能用全局 Kimi 配置误判其他会话的兼容服务。
+    endpoint = base_url
+    if endpoint is None and isinstance(cfg, dict):
+        model_cfg = cfg.get("model") or {}
+        providers = cfg.get("providers") or {}
+        if isinstance(model_cfg, dict) and isinstance(providers, dict):
+            configured_provider = str(model_cfg.get("provider") or "")
+            if provider in {configured_provider, "custom"}:
+                entry = providers.get(configured_provider) or {}
+                endpoint = model_cfg.get("base_url") or (
+                    entry.get("base_url") if isinstance(entry, dict) else ""
+                )
+            else:
+                entry = providers.get(provider) or {}
+                endpoint = entry.get("base_url") if isinstance(entry, dict) else ""
+    if str(model).strip().lower() in _KIMI_IMAGE_MODELS and _is_kimi_code_endpoint(endpoint):
+        return True
     try:
         from agent.models_dev import get_model_capabilities
         caps = get_model_capabilities(provider, model)
@@ -298,6 +333,8 @@ def decide_image_input_mode(
     provider: str,
     model: str,
     cfg: Optional[Dict[str, Any]],
+    *,
+    base_url: Optional[str] = None,
 ) -> str:
     """Return ``"native"`` or ``"text"`` for the given turn.
 
@@ -321,7 +358,7 @@ def decide_image_input_mode(
     if _explicit_aux_vision_override(cfg):
         return "text"
 
-    supports = _lookup_supports_vision(provider, model, cfg)
+    supports = _lookup_supports_vision(provider, model, cfg, base_url=base_url)
     if supports is True:
         return "native"
     return "text"
@@ -432,6 +469,7 @@ _KIMI_VIDEO_MODELS = frozenset({
     "kimi-for-coding",
     "kimi-for-coding-highspeed",
 })
+_KIMI_IMAGE_MODELS = _KIMI_VIDEO_MODELS | {"k3-256k"}
 
 
 def _is_kimi_code_endpoint(base_url: str) -> bool:
@@ -443,11 +481,17 @@ def _is_kimi_code_endpoint(base_url: str) -> bool:
     """
     if not base_url:
         return False
-    parsed = urlsplit(str(base_url).strip())
-    return (parsed.hostname or "").lower() == "api.kimi.com" and parsed.path.rstrip("/") in {
-        "/coding",
-        "/coding/v1",
-    }
+    try:
+        parsed = urlsplit(str(base_url).strip())
+        return (
+            parsed.scheme.lower() == "https"
+            and (parsed.hostname or "").lower() in {"api.kimi.com", "api.kimi.ai"}
+            and parsed.port in {None, 443}
+            and not (parsed.username or parsed.password or parsed.query or parsed.fragment)
+            and parsed.path.rstrip("/") in {"/coding", "/coding/v1"}
+        )
+    except ValueError:
+        return False
 
 
 def supports_native_video_input(provider: str, model: str, base_url: str = "") -> bool:
@@ -465,7 +509,7 @@ def supports_native_video_input(provider: str, model: str, base_url: str = "") -
     """
     prov = (provider or "").strip().lower()
     mdl = (model or "").strip().lower()
-    if prov in {"minimax", "minimax-cn"} and mdl.startswith("minimax-m3"):
+    if prov == "minimax" and mdl.startswith("minimax-m3"):
         return True
     if mdl in _KIMI_VIDEO_MODELS and _is_kimi_code_endpoint(base_url):
         return True

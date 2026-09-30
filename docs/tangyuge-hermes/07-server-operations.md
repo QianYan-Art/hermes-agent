@@ -30,7 +30,7 @@ Default model provider:
   解析出的内部 provider 名是 `custom`）
 - Display name: `kimi-code`
 - Base URL: `https://api.kimi.com/coding/v1`
-- Default model: `k3-256k`
+- Default model: `kimi-for-coding`
 - Key env: `KIMI_CODE_API_KEY`（值只存 runtime `.env`，不入仓库和文档）
 - Transport: 显式 `chat_completions`。必须显式写，否则 URL 自动检测会把
   `/coding` 当成 Anthropic 协议。
@@ -40,39 +40,49 @@ Default model provider:
   `262144`，约束的是 `kimi-for-coding`；该模型接口自报 1048576。
   注意窗口只认 per-model 的 `models.<model>.context_length`，
   **不认** provider 顶层的 `context_length`。
-- `agent.reasoning_effort` 全局为 `low`。Kimi 的思考参数由
+- `agent.reasoning_effort` 全局为 `high`。Kimi 的思考参数由
   `plugins/model-providers/custom/` 的 Kimi Code 分支发出：
   `extra_body.thinking.type` 为 `enabled`/`disabled`，并映射
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
   该分支只匹配主机 `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，
-  其他自定义 provider 与 Ollama 行为不变。
-- MiniMax 转为备用：`MINIMAX_CN_API_KEY` 保留在 `.env`，内置 `minimax-cn`
-  provider 仍可用，但不再是默认主模型。
+  其他自定义 provider 行为不变。
+- CN API-key provider 已退役：配置、凭据、认证入口、模型目录和专属发现逻辑
+  已移除。国际 `minimax` 和 `minimax-oauth` 的通用支持仍保留。
 - The old main-model custom providers `openrouter`, `siliconflow`,
   `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
-  Auxiliary/vision, image generation, and TTS settings are separate and should
-  not be removed when cleaning main model providers.
+  生图与 TTS 设置独立，本轮保持不变；旧独立视觉服务已移除。
 - `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
   main model does not use it.
 - `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
   （`cache_control` 标记 + 5 分钟续期）的行为；Kimi Code 走
   `chat_completions`，不适用这条 Anthropic 缓存路径。
-- `agent.image_input_mode` is `auto` and `auxiliary.vision.provider` points to
-  `custom:ollama_vision`, so QQ images are summarized by the auxiliary vision
-  backend instead of being sent to the main model. 图片链路与主模型无关，
-  切换默认模型不影响它。
+- `agent.image_input_mode` 为 `auto`，没有独立辅助视觉配置，QQ 图片直接交给
+  本会话的 Kimi 主模型。图片使用 OpenAI 兼容 `image_url` base64 data URL。
+  路由基于 `_resolve_session_agent_runtime()` 的模型、provider 和真实端点，
+  会话 `/model` 切换生效，不受其他会话的进程全局状态影响。
+  显式 `supports_vision: false`、`image_input_mode: text` 或独立视觉覆盖仍优先。
 - QQ videos are routed independently from images. 能否内联上传由
   `agent/image_routing.py` 的 `supports_native_video_input()` 判定，目前有两条
   已验证路径：
-  - MiniMax：provider 属于 `{minimax, minimax-cn}` 且模型名以 `minimax-m3`
+  - 国际 MiniMax：provider 为 `minimax` 且模型名以 `minimax-m3`
     开头，视频作为 Anthropic 兼容的原生 `video` block 上传。
-  - Kimi Code：端点为 `api.kimi.com` 的 `/coding` 或 `/coding/v1`，且模型是
+  - Kimi Code：HTTPS 官方端点为 `api.kimi.com` 或 `api.kimi.ai` 的
+    `/coding` 或 `/coding/v1`，且模型是
     `kimi-for-coding`、`kimi-for-coding-highspeed` 或 `k3`，视频作为
     OpenAI 兼容的 `video_url` base64 data URL 上传，与图片同形。
     **`k3-256k` 按官方模型对比表不支持视频**，不在名单内。
   命名自定义 provider 运行时解析成 `custom`，所以 Kimi 这条靠 base_url 识别，
   相似主机名不会误命中。不在名单内的模型回落到缓存路径文本标记。
   内联预算两条路径共用：单文件 45 MiB、单轮合计 45 MiB，超出即回落。
+- Kimi 官方能力依据：`https://www.kimi.com/code/docs/kimi-code/models.html`；
+  请求内容类型对应官方 kimi-cli 的 `ImageURLPart` / `VideoURLPart` 适配器。
+- `/auxmodel` 显示本会话主模型媒体能力、生图与 TTS 配置，以及搜索和提取实际
+  选择的后端。主模型视觉通过 `/model` 切换，未配置独立视觉时不会创建辅助覆盖。
+  生图/TTS 仍可用 `/auxmodel image|tts <model>` 只切模型名。
+- Tavily 的 `TAVILY_API_KEY` 只放 runtime `.env`，可用逗号或换行分隔多个 key；
+  请求轮换首选 key，认证、限额、服务或连接失败时按请求实现依次回退。
+  `TAVILY_BASE_URL` 可覆盖默认 `https://api.tavily.com`。
+  `/auxmodel` 只显示配置与 key 数，不显示密钥、不发请求，不把已配置当成联网验证通过。
 - 四类入站媒体各有独立缓存目录和各自的清理，互不混用：
 
   | 类型 | 目录常量 | 清理函数 |
@@ -105,7 +115,7 @@ Default model provider:
   intent is to restore legacy built-in provider auto-listing from env vars.
 - Bundled main-model provider discovery is allow-listed to `custom`,
   `deepseek`, and `minimax`. The expected provider registry is `custom`,
-  `deepseek`, `minimax`, `minimax-cn`, and `minimax-oauth`.
+  `deepseek`, `minimax`, and `minimax-oauth`.
 - `/home/hermes/.hermes/SOUL.md` is a style-only overlay. It must not contain
   `You are Hermes Agent`, `created by Nous Research`, or any other identity
   definition. `agent/prompt_builder.py` normalizes the old default SOUL identity
@@ -537,6 +547,10 @@ Chat-side restart:
 且保留历史，由阿颜执行 `/reset`：下一轮重建提示，同时保留旧会话记录和当前模型、
 provider、reasoning 设置。`/new` 会删除旧会话记录并恢复全局默认，不作为本场景的
 默认建议。部署不得代为执行会话重置；拼接与缓存契约见 `03-identity-prompt.md`。
+
+`/new`、`/reset` 在忙闲状态共用确认流程；批准前不取消当前任务或清空队列，
+取消确认保持原状。未送达或发送中止的文字确认按提示 ID 撤销，不影响后来
+替换的确认。原任务已结束时，确认发送异常也会排空期间到达的队列，避免消息滞留。
 
 Chinese operator phrasing:
 

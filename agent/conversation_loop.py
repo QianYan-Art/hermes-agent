@@ -3102,10 +3102,9 @@ def run_conversation(
                     _provider_lower = (getattr(agent, "provider", "") or "").lower()
                     _base_lower = (getattr(agent, "base_url", "") or "").rstrip("/").lower()
                     is_minimax_provider = (
-                        _provider_lower in {"minimax", "minimax-cn"}
+                        _provider_lower == "minimax"
                         or _base_lower.startswith((
                             "https://api.minimax.io/anthropic",
-                            "https://api.minimaxi.com/anthropic",
                         ))
                     )
                     minimax_delta_only_overflow = (

@@ -26,7 +26,7 @@ from agent.image_routing import supports_native_video_input
 class TestSupportsNativeVideoInput:
     def test_minimax_m3_unchanged(self):
         """MiniMax 的 Anthropic 原生 video block 路径保持原行为。"""
-        assert supports_native_video_input("minimax-cn", "minimax-m3", "")
+        assert not supports_native_video_input("minimax-cn", "minimax-m3", "")
         assert supports_native_video_input("minimax", "minimax-m3-preview", "")
 
     def test_kimi_code_named_provider(self):
@@ -116,7 +116,7 @@ class TestReadMainBaseUrl:
         monkeypatch.setattr(aux, "_RUNTIME_MAIN_BASE_URL", "")
         monkeypatch.setattr(
             "hermes_cli.config.load_config",
-            lambda: {"model": {"provider": "minimax-cn", "default": "minimax-m3"}},
+            lambda: {"model": {"provider": "minimax", "default": "minimax-m3"}},
         )
         assert aux._read_main_base_url() == ""
 

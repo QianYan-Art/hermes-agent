@@ -164,8 +164,8 @@ Bundled model provider discovery is narrowed to:
 - `minimax`
 
 The visible provider registry should contain only `custom`, `deepseek`,
-`minimax`, `minimax-cn`, and `minimax-oauth`. MiniMax is the default 81 runtime
-provider; DeepSeek is the retained backup provider.
+`minimax`, and `minimax-oauth`。81 默认主模型为命名自定义 provider `kimi-code`
+的 `kimi-for-coding`，国际 MiniMax 保留可选支持，DeepSeek 保留备用支持。
 
 ## Dependency Boundary
 

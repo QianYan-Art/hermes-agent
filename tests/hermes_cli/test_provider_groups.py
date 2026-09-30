@@ -61,12 +61,12 @@ def test_ungrouped_providers_pass_through_in_order():
 
 
 def test_multi_member_group_folds_to_one_row():
-    rows = group_providers(["minimax", "minimax-oauth", "minimax-cn"])
+    rows = group_providers(["minimax", "minimax-oauth"])
     assert len(rows) == 1
     row = rows[0]
     assert row["kind"] == "group"
     assert row["group_id"] == "minimax"
-    assert row["members"] == ["minimax", "minimax-oauth", "minimax-cn"]
+    assert row["members"] == ["minimax", "minimax-oauth"]
     # group rows carry the short top-level description from PROVIDER_GROUPS
     assert row["description"] == PROVIDER_GROUPS["minimax"][1]
     assert row["description"]
@@ -75,7 +75,7 @@ def test_multi_member_group_folds_to_one_row():
 def test_group_appears_at_first_member_position():
     """The group row takes the slot of its earliest-listed present member,
     and later members do not re-emit."""
-    rows = group_providers(["nous", "minimax", "deepseek", "minimax-cn"])
+    rows = group_providers(["nous", "minimax", "deepseek", "minimax-oauth"])
     kinds = [(r["kind"], r.get("group_id") or r.get("slug")) for r in rows]
     assert kinds == [
         ("single", "nous"),
@@ -83,7 +83,7 @@ def test_group_appears_at_first_member_position():
         ("single", "deepseek"),
     ]
     # both minimax members folded into the single group row
-    assert rows[1]["members"] == ["minimax", "minimax-cn"]
+    assert rows[1]["members"] == ["minimax", "minimax-oauth"]
 
 
 def test_single_present_member_degrades_to_single_row():
@@ -97,8 +97,8 @@ def test_single_present_member_degrades_to_single_row():
 def test_member_order_follows_declaration_not_input():
     """Inside a folded group, members are ordered by PROVIDER_GROUPS, not by
     the order they appeared in the input list."""
-    rows = group_providers(["minimax-cn", "minimax", "minimax-oauth"])
-    assert rows[0]["members"] == ["minimax", "minimax-oauth", "minimax-cn"]
+    rows = group_providers(["minimax-oauth", "minimax"])
+    assert rows[0]["members"] == ["minimax", "minimax-oauth"]
 
 
 def test_duplicate_slugs_ignored():

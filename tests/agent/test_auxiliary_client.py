@@ -2118,7 +2118,7 @@ class TestAnthropicCompatImageConversion:
     def test_known_providers_detected(self):
         from agent.auxiliary_client import _is_anthropic_compat_endpoint
         assert _is_anthropic_compat_endpoint("minimax", "")
-        assert _is_anthropic_compat_endpoint("minimax-cn", "")
+        assert not _is_anthropic_compat_endpoint("minimax-cn", "")
 
     def test_openrouter_not_detected(self):
         from agent.auxiliary_client import _is_anthropic_compat_endpoint

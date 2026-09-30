@@ -8,8 +8,9 @@
 # Kanban, desktop/TUI/web UI, and generic bootstrap surfaces.
 
 model:
-  provider: minimax-cn
-  default: minimax-m3
+  provider: kimi-code
+  default: kimi-for-coding
+  context_length: 262144
 
 fallback_providers:
   - provider: deepseek
@@ -21,14 +22,11 @@ prompt_caching:
 agent:
   image_input_mode: auto
 
-auxiliary:
-  vision:
-    provider: custom:ollama_vision
-
 providers:
-  ollama_vision:
-    base_url: http://127.0.0.1:11434/v1
-    model: qwen2.5vl:7b
+  kimi-code:
+    base_url: https://api.kimi.com/coding/v1
+    key_env: KIMI_CODE_API_KEY
+    # 图片和视频直接交给主模型；k3-256k 仅支持图片。
 
 image_gen:
   provider: openai

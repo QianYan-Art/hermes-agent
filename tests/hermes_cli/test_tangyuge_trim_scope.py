@@ -15,7 +15,6 @@ def test_tangyuge_bundled_provider_registry_is_narrow():
         "custom",
         "deepseek",
         "minimax",
-        "minimax-cn",
         "minimax-oauth",
     }
 

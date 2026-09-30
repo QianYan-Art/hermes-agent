@@ -314,13 +314,6 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "MiniMax-M2.7",
         "MiniMax-M2.7-highspeed",
     ],
-    "minimax-cn": [
-        "MiniMax-M3",
-        "MiniMax-M2.7",
-        "MiniMax-M2.5",
-        "MiniMax-M2.1",
-        "MiniMax-M2",
-    ],
     "anthropic": [
         "claude-opus-4-8",
         "claude-opus-4-7",
@@ -931,7 +924,6 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("stepfun",        "StepFun Step Plan",       "StepFun Step Plan (Agent / coding models via Step Plan API)"),
     ProviderEntry("minimax",        "MiniMax",                  "MiniMax (Global direct API)"),
     ProviderEntry("minimax-oauth",  "MiniMax (OAuth)",          "MiniMax via OAuth browser login (Coding Plan, minimax.io)"),
-    ProviderEntry("minimax-cn",     "MiniMax (China)",          "MiniMax China (Domestic direct API)"),
     ProviderEntry("ollama-cloud",   "Ollama Cloud",             "Ollama Cloud (Cloud-hosted open models, ollama.com)"),
     ProviderEntry("arcee",          "Arcee AI",                 "Arcee AI (Trinity models, direct API)"),
     ProviderEntry("gmi",            "GMI Cloud",                "GMI Cloud (Multi-model direct API)"),
@@ -991,7 +983,7 @@ _PROVIDER_LABELS["custom"] = "Custom endpoint"  # special case: not a named prov
 # ---------------------------------------------------------------------------
 PROVIDER_GROUPS: dict[str, tuple[str, str, list[str]]] = {
     "kimi":     ("Kimi / Moonshot", "Coding Plan, Moonshot global & China endpoints", ["kimi-coding", "kimi-coding-cn"]),
-    "minimax":  ("MiniMax",         "Global, OAuth Coding Plan & China endpoints",     ["minimax", "minimax-oauth", "minimax-cn"]),
+    "minimax":  ("MiniMax",         "Global API & OAuth Coding Plan",                  ["minimax", "minimax-oauth"]),
     "xai":      ("xAI Grok",        "Direct API or SuperGrok / Premium+ OAuth",        ["xai", "xai-oauth"]),
     "google":   ("Google Gemini",   "AI Studio API or OAuth + Code Assist",            ["gemini", "google-gemini-cli"]),
     "openai":   ("OpenAI",          "Codex CLI or direct OpenAI API",                  ["openai-codex", "openai-api"]),
@@ -1094,8 +1086,6 @@ _PROVIDER_ALIASES = {
     "arceeai": "arcee",
     "gmi-cloud": "gmi",
     "gmicloud": "gmi",
-    "minimax-china": "minimax-cn",
-    "minimax_cn": "minimax-cn",
     "minimax-portal": "minimax-oauth",
     "minimax-global": "minimax-oauth",
     "minimax_oauth": "minimax-oauth",
@@ -3613,7 +3603,7 @@ def validate_requested_model(
 
     # MiniMax providers don't expose a /models endpoint — validate against
     # the static catalog instead, similar to openai-codex.
-    if normalized in {"minimax", "minimax-cn"}:
+    if normalized == "minimax":
         try:
             catalog_models = provider_model_ids(normalized)
         except Exception:

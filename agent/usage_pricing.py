@@ -524,15 +524,6 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source="official_docs_snapshot",
         pricing_version="minimax-pricing-2026-04",
     ),
-    (
-        "minimax-cn",
-        "minimax-m2.7",
-    ): PricingEntry(
-        input_cost_per_million=Decimal("0.30"),
-        output_cost_per_million=Decimal("1.20"),
-        source="official_docs_snapshot",
-        pricing_version="minimax-pricing-2026-04",
-    ),
 }
 
 
@@ -574,7 +565,7 @@ def resolve_billing_route(
         return BillingRoute(provider="anthropic", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
     if provider_name == "openai":
         return BillingRoute(provider="openai", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
-    if provider_name in {"minimax", "minimax-cn"}:
+    if provider_name == "minimax":
         return BillingRoute(provider=provider_name, model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
     if provider_name in {"custom", "local"} or (base and "localhost" in base):
         return BillingRoute(provider=provider_name or "custom", model=model, base_url=base_url or "", billing_mode="unknown")
