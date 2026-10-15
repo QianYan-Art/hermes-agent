@@ -333,7 +333,8 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
 
 旁路请求名和执行边界：
 
-- 默认和 `gpt-image-2` 使用 Image-2；`gpt-image2` 是同一模型的兼容别名。
+- CPA 未显式指定型号时和 `gpt-image-2` 使用 Image-2；
+  `gpt-image2` 是同一模型的兼容别名。这不覆盖 Hermes 显式配置的 Flare 请求。
 - `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 保留同名请求；
   `gpt-image-2.5` 仅是本地映射到 Flare 的便利别名。未知名称返回 HTTP 400。
 - 2026-10-15 阿颜明确允许两个 2.5 请求接收终态 `gpt-image-2-codex`。
@@ -350,8 +351,15 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
   后续失败可能表现为 HTTP 200 加 `error` 正文；判断成功须检查正文和非空图片数据。
   Hermes 保留上游错误原因，不自动换模型重试。
 - Hermes 返回的 `quality` / `size` 是请求值，不是输出图片的实测元数据。
-  本轮请求 `medium`、`1024x1024`，实际文生图和编辑均为 `1312x1199`；
+  2026-09-09 请求 `medium`、`1024x1024`，文生图和编辑实测均为 `1312x1199`；
+  2026-10-15 两个 2.5 入口的文生图实测均为可解码的 `1254x1254` PNG。
   不能承诺旁路严格遵守尺寸/质量参数，也不能凭 `low` 档推断实际费用。
+
+2026-10-15 已按先提交推送、再部署的顺序发布功能提交 `facb05d`：
+124 图片旁路健康检查正常，Flare 与 Sunburst 均实际生图成功，质量请求保持 `medium`；
+81 默认主模型为 `kimi-for-coding`，QQ 已连接，会话、凭据及其他配置保持。
+流量日报固定命令实际读取到 12 个公开节点，其中 11 个有完整采样；
+本轮未主动发送 QQ 测试消息，不将接口和回归结果宣称为 QQ 人工触发端到端验收。
 
 usage 由当前 CPA 入口聚合，顶部展示七个家族：`gpt-5.5`、`gpt-5.6-luna`、
 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra`、`gpt-image-2`、
