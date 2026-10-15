@@ -58,7 +58,11 @@ Default model provider:
 - 旧 `gateway_session_model_overrides.json` 是历史残留，当前代码没有加载它；
   不能仅凭文件内容声称活动会话仍在使用 MiMo。清理退役服务时须同时检查
   配置、认证、环境、网关内存覆盖及模型目录缓存，不能只删除 `providers:` 条目。
-  通用公开模型目录可能包含厂商名称，不代表配置了相应服务或凭据。
+  2026-10-15 已删除该旧文件、`provider_models_cache.json`、旧
+  `cache/model_catalog.json` 和停留在 5 月的 `qqbot_gateway_status.json`，
+  重启后核对进程环境及真实模型解析，默认仍为 Kimi Code。
+  当前连接状态以 `gateway_state.json` 的 QQ platform 状态为准。
+  通用公开模型目录重新获取后可能包含厂商名称，不代表配置了相应服务或凭据。
 - `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
   main model does not use it.
 - `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
@@ -517,6 +521,14 @@ The 81 server keeps a systemd timer for old session transcript cleanup:
   `session_retention_*/deleted-over-retention.txt` 是删除清单，不是内容备份。
 - Unit documentation: this file,
   `/home/hermes/.hermes/hermes-agent/docs/tangyuge-hermes/07-server-operations.md`
+
+2026-10-15 按阿颜本轮明确授权另做了一次全量旧会话清理，这不是定时器策略变更：
+网关空闲时停机，以 `sessions/sessions.json` 的唯一映射保留当前会话，
+通过 `SessionDB.delete_sessions()` 删除其余两条记录，数据库由 3 条会话、25 条消息
+变为 1 条会话、0 条消息。保留的当前会话在操作前本来就是空会话，
+其记录、消息及基础提示快照的聚合哈希未变，映射文件逐字节未变；
+没有执行 `/new`、`/reset` 或发送测试消息。
+清理后完成 FTS 索引、外键及 SQLite 完整性检查，并回收 WAL/空闲数据库页。
 
 Check status:
 
