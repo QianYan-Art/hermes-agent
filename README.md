@@ -145,7 +145,7 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   and `minimax-oauth`; DeepSeek remains available as fallback.
   81 runtime 的默认主模型是命名自定义 provider `kimi-code` 的
   `kimi-for-coding`（解析为内部 `custom`，transport `chat_completions`，
-  窗口 262144，`agent.reasoning_effort: high`），国际 MiniMax 保留可选支持。
+  窗口 262144，`agent.reasoning_effort: low`），国际 MiniMax 保留可选支持。
   白名单未新增完整内置 provider。
 - `/auxmodel` 显示本会话主模型的图片、视频能力，生图、TTS 和联网后端。
   Tavily 使用 `TAVILY_API_KEY`，支持逗号或换行分隔的多个 key；状态查询只检查

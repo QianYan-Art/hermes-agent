@@ -326,7 +326,8 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
 `image_gen.openai.timeout=180`。图片专用密钥在 `OPENAI_IMAGE_API_KEY`，
 现场未设置其他图片模型环境覆盖；不将密钥写入仓库或文档。
 
-当前请求从 EdgeOne 经 124 的 nginx 到 `cliproxyapi-edge-proxy`（回环 59999），
+当前请求从 EdgeOne 经 124 的 Caddy 和 systemd 网桥 relay，
+到 `cliproxyapi-edge-proxy`（回环 59999），
 图片转交 `cliproxyapi-image-proxy`（60001），普通模型请求转交 CLIProxyAPI（59998）。
 旁路使用 ChatGPT Codex 后端，内部编排模型是 `gpt-5.6-luna`；它不是图片工具
 模型，也不是 Hermes 主聊天模型。官方 Images API 的模型支持不等于该账号通道权限。
@@ -336,7 +337,7 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
 - CPA 未显式指定型号时和 `gpt-image-2` 使用 Image-2；
   `gpt-image2` 是同一模型的兼容别名。这不覆盖 Hermes 显式配置的 Flare 请求。
 - `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 保留同名请求；
-  `gpt-image-2.5` 仅是本地映射到 Flare 的便利别名。未知名称返回 HTTP 400。
+  `gpt-image-2.5` 不是旁路接受的便利别名，与未知名称一样返回 HTTP 400。
 - 2026-10-15 阿颜明确允许两个 2.5 请求接收终态 `gpt-image-2-codex`。
   原严格校验因此拒绝图片的问题由
   `ops/cliproxyapi-image-proxy/codex-image-compat.patch` 局部修复；
@@ -361,27 +362,31 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
 流量日报固定命令实际读取到 12 个公开节点，其中 11 个有完整采样；
 本轮未主动发送 QQ 测试消息，不将接口和回归结果宣称为 QQ 人工触发端到端验收。
 
-usage 由当前 CPA 入口聚合，顶部展示七个家族：`gpt-5.5`、`gpt-5.6-luna`、
-`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra`、`gpt-image-2`、
-`gpt-image-2.5`。两个 2.5 型号归入同一展示家族，出现该行不证明权限可用。
+2026-10-15 核对 124 的 usage 实现，展示模型为 `gpt-6-luna`、`gpt-6-sol`、
+`gpt-6.1-sol`、`gpt-6-astra`、`gpt-image-2`、
+`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`，两个 2.5 分别记账。
+仅出现展示行不证明模型可用；旁路编排模型仍为 `gpt-5.6-luna`，不能混同。
 按 Key 展示不等于多租户隔离；价格是人工维护快照，不保证自动抓取最新价格。
 
 图片费用仅按 Responses 总 `usage` 估算，缺少完整图片模态与编排模型拆账。
-编辑路径使用 `gpt-image-2-edit` / `gpt-image-2.5-edit` 作为估算键，它们不是真实
+编辑路径使用 `gpt-image-2-edit`、`gpt-image-2.5-flare-edit`、
+`gpt-image-2.5-sunburst-edit` 作为估算键，它们不是真实
 模型。失败按旁路实际状态记账，不因保活 HTTP 200 改记成功；无 token 的失败
 不虚构费用，但零估算不代表没有消耗上游额度。
 
-NetCup 入口已修复 SDK multipart 编辑请求的模型提取：按 `Content-Type` 解析
+从 NetCup 迁至 124 的入口保留 SDK multipart 编辑请求的模型提取：按 `Content-Type` 解析
 `model` 表单字段，不把图片或上传文件内容当作模型名。另保留响应截取上限
 2 MiB，在大图 JSON 被截断时用标准 JSON 解码器读取前部完整的顶层 `usage`；
 旁路输出顺序为 `created`、`usage`、`data`。缺失或不完整用量仍不补造 token，
 不能保证任意第三方响应布局都可恢复用量。历史空模型/零估算记录保持原样。
-正式实现和回归测试位于 NetCup 的
+2026-10-15 核实，正式实现和回归测试位于 124 的
 `/root/cliproxyapi-edge-proxy/cliproxyapi_edge_proxy.py` 和同目录
-`test_usage_image25.py`，11 项测试使用临时数据库，未重算运行时账目。
-这两个 NetCup 文件不属于 Hermes 本地/GitHub/81 的三端 Git 基线。
+`test_usage_image25.py`；既有 11 项验收结果是 2026-09-09 快照，本轮没有重跑
+edge 测试或重算运行时账目。这两个服务器文件不属于 Hermes 本地/GitHub/81 的三端 Git 基线。
 
-本轮 81 真实 `_handle_image_generate` 文生图和编辑各一张成功，分别约 36/47 秒，
+以下图片与 QQ 补验结果保留为 2026-09-09 历史记录，不是本次 2.5 兼容发布的新增外发：
+
+当时 81 真实 `_handle_image_generate` 文生图和编辑各一张成功，分别约 36/47 秒，
 PNG 完整性和 `MEDIA:<path>` 校验通过，结果存入顶层 `image_cache/`；
 两张测试图片已清除。该轮尚未向 QQ 实际投递，不能把工具产图成功当作 QQ 送达验收；
 后续 QQ 补验结果见下。
