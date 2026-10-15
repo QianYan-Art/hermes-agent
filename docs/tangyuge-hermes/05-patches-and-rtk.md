@@ -65,7 +65,7 @@ external patch files to replay:
   `/auxmodel` 展示本会话主模型的图片/视频能力、辅助生图/TTS，以及真实选择的搜索/
   提取后端和 Tavily key 数量；只读配置，不发联网探测。
 - QQ `/model` 的无参数列表被 `_filter_dialog_model_providers()` 限定在
-  `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn` 三个 slug 上。这三个
+  `openrouter`、`deepseek-direct` 两个 slug 上。旧小米入口已移除。这两个
   在 81 runtime 都不使用，所以过滤后列表为空，这是有意保留的取舍：切模型一律
   显式写 `/model <model> --provider <slug>`。不要为了让上游列表用例通过而放开
   白名单。

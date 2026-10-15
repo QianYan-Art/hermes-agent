@@ -22,6 +22,7 @@ TRIMMED_TEST_TARGETS = (
     "tests/gateway/test_native_image_buffer_isolation.py",
     "tests/gateway/test_native_video_routing.py",
     "tests/gateway/test_model_switch_context_scope.py",
+    "tests/gateway/test_model_dialog_retired_provider.py",
     "tests/gateway/test_session_info.py",
     "tests/gateway/test_session_boundary_hooks.py",
     "tests/gateway/test_media_extraction.py",

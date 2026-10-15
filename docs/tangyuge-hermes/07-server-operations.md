@@ -48,12 +48,17 @@ Default model provider:
   其他自定义 provider 行为不变。
 - `minimax-cn` CN API-key provider 已退役：配置、`MINIMAX_CN_API_KEY`、
   认证入口、模型目录和专属“不自动发现模型”逻辑已移除。
-  国际 `minimax` 和 `minimax-oauth` 的通用支持仍保留。
+  2026-10-15 复核当前运行配置、认证和 `.env`，国际 MiniMax 同样未配置、
+  未保存凭据。国际 `minimax` 和 `minimax-oauth` 的通用协议支持不等于启用配置。
 - The old main-model custom providers `openrouter`, `siliconflow`,
   `deepseek-direct`, and `xiaomi-token-plan-cn` are not used on the 81 runtime.
   生图与 TTS 设置独立，本轮保持不变；旧 `providers.ollama_vision` 配置及
   `AUXILIARY_VISION_API_KEY` 专属凭据已移除，不再经过独立 Ollama 视觉服务。
   这些退役标识仅用于检索迁移说明，不是可恢复使用的当前配置入口。
+- 旧 `gateway_session_model_overrides.json` 是历史残留，当前代码没有加载它；
+  不能仅凭文件内容声称活动会话仍在使用 MiMo。清理退役服务时须同时检查
+  配置、认证、环境、网关内存覆盖及模型目录缓存，不能只删除 `providers:` 条目。
+  通用公开模型目录可能包含厂商名称，不代表配置了相应服务或凭据。
 - `DEEPSEEK_API_KEY` may remain in `.env` as a fallback key, but the default
   main model does not use it.
 - `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
@@ -662,8 +667,8 @@ on the server, then checkout `main`.
   `~/.hermes/cache/model_catalog.json`，不会改动 `config.yaml`，因此不会影响主模型、13 个 `auxiliary` 槽位、`image_gen`、`tts`、`stt`、`x_search` 或 `grok-search` 的既有配置。
 - QQ 的 `/model` 不带参数时列表是**空的**，这是有意保留的行为：
   `gateway/run.py` 的 `_filter_dialog_model_providers()` 把可列出的
-  provider 限定在 `openrouter`、`deepseek-direct`、`xiaomi-token-plan-cn`，
-  而这三个在 81 runtime 上都不使用，因此过滤后为 0 条。切换模型一律用上面
+  provider 限定在 `openrouter`、`deepseek-direct`，旧小米入口已移除，
+  而这两个在 81 runtime 上都不使用，因此过滤后为 0 条。切换模型一律用上面
   的显式命令。副作用：上游用例
   `tests/gateway/test_model_command_custom_providers.py::test_handle_model_command_lists_saved_custom_provider`
   断言列表会展示自定义 provider，在本项目中长期失败，属于该取舍的已知结果，

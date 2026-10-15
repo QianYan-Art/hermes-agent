@@ -11441,7 +11441,7 @@ class GatewayRunner:
             current_api_key = override.get("api_key", current_api_key)
 
         def _filter_dialog_model_providers(providers: list[dict]) -> list[dict]:
-            allowed = {"openrouter", "deepseek-direct", "xiaomi-token-plan-cn"}
+            allowed = {"openrouter", "deepseek-direct"}
 
             def _slug(value: str) -> str:
                 raw = str(value or "").strip()
