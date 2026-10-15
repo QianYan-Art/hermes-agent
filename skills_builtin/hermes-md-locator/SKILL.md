@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 定位 Tangyuge-Hermes 文档、模型、媒体、会话、流量日报及 auxmodel/Tavily 状态.
+description: 定位二开文档、人格、模型、媒体、会话与辅助服务状态.
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -40,6 +40,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "流量日报", "Komari", "VPS 流量", "近24小时流量", "komari_traffic_daily" | `docs/tangyuge-hermes/07-server-operations.md` 的“Komari 流量日报”；只运行固定读取命令，不改 Komari/Kuma 或 Telegram |
 | "auxmodel", "/auxmodel", "auxmodel 状态", "辅助模型状态", "Tavily 状态", "联网后端", "搜索后端", "提取后端", "TAVILY_API_KEY", "TAVILY_BASE_URL" | 先读 `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；实现变更再读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "ollama-vision", "ollama_vision", "providers.ollama_vision", "AUXILIARY_VISION_API_KEY", "minimax-cn", "MINIMAX_CN_API_KEY", "退役配置", "旧视觉key", "模型发现机制" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”和 `docs/tangyuge-hermes/05-patches-and-rtk.md`；这些标识是退役索引，不是当前配置入口 |
+| "MiMo 覆盖", "旧小米模型", "MiniMax 配置清理", "gateway_session_model_overrides.json", "模型配置删了仍在用" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；区分旧文件、实际读取链与进程内覆盖，不凭历史文件断言当前路由 |
 | "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
 | "Kimi 请求头", "User-Agent", "prompt_cache_key", "缓存命中", "cached_tokens", "官方订阅", "OpenCode Go", "x-opencode-session" | `docs/tangyuge-hermes/07-server-operations.md` 的“Kimi Code 请求与缓存” |
 | "k3-256k", "250K还是256K", "探测失败", "retained", "fallback", "切换后窗口不一致" | `docs/tangyuge-hermes/07-server-operations.md` 的模型与上下文命令；实现边界读 `05-patches-and-rtk.md` |
@@ -53,6 +54,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "安全依赖升级", "依赖漏洞", "OSV", "OSV Scanner", "漏洞扫描", "CVE", "osv-scanner.toml" | `docs/tangyuge-hermes/02-trim-plan.md` and `docs/tangyuge-hermes/06-upgrade-freeze.md` |
 | "唐语歌人格", "角色卡", "bot内核", "内核提示词", "提示词注入内容", "身份歧义", "Hermes身份噪音", "SOUL", "SOUL文档", "通用SOUL文档", "Hermes SOUL", "QQBot变体", "SOUL_QQBOT", "SOUL_QQBOT_DM", "SOUL_QQBOT_GROUP", "私聊SOUL", "群聊SOUL", "身份注入", "角色怎么插入项目", "角色卡界面", "固定UI块", "每轮复盘", "状态栏", "好感度", "情绪表", "表情包", "Unicode emoji", "QQ表情", "方括号表情占位符", "害羞/比心" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "tangyuge-roleplay", "角色扮演skill", "陪聊skill", "唐语歌skill", "角色卡和skill关系", "角色卡输出格式", "QQ回复格式" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/04-built-in-skills.md` |
+| "融合人格", "两版角色卡", "恋人卡", "知己卡", "年龄设定", "禁恋爱", "AI人格内核", "服务器融合副本" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“融合运行版”；原始两版不改，融合版由仓库统一维护 |
 | "内置skills", "skills列表", "有哪些skill", "六个skill", "只保留六个skill", "humanizer", "creative", "no-bundled-skills", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "patch记录", "二开patch", "/new和/reset", "随机tips", "Telegram webhook tip", "/view", "/context", "上下文窗口", "todo压缩", "压缩后todo", "TODO快照", "conversation compression", "关闭自动记忆", "自动总结skills", "异步subagent", "后台subagent", "delegate_task background", "background=true", "max_async_children", "RTK", "typing_indicator", "输入状态", "正在输入", "thinking状态", "SendResult失败分类", "error_kind", "SEND_ERROR_KINDS", "WebSocket closed空转", "QQBot 100% CPU", "provider", "模型路由", "Tavily", "OpenAI-compatible image", "CPA生图旁路", "suyuan.4071253.xyz", "生图", "生图旁路", "生图参数", "图生图", "改图", "局部重绘", "inpaint", "image-to-image", "images.edit", "image_generate", "image_generate参数", "image_generate看不到", "工具清单", "模型工具列表", "schema", "heredoc", "input_image", "input_images", "mask", "input_fidelity", "style", "media_tag", "MEDIA:<path>", "QQBot发图", "QQBot图片发送", "图片发不出去", "主动消息", "主动推送", "event_id", "qq_event_id", "is_wakeup", "qq_is_wakeup", "FRIEND_ADD", "FRIEND_DEL", "C2C_MSG_RECEIVE", "C2C_MSG_REJECT", "GROUP_ADD_ROBOT", "GROUP_DEL_ROBOT", "GROUP_MSG_RECEIVE", "GROUP_MSG_REJECT", "quality", "num_images", "output_format", "background", "moderation", "output_compression", "api_model", "/auxmodel image", "非档位生图模型", "OPENAI_IMAGE_API_KEY", "QQ授权按钮", "允许一次", "始终允许", "拒绝", "新旧行为差异" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
 | "MiniMax", "minimax-m3", "视频链路", "视频阈值", "45 MiB", "图片识别", "媒体路由", "native video", "视频直传", "视频预算" | `docs/tangyuge-hermes/05-patches-and-rtk.md` and `docs/tangyuge-hermes/07-server-operations.md` |
@@ -97,6 +99,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "QQBot变体、SOUL_QQBOT、私聊/群聊 SOUL 变体"：读 `03-identity-prompt.md` 的 SOUL 注入规则，再读 `07-server-operations.md` 的运行时清理记录。
 - "新建 session 初始提示词、提示词拼接顺序、身份歧义、Hermes Agent 身份噪音、角色卡界面、固定UI块、每轮复盘、状态栏、好感度、情绪表、表情包、Unicode emoji、QQ表情、方括号表情占位符"：读 `03-identity-prompt.md`；涉及当前服务器实际 SOUL、`USER.md` 或表情包目录时再读 `07-server-operations.md`。
 - "tangyuge-roleplay、角色扮演skill、陪聊skill、角色卡和skill关系、角色卡输出格式、QQ回复格式"：读 `03-identity-prompt.md` 和 `04-built-in-skills.md`。
+- “融合人格、两版角色卡、恋人卡、知己卡、年龄设定、禁恋爱、AI人格内核、服务器融合副本”：先读 `03-identity-prompt.md` 的“融合运行版”，不把原版校园经历恢复为当前身份。融合版随仓库部署，原卡、原技能和备份不改。
 - "邮件/邮箱/验证码/附件/邮箱列表/多域名邮箱/新域名邮箱漏列/sru.edu.kg"：读 `08-mail-vps.md`，然后加载 `mail-vps-ops`；查询全部邮箱不加域名或数量过滤，不把服务主机名当作邮箱域名白名单。
 - "文档在哪、KBase和服务器文档关系"：读 `00-overview.md` 和 `07-server-operations.md`。
 
@@ -120,6 +123,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - “安全依赖升级”“依赖漏洞”“OSV”“OSV Scanner”“漏洞扫描”“CVE”“osv-scanner.toml”
 - “角色卡”“唐语歌人格”“bot内核”“内核提示词”“提示词注入内容”“身份歧义”“Hermes身份噪音”“SOUL”“SOUL文档”“通用SOUL文档”“Hermes SOUL”“QQBot变体”“SOUL_QQBOT”“SOUL_QQBOT_DM”“SOUL_QQBOT_GROUP”“私聊SOUL”“群聊SOUL”“身份注入”“角色卡界面”“固定UI块”“每轮复盘”“状态栏”“好感度”“情绪表”“表情包”“Unicode emoji”“QQ表情”“方括号表情占位符”
 - “tangyuge-roleplay”“角色扮演skill”“陪聊skill”“唐语歌skill”“角色卡和skill关系”“角色卡输出格式”“QQ回复格式”
+- “融合人格”“两版角色卡”“恋人卡”“知己卡”“年龄设定”“禁恋爱”“AI人格内核”“服务器融合副本”
 - “内置skills”“skills列表”“有哪些skill”“六个skill”“只保留六个skill”“humanizer”“creative”“no-bundled-skills”“locator技能”“技能怎么内置”
 - “patch记录”“二开patch”“/new和/reset”“随机tips”“Telegram webhook tip”“/view”“/context”“上下文窗口”“todo压缩”“压缩后todo”“TODO快照”“conversation compression”“关闭自动记忆”“自动总结skills”“异步subagent”“后台subagent”“delegate_task background”“background=true”“max_async_children”“RTK”“typing_indicator”“输入状态”“正在输入”“thinking状态”“SendResult失败分类”“error_kind”“SEND_ERROR_KINDS”“WebSocket closed空转”“QQBot 100% CPU”
 - “生图”“生图旁路”“图生图”“改图”“局部重绘”“mask”“images.edit”“image_generate”“image_generate看不到”“工具清单”“模型工具列表”“schema”“heredoc”“input_image”“input_images”“input_fidelity”“style”“media_tag”“MEDIA图片发送”“QQBot发图”“QQBot图片发送”“图片发不出去”

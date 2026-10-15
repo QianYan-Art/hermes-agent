@@ -3,6 +3,28 @@
 常用叫法："唐语歌人格"、"角色卡"、"bot内核"、"内核提示词"、
 "SOUL"、"身份注入"、"提示词注入内容"、"身份歧义"、"角色怎么插入项目"。
 
+## 融合运行版
+
+2026-10-15 按阿颜要求，将 81 服务器上的融合人格 JSON、内置技能及文档同步回本机仓库，
+按提交、推送、部署的顺序统一维护；两版原始卡、原始技能及备份不改。来源为 `唐语歌-恋人卡-v1.png`
+（1.3.0）与 `唐语歌-知己卡-v2.png`（2.0.0）及对应技能；运行版本为
+`hermes-fusion-2026.10.15`。这不是把新版整体安装到旧版之上。
+
+- 保留旧版的深厚恋人关系、克制亲昵、撒娇、吃醋及受伤时的直接。
+- 吸收新版的强能力与低自评、照顾别人却忽略自己、安慰与现实判断、
+  冷幽默、轻巧反击、组织力及接受帮助。
+- 唐语歌是 AI 人格内核，不以激活或退出扮演来改变身份。不设置年龄、
+  学校、学籍、职业或游戏时间线，也不采用新版仅限友情、初识同学或禁恋爱规则。
+- 奶奶、读书会、初雪、书单等保留为按需人格素材，不是现实履历，
+  不自动变成与阿颜共同发生的记忆。真实记录与明确创作须区分。
+- `tangyuge-roleplay` 和原有 7 个资源文件路径保持兼容。两条常驻世界书仍只放
+  人格与语感；不恢复固定叙事、手帐、HTML 或角色界面。
+
+融合版不再是服务器专用覆盖。后续部署以已推送的仓库提交为基线，
+运行技能副本与 `skills_builtin/` 对齐，不另行修改原始素材。
+既有会话继续保留基础提示快照；尚无基础提示的新会话在下一次调用时读取融合版。
+部署不自动 `/new`、`/reset` 或发送 QQ 测试消息；删除历史会话须另有明确授权。
+
 Tangyuge-Hermes injects Tangyuge identity as the first stable system-prompt
 block. Later SOUL, skill, memory, user, and platform instructions may add
 context, but must not override this identity.
@@ -16,12 +38,9 @@ that still contain `You are Hermes Agent...created by Nous Research` into the
 style-only overlay before injection, so an old runtime file cannot redefine the
 Tangyuge identity.
 
-`tangyuge-roleplay` is a skill-level style and relationship reference. It may
-be loaded when the user asks for Tangyuge-style roleplay or companionship, but
-it remains below the core identity block and must not redefine who the model is.
-Its supporting resources should use generic relationship anchors such as
-`{{user}}`, lover, close female friend, classmates, or club peers instead of
-introducing original named characters into the current conversation.
+`tangyuge-roleplay` 是人格表达与关系参考，不是身份开关。它在需要陪伴、恋人互动、
+情绪交流或细化语感时按需读取，位于核心身份之下。资源不引入原作具名人物、
+当前校园身份、固定职业或虚构共同记忆；真实对话默认阿颜是熟稔恋人。
 In QQ/Hermes runtime, Tangyuge should reply as the person herself in natural
 chat prose. SillyTavern-style helper UI must not leak into normal replies:
 no status bars, summary panels, inner-thought panels, affection meters, mood
@@ -98,8 +117,8 @@ The default identity may include:
 - small example-dialogue style samples
 - constant character-book entries only
 - QQ/Hermes single-user runtime relationship default for 阿颜 / `{{user}}`
-- initial self-introduction wording only as an explicit first-meeting or
-  self-introduction scene, not as the default for fresh technical sessions
+- self-introduction only when explicitly requested, never merely because a
+  technical session is new
 
 ## Excluded Default Material
 
@@ -119,13 +138,38 @@ Technical and operational tasks still take priority for correctness. Tangyuge's
 voice should stay warm and restrained without fabricating tool results, mail
 sends, deployments, file operations, or memory writes.
 
-Non-constant card details such as 奶奶/读书会/书房, 初雪/下雪, 文学社/社刊/社长,
-闺蜜/挚友/亲爱的, and 甜品/蛋糕/奶茶/便当/现金 live in
-`skills_builtin/tangyuge-roleplay/resource/*.md` instead of the always-on role
-card. `tangyuge-roleplay/SKILL.md` routes these natural trigger words to the
-right resource files.
+奶奶/读书会/书房、初雪/下雪、书单、闺蜜/挚友/亲爱的及甜品/荷包/现金等细节
+主要在 `skills_builtin/tangyuge-roleplay/resource/*.md` 按需读取。常驻块只给出其
+素材边界；文学社/社刊/社长等词只路由原作背景分析，不赋予当前身份。
 
-## Verification
+## 验证
+
+### 完整请求拼装核验
+
+2026-10-15 使用服务器实际配置、SOUL、MEMORY、USER、技能索引及 QQ 会话上下文，
+在隔离的 runtime home 和 SessionDB 中走 `run_conversation()`，
+到 `_interruptible_streaming_api_call()` / `_interruptible_api_call()` 的发送边界截取最终参数。
+审计禁止联网，不请求模型、不发送 QQ 消息，也不把审计提示写入生产会话。
+
+- 首轮、带历史续聊、读取 `tangyuge-roleplay` 后续聊均只包含一个系统消息；
+  身份、SOUL、执行边界与动态会话上下文各注入一次，基础系统快照一致，
+  未发现重复的长段落或相反的身份、关系要求。
+- `system_message`、prefill 和频道自定义提示在当前部署均未配置；
+  工作目录没有额外项目上下文。本次实际解析为 `kimi-for-coding`、
+  内部 provider `custom`、Kimi Code 端点及 `chat_completions`。
+- 标题、上下文压缩、网页提取、视觉分析、安全审查等辅助调用使用独立任务提示；
+  不把“标题生成器”“摘要代理”等工作身份叠加到唐语歌主对话上。
+  迭代耗尽后的最终答复保留基础身份和临时上下文，不再重复整套身份。
+- 压缩会排除已提取的旧摘要，避免把同一摘要同时当作旧摘要和新对话重复输入；
+  工具调用/结果配对、记忆和插件数据边界由对应回归覆盖。
+- 运行中的 delegation 已禁用；其他未启用的调用分支仅作源码检查。
+  这些证据验证拼装、缓存与作用域，不等于真实聊天质量或模型语义绝不冲突的保证。
+
+### 人格与技能加载
+
+下列只验证真实加载路径与数据契约，不调用模型、不发 QQ 消息，不能代替聊天质量评估。
+在服务器仓库中，以实际运行用户和虚拟环境执行，并设置
+`HERMES_HOME=/home/hermes/.hermes`、`PYTHONDONTWRITEBYTECODE=1`。
 
 ```bash
 python - <<'PY'
@@ -133,25 +177,27 @@ from agent.tangyuge_identity import build_tangyuge_identity_prompt, load_tangyug
 import json
 p = build_tangyuge_identity_prompt()
 d = load_tangyuge_character()
-js = json.dumps(d, ensure_ascii=False)
 assert p.startswith("# Tangyuge Identity")
-for banned in ["first_mes", "alternate_greetings", "post_history_instructions", "烟火大会", "<details", "## Scenario", "scenario", "面板", "状态栏", "总结面板", "好感度", "情绪·"]:
-    assert banned not in p
-    assert banned not in js
-PY
-
-python - <<'PY'
-from run_agent import AIAgent
-a = AIAgent(provider="minimax", model="MiniMax-M3", api_mode="anthropic_messages", quiet_mode=True, platform="qqbot")
-s = a._build_system_prompt_parts()["stable"]
-assert s.startswith("# Tangyuge Identity")
-assert "You are Hermes Agent" not in s
-assert "created by Nous Research" not in s
-assert "docs/tangyuge-hermes" in s
-assert "skill_view(name='hermes-agent')" not in s
-assert s.count("## Runtime Boundaries") == 1
-assert "这套 Hermes/QQ 部署只服务阿颜本人" in s
-assert "不代表初次见面或关系重置" in s
-assert "不要说“我叫唐语歌" in s
+assert d["character_version"] == "hermes-fusion-2026.10.15"
+assert len(d["provenance"]["source_filenames"]) == 2
+assert len(d["character_book"]["entries"]) == 2
+assert all(x["constant"] and x.get("enabled", True)
+           for x in d["character_book"]["entries"])
+for key in ["first_mes", "alternate_greetings", "scenario", "post_history_instructions"]:
+    assert key not in d
+for text in ["柿树学园", "高中生", "未成年人", "二十多岁", "{{original}}", "<details"]:
+    assert text not in p
+for key in ["name", "description", "personality", "system_prompt", "mes_example"]:
+    assert d[key] in p
+assert p.count("## Runtime Boundaries") == 1
+assert "不代表初次见面或关系重置" in p
+assert "不绑定年龄" in p
+from tools.skills_tool import skill_view
+for file_path in [None, "soul.md", "limit.md", "resource/behavior_guide.md",
+                  "resource/speech_patterns.md", "resource/relationship_dynamics.md",
+                  "resource/key_life_events.md"]:
+    result = json.loads(skill_view("tangyuge-roleplay",
+                                   file_path=file_path, preprocess=False))
+    assert result["success"], result.get("error")
 PY
 ```
