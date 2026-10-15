@@ -1,0 +1,52 @@
+diff --git a/main.go b/main.go
+index 3b66a95..3b07341 100644
+--- a/main.go
++++ b/main.go
+@@ -549,7 +549,7 @@ func validateImageModel(raw []byte, requested string) error {
+ 				continue
+ 			}
+ 			reported = append(reported, tool.Model)
+-			if tool.Model != requested && !(requested == "gpt-image-2" && tool.Model == "gpt-image-2-codex") {
++			if tool.Model != requested && tool.Model != "gpt-image-2-codex" {
+ 				matched = false
+ 			}
+ 		}
+diff --git a/main_test.go b/main_test.go
+index f34e36c..2c5534c 100644
+--- a/main_test.go
++++ b/main_test.go
+@@ -39,7 +39,9 @@ func TestImageModelValidation(t *testing.T) {
+ 		{"codex2", "gpt-image-2", []string{"gpt-image-2-codex"}, true},
+ 		{"flare", "gpt-image-2.5-flare", []string{"gpt-image-2.5-flare"}, true},
+ 		{"sunburst", "gpt-image-2.5-sunburst", []string{"gpt-image-2.5-sunburst"}, true},
+-		{"downgrade", "gpt-image-2.5-flare", []string{"gpt-image-2-codex"}, false},
++		{"flare_codex", "gpt-image-2.5-flare", []string{"gpt-image-2-codex"}, true},
++		{"sunburst_codex", "gpt-image-2.5-sunburst", []string{"gpt-image-2-codex"}, true},
++		{"mixed_codex", "gpt-image-2.5-flare", []string{"gpt-image-2.5-flare", "gpt-image-2-codex"}, true},
+ 		{"wrong_variant", "gpt-image-2.5-flare", []string{"gpt-image-2.5-sunburst"}, false},
+ 		{"missing", "gpt-image-2.5-sunburst", nil, false},
+ 		{"empty_model", "gpt-image-2.5-flare", []string{""}, false},
+@@ -167,18 +169,18 @@ func TestImageHandlerModelGuard(t *testing.T) {
+ 	for _, tc := range []struct {
+ 		model string
+ 		want  int
+-	}{{"gpt-image-2", 200}, {"gpt-image-2.5-flare", 503}, {"gpt-image-2.5-sunburst", 503}} {
++	}{{"gpt-image-2", 200}, {"gpt-image-2.5-flare", 200}, {"gpt-image-2.5-sunburst", 200}} {
+ 		rec := httptest.NewRecorder()
+ 		req := httptest.NewRequest("POST", "/v1/images/generations", strings.NewReader(fmt.Sprintf(`{"model":%q,"prompt":"测试","n":2}`, tc.model)))
+ 		s.handleImages(rec, req)
+ 		if rec.Code != tc.want {
+ 			t.Fatalf("HTTP 状态不符：%d %s", rec.Code, rec.Body.String())
+ 		}
+-		if tc.want == 503 && (!strings.Contains(rec.Body.String(), "image_model_unavailable") || strings.Contains(rec.Body.String(), "b64_json")) {
+-			t.Fatal("静默降级未被拒绝")
++		if !strings.Contains(rec.Body.String(), "b64_json") {
++			t.Fatal("兼容模型的有效图片没有返回")
+ 		}
+ 	}
+-	if calls.Load() != 4 {
+-		t.Fatalf("降级后不应继续生成第二张图：%d", calls.Load())
++	if calls.Load() != 6 {
++		t.Fatalf("兼容模型未完成请求的图片数量：%d", calls.Load())
+ 	}
+ }

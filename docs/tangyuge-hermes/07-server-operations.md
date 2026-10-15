@@ -40,7 +40,7 @@ Default model provider:
   `262144`，约束的是 `kimi-for-coding`；该模型接口自报 1048576。
   注意窗口只认 per-model 的 `models.<model>.context_length`，
   **不认** provider 顶层的 `context_length`。
-- `agent.reasoning_effort` 全局为 `high`。Kimi 的思考参数由
+- `agent.reasoning_effort` 全局为 `low`（2026-10-15 现场核对并保留）。Kimi 的思考参数由
   `plugins/model-providers/custom/` 的 Kimi Code 分支发出：
   `extra_body.thinking.type` 为 `enabled`/`disabled`，并映射
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
@@ -84,6 +84,9 @@ Default model provider:
 - `/auxmodel` 显示本会话主模型媒体能力、生图与 TTS 配置，以及搜索和提取实际
   选择的后端。主模型视觉通过 `/model` 切换，未配置独立视觉时不会创建辅助覆盖。
   生图/TTS 仍可用 `/auxmodel image|tts <model>` 只切模型名。
+  OpenAI 生图状态显示解析后的请求模型和独立 `quality`。切换非档位模型时
+  更新 `image_gen.openai.api_model`、保留原质量档位；切回档位会清除旧请求覆盖。
+  `OPENAI_IMAGE_API_MODEL` / `OPENAI_IMAGE_MODEL` 的环境优先级不变。
 - Tavily 的 `TAVILY_API_KEY` 只放 runtime `.env`，可用逗号或换行分隔多个 key；
   请求轮换首选 key，认证、限额、服务或连接失败时按请求实现依次回退。
   `TAVILY_BASE_URL` 可覆盖默认 `https://api.tavily.com`。
@@ -294,6 +297,26 @@ Plugin policy:
   are physically removed from the tracked source after retained-scope tests
   prove they are no longer referenced.
 
+## Komari 流量日报
+
+用户说“流量日报”时，运行固定只读命令，把返回 JSON 的 `report` 用正常 QQ
+文字回复给用户；`ok=false` 如实报错，不编造流量：
+
+```bash
+/home/hermes/.hermes/venvs/hermes-agent/bin/python /home/hermes/.hermes/hermes-agent/scripts/komari_traffic_daily.py
+```
+
+面板地址只存在 runtime `~/.hermes/komari_traffic.toml` 的 `base_url`，不放密钥，
+不接受模型传入 URL、命令或主机。脚本只读 `/api/nodes` 和 RPC
+`public:queryMetrics`，将 `traffic.up` / `traffic.down` 按 `sum` 汇总为近 24 小时
+报表，时间范围明确标注 UTC。当前接口可见 12 个节点；不冒称包含私有隐藏节点。
+无采样节点标注数据不足，不记为零。
+
+不需要 SSH key，也不新增公网服务、skill、定时器或通用管理工具。
+仅在 Hermes runtime `MEMORY.md` 添加一条固定命令用法，不写维护侧记忆。
+Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime Kuma 是另一个
+独立服务，本功能完全不修改它。
+
 ## 生图旁路与 Usage
 
 2026-09-09（UTC）核对的 81 配置：`image_gen.provider=openai`，
@@ -303,7 +326,7 @@ Plugin policy:
 `image_gen.openai.timeout=180`。图片专用密钥在 `OPENAI_IMAGE_API_KEY`，
 现场未设置其他图片模型环境覆盖；不将密钥写入仓库或文档。
 
-请求从 EdgeOne 经 NetCup nginx 到 `cliproxyapi-edge-proxy`（回环 59999），
+当前请求从 EdgeOne 经 124 的 nginx 到 `cliproxyapi-edge-proxy`（回环 59999），
 图片转交 `cliproxyapi-image-proxy`（60001），普通模型请求转交 CLIProxyAPI（59998）。
 旁路使用 ChatGPT Codex 后端，内部编排模型是 `gpt-5.6-luna`；它不是图片工具
 模型，也不是 Hermes 主聊天模型。官方 Images API 的模型支持不等于该账号通道权限。
@@ -313,9 +336,14 @@ Plugin policy:
 - 默认和 `gpt-image-2` 使用 Image-2；`gpt-image2` 是同一模型的兼容别名。
 - `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 保留同名请求；
   `gpt-image-2.5` 仅是本地映射到 Flare 的便利别名。未知名称返回 HTTP 400。
-- 当前账号通道的 2.5 请求终态仍声明 `gpt-image-2-codex`，严格校验会返回
-  `image_model_unavailable`，不会把旧模型图片冒充 2.5。默认 Image-2 保持不变，
-  不自动切换，也不猜下架时间。
+- 2026-10-15 阿颜明确允许两个 2.5 请求接收终态 `gpt-image-2-codex`。
+  原严格校验因此拒绝图片的问题由
+  `ops/cliproxyapi-image-proxy/codex-image-compat.patch` 局部修复；
+  应用前必须核对源码基线并执行 `git apply --check`，流程见同目录 README。
+  不忽略其他型号不匹配、缺少终态、空图或上游真实错误，也不将 Codex 图宣称为
+  真正执行了 2.5。Hermes 本身不根据有效响应中的不同模型名拒图。
+  本轮默认请求目标使用 `image_gen.openai.api_model=gpt-image-2.5-flare`，
+  `model` 继续保留原 `gpt-image-2-medium` 质量档位，其余参数不变。
 - 文生图和编辑支持 `n=1..10`；`response_format=url` 返回 data URL，不是图床链接。
   `variations` 只有入口路由与鉴权覆盖，图片旁路未实现该功能。
 - 入口先鉴权再读取大图片；缺失或错误密钥返回 401。超过 10 秒保活后，
@@ -325,7 +353,7 @@ Plugin policy:
   本轮请求 `medium`、`1024x1024`，实际文生图和编辑均为 `1312x1199`；
   不能承诺旁路严格遵守尺寸/质量参数，也不能凭 `low` 档推断实际费用。
 
-usage 由 NetCup 入口聚合，顶部展示七个家族：`gpt-5.5`、`gpt-5.6-luna`、
+usage 由当前 CPA 入口聚合，顶部展示七个家族：`gpt-5.5`、`gpt-5.6-luna`、
 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-6-astra`、`gpt-image-2`、
 `gpt-image-2.5`。两个 2.5 型号归入同一展示家族，出现该行不证明权限可用。
 按 Key 展示不等于多租户隔离；价格是人工维护快照，不保证自动抓取最新价格。

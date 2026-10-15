@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 定位 Tangyuge-Hermes 文档、模型、媒体、会话及 auxmodel/Tavily 状态.
+description: 定位 Tangyuge-Hermes 文档、模型、媒体、会话、流量日报及 auxmodel/Tavily 状态.
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -37,6 +37,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 | 用户常用说法 | 读取文档 |
 | --- | --- |
+| "流量日报", "Komari", "VPS 流量", "近24小时流量", "komari_traffic_daily" | `docs/tangyuge-hermes/07-server-operations.md` 的“Komari 流量日报”；只运行固定读取命令，不改 Komari/Kuma 或 Telegram |
 | "auxmodel", "/auxmodel", "auxmodel 状态", "辅助模型状态", "Tavily 状态", "联网后端", "搜索后端", "提取后端", "TAVILY_API_KEY", "TAVILY_BASE_URL" | 先读 `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；实现变更再读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "ollama-vision", "ollama_vision", "providers.ollama_vision", "AUXILIARY_VISION_API_KEY", "minimax-cn", "MINIMAX_CN_API_KEY", "退役配置", "旧视觉key", "模型发现机制" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”和 `docs/tangyuge-hermes/05-patches-and-rtk.md`；这些标识是退役索引，不是当前配置入口 |
 | "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
@@ -65,6 +66,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "邮箱列表", "有哪些邮箱", "列出全部邮箱", "多域名邮箱", "新域名邮箱漏列", "mail.qianyan.me", "sru.edu.kg", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
+
+- "流量日报、Komari、VPS 流量、近24小时流量"：读 `07-server-operations.md` 的“Komari 流量日报”，固定脚本返回 `report` 后用 QQ 文字回复；仅汇总公开可见节点，不操作原有 Telegram 日报或告警。
 
 - "auxmodel、/auxmodel、辅助模型状态、Tavily 状态、联网后端、搜索后端、提取后端"：先读 `07-server-operations.md` 的“Current Runtime Shape”，实现变化再读 `05-patches-and-rtk.md`。区分本地配置、key 数和实际在线验证，不因状态查询发起网络探测。
 - "ollama-vision、ollama_vision、providers.ollama_vision、AUXILIARY_VISION_API_KEY、minimax-cn、MINIMAX_CN_API_KEY、退役配置、旧视觉key、模型发现机制"：先读 `07-server-operations.md` 的退役说明，再按需读 `05-patches-and-rtk.md`；不要建议重新配置已移除的服务或凭据。
@@ -100,6 +103,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 ## 触发语义
 
 用户说以下内容时，优先使用本技能：
+
+- “流量日报”“Komari”“VPS 流量”“近24小时流量”“komari_traffic_daily”
 
 - “auxmodel”“/auxmodel”“auxmodel 状态”“辅助模型状态”“Tavily 状态”“联网后端”“搜索后端”“提取后端”“TAVILY_API_KEY”“TAVILY_BASE_URL”
 - “ollama-vision”“ollama_vision”“providers.ollama_vision”“AUXILIARY_VISION_API_KEY”“minimax-cn”“MINIMAX_CN_API_KEY”“退役配置”“旧视觉key”“模型发现机制”

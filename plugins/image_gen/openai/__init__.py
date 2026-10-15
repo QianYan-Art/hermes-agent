@@ -757,6 +757,9 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "num_images": len(image_refs),
             "operation": "edit" if is_edit else "generate",
         }
+        upstream_model = getattr(response, "model", None)
+        if isinstance(upstream_model, str) and upstream_model.strip():
+            extra["upstream_model"] = upstream_model.strip()
         if is_edit:
             extra["input_image_count"] = len(input_images)
             extra["has_mask"] = bool(mask_ref)

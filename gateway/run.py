@@ -12001,8 +12001,16 @@ class GatewayRunner:
                     f"  endpoint: {_endpoint_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
                     f"  auth: {_auth_summary(str(vision_provider), vision_provider_cfg, vision_cfg, 'vision')}",
                 ])
+            image_model = image_provider_cfg.get("model") or image_cfg.get("model", "unset")
+            image_quality = []
+            if image_slug == "openai":
+                from plugins.image_gen.openai import _resolve_api_model, _resolve_model
+                image_model = _resolve_api_model({})
+                _, tier_meta = _resolve_model()
+                image_quality = [f"  quality: {tier_meta['quality']}"]
             lines.extend([
-                f"image: {image_provider_cfg.get('model') or image_cfg.get('model', 'unset')}",
+                f"image: {image_model}",
+                *image_quality,
                 f"  provider: {image_provider}",
                 f"  endpoint: {_endpoint_summary(str(image_provider), image_provider_cfg, image_cfg, 'image')}",
                 f"  auth: {_auth_summary(str(image_provider), image_provider_cfg, image_cfg, 'image')}",
@@ -12092,8 +12100,25 @@ class GatewayRunner:
             if slug not in image_section or not isinstance(image_section.get(slug), dict):
                 image_section[slug] = provider_cfg
             old_model = image_section[slug].get("model") or image_section.get("model", "unset")
-            image_section[slug]["model"] = model
-            image_section["model"] = model
+            if slug == "openai":
+                from plugins.image_gen.openai import _MODELS, _resolve_api_model, _resolve_model
+                old_model = _resolve_api_model({})
+                tier_id, tier_meta = _resolve_model()
+                image_section.pop("api_model", None)
+                if model in _MODELS:
+                    image_section[slug].pop("api_model", None)
+                    tier_id = model
+                    tier_meta = _MODELS[tier_id]
+                else:
+                    image_section[slug]["api_model"] = model
+                image_section[slug]["model"] = tier_id
+                image_section["model"] = tier_id
+                warning = f"\n质量档位: {tier_meta['quality']}"
+                if os.getenv("OPENAI_IMAGE_API_MODEL") or os.getenv("OPENAI_IMAGE_MODEL"):
+                    warning += "\n提醒：已设置图片模型环境覆盖；实际请求仍按环境优先级解析。"
+            else:
+                image_section[slug]["model"] = model
+                image_section["model"] = model
             endpoint = _endpoint_summary(str(provider), image_section[slug], image_section, "image")
             auth = _auth_summary(str(provider), image_section[slug], image_section, "image")
         else:

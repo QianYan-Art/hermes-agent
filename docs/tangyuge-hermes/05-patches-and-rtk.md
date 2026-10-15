@@ -199,6 +199,13 @@ external patch files to replay:
   错误正文即使同时包含图片数据也不能缓存或当作成功，不自动降级到其他模型；
   无错误且有非空 `data` 后才继续解析图片。当前旁路型号和 usage 限制见
   `07-server-operations.md` 的“生图旁路与 Usage”。
+  有效图片响应的模型名与请求不同不构成 Hermes 的拒绝条件；
+  两个 2.5 请求返回 `gpt-image-2-codex` 时可正常缓存，若响应带模型名则在
+  `upstream_model` 记录，`api_model` 仍表示请求模型。旁路已经返回错误且没有
+  图片时，Hermes 不能从错误中恢复图片，仍按真实错误处理。
+  `/auxmodel image` 将 OpenAI 的请求 `api_model` 与质量档位 `model` 分开：
+  非档位名称只更新请求模型并保留质量；切回档位时清除旧 `api_model`。
+  环境覆盖仍优先，并在命令回复中提醒。
   For the retained OpenAI-compatible backend, Hermes defaults to the underlying
   API model `gpt-image-2`, maps the configured or requested quality tier to
   `low`/`medium`/`high`, treats a non-tier model name as the actual Images API
@@ -241,6 +248,9 @@ external patch files to replay:
   errors.
   The standalone QQBot REST sender remains text-only and returns an explicit
   error instead of silently omitting attachments.
+  QQ 连续瞬断计数不因套接字重新打开就清零，只有连接稳定超过阈值才重置；
+  `4009` 保留 resume 状态，`4006/4007` 重新识别，致命关闭码不再重连。
+  回归实际执行 `_listen_loop()`，覆盖瞬断阈值、稳定连接及会话状态。
 - QQBot WebSocket reads now fail fast when the stored WebSocket object is
   already closed on entry. A closed-but-non-`None` WebSocket previously made
   the read loop return normally and could cause `_listen_loop` to spin without

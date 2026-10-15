@@ -8,3 +8,6 @@ web/package-lock.json linguist-generated=true
 Dockerfile  text eol=lf
 *.dockerfile text eol=lf
 docker/entrypoint.sh text eol=lf
+
+# 补丁上下文的空格前缀和 Go 制表符是合法格式。
+ops/cliproxyapi-image-proxy/*.patch text eol=lf whitespace=-space-before-tab

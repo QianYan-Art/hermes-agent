@@ -48,14 +48,16 @@ async def test_auxmodel_openai_image_auth_uses_default_image_key_env(tmp_path, m
     runner = object.__new__(GatewayRunner)
     result = await runner._handle_auxmodel_command(_event("/auxmodel"))
 
-    assert "image: gpt-image-2-medium" in result
+    assert "image: gpt-image-2\n" in result
+    assert "  quality: medium" in result
     assert "  provider: openai" in result
     assert "  endpoint: https://suyuan.4071253.xyz/v1" in result
     assert "  auth: OPENAI_IMAGE_API_KEY（已设置）" in result
 
 
 @pytest.mark.asyncio
-async def test_auxmodel_image_can_write_non_tier_api_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize("tier", ["gpt-image-2-low", "gpt-image-2-high"])
+async def test_auxmodel_image_can_write_non_tier_api_model(tmp_path, monkeypatch, tier):
     hermes_home = tmp_path / ".hermes"
     hermes_home.mkdir()
     config_path = hermes_home / "config.yaml"
@@ -64,10 +66,13 @@ async def test_auxmodel_image_can_write_non_tier_api_model(tmp_path, monkeypatch
             [
                 "image_gen:",
                 "  provider: openai",
-                "  model: gpt-image-2-medium",
+                f"  model: {tier}",
+                "  api_model: old-top-level-model",
                 "  openai:",
                 "    base_url: https://suyuan.4071253.xyz/v1",
-                "    model: gpt-image-2-medium",
+                f"    model: {tier}",
+                "    api_model: old-nested-model",
+                "    timeout: 180",
             ]
         ),
         encoding="utf-8",
@@ -83,8 +88,49 @@ async def test_auxmodel_image_can_write_non_tier_api_model(tmp_path, monkeypatch
     saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
     assert "新模型: custom-image-model" in result
-    assert saved["image_gen"]["model"] == "custom-image-model"
-    assert saved["image_gen"]["openai"]["model"] == "custom-image-model"
+    assert saved["image_gen"]["model"] == tier
+    assert saved["image_gen"]["openai"]["model"] == tier
+    assert saved["image_gen"]["openai"]["api_model"] == "custom-image-model"
+    assert "api_model" not in saved["image_gen"]
+    assert saved["image_gen"]["openai"]["timeout"] == 180
+    assert saved["image_gen"]["openai"]["base_url"] == "https://suyuan.4071253.xyz/v1"
+    import plugins.image_gen.openai as provider
+    assert provider._resolve_api_model({}) == "custom-image-model"
+    assert provider._resolve_model()[0] == tier
+
+
+@pytest.mark.asyncio
+async def test_auxmodel_tier_switch_clears_old_api_model(tmp_path, monkeypatch):
+    from gateway.run import GatewayRunner
+    import plugins.image_gen.openai as provider
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"image_gen": {
+        "provider": "openai", "api_model": "old-top",
+        "openai": {"model": "gpt-image-2-high", "api_model": "old-nested"},
+    }}), encoding="utf-8")
+    result = await object.__new__(GatewayRunner)._handle_auxmodel_command(
+        _event("/auxmodel image gpt-image-2-low"),
+    )
+    assert "新模型: gpt-image-2-low" in result
+    assert provider._resolve_model()[0] == "gpt-image-2-low"
+    assert provider._resolve_api_model({}) == provider.DEFAULT_API_MODEL
+
+
+@pytest.mark.asyncio
+async def test_auxmodel_shows_effective_request_model_and_quality(tmp_path, monkeypatch):
+    from gateway.run import GatewayRunner
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({"image_gen": {
+        "provider": "openai",
+        "openai": {"model": "gpt-image-2-high", "api_model": "configured-image-model"},
+    }}), encoding="utf-8")
+    monkeypatch.setenv("OPENAI_IMAGE_API_MODEL", "environment-image-model")
+    result = await object.__new__(GatewayRunner)._handle_auxmodel_command(_event("/auxmodel"))
+    assert "image: environment-image-model" in result
+    assert "quality: high" in result
 
 
 @pytest.mark.asyncio

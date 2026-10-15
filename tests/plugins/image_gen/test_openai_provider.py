@@ -583,6 +583,34 @@ class TestGenerate:
         assert result["success"] is True
         assert Path(result["image"]).is_file()
 
+    @pytest.mark.parametrize("requested", ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])
+    @pytest.mark.parametrize("edit", [False, True])
+    def test_codex_response_model_does_not_reject_valid_image(self, provider, tmp_path, requested, edit):
+        import httpx
+        from openai import OpenAI
+
+        def respond(_):
+            return httpx.Response(200, json={
+                "created": 0, "model": "gpt-image-2-codex",
+                "data": [{"b64_json": _b64_png()}],
+            })
+
+        options = {"api_model": requested}
+        if edit:
+            source = tmp_path / "input.png"
+            source.write_bytes(bytes.fromhex(_PNG_HEX))
+            options["input_image"] = str(source)
+        with OpenAI(
+            api_key="test-key", base_url="https://image.test/v1", max_retries=0,
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client, patch("openai.OpenAI", return_value=client):
+            result = provider.generate("a blue square", **options)
+
+        assert result["success"] is True
+        assert Path(result["image"]).is_file()
+        assert result["api_model"] == requested
+        assert result["upstream_model"] == "gpt-image-2-codex"
+
     def test_url_response_is_cached_locally(self, provider, tmp_path):
         """OpenAI URL response (if API ever returns one) is cached locally.
 

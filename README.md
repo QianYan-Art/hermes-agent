@@ -86,13 +86,18 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   multi-key failover, OpenAI-compatible image backend behavior, mail VPS operation,
   `hermes-md-locator`, and Tangyuge roleplay references are built-in repo
   behavior, not external patch files to replay.
-- OpenAI-compatible 生图默认保留 `gpt-image-2`，提供
+- OpenAI-compatible 生图的内置默认是 `gpt-image-2`，提供
   `low`/`medium`/`high` 请求档位。`/auxmodel image <model>` 和工具的非档位
   `model` / `api_model` 可以指定请求模型，不改变 provider、入口或密钥；
+  命令切换非档位请求模型时保留质量档位，状态分别显示实际请求模型和质量。
+  81 运行时按阿颜要求使用 2.5 Flare 请求，允许旁路返回 Codex 图片。
   是否真正执行仍受旁路映射、账号权限和终态模型校验约束。当前 ChatGPT Codex
   生图旁路不等同官方 Images API，不能将 Image-2.5 的名称或 usage 展示理解为
   已可用，也不自动升级默认模型。详情见
   [生图旁路与 Usage](docs/tangyuge-hermes/07-server-operations.md#生图旁路与-usage)。
+- 流量日报使用固定只读脚本 `scripts/komari_traffic_daily.py`，读取 Komari
+  全部公开可见节点近 24 小时流量，不更改 Komari/Kuma 或触发 Telegram。
+  配置和 Hermes memory 用法见 `docs/tangyuge-hermes/07-server-operations.md`。
 - User image-generation requests should go through the built-in
   `image_generate` tool, not ad-hoc curl/Python/heredoc calls to external image
   APIs. The OpenAI-compatible backend supports text-to-image, image-to-image,

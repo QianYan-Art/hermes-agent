@@ -491,7 +491,8 @@ class QQAdapter(BasePlatformAdapter):
 
         Close code handling follows the OpenClaw qqbot reference implementation:
           4004 → invalid token, refresh and reconnect
-          4006/4007/4009 → session invalid, clear session and re-identify
+          4006/4007 → session invalid, clear session and re-identify
+          4009 → connection timeout, preserve session for resume
           4008 → rate limited, back off 60s
           4914 → bot offline/sandbox, stop reconnecting
           4915 → bot banned, stop reconnecting
@@ -520,7 +521,10 @@ class QQAdapter(BasePlatformAdapter):
                     exc.reason,
                 )
 
-                # Quick disconnect detection (permission issues, misconfiguration)
+                self._mark_transport_disconnected()
+                self._fail_pending("Connection closed")
+
+                # 只有连接持续稳定才能清零，重新打开套接字不代表已恢复。
                 duration = time.monotonic() - connect_time
                 if duration < QUICK_DISCONNECT_THRESHOLD and connect_time > 0:
                     quick_disconnect_count += 1
@@ -544,9 +548,6 @@ class QQAdapter(BasePlatformAdapter):
                         return
                 else:
                     quick_disconnect_count = 0
-
-                self._mark_transport_disconnected()
-                self._fail_pending("Connection closed")
 
                 # Stop reconnecting for fatal codes (unrecoverable errors)
                 if code in {
@@ -593,7 +594,6 @@ class QQAdapter(BasePlatformAdapter):
                     await asyncio.sleep(RATE_LIMIT_DELAY)
                     if await self._reconnect(backoff_idx):
                         backoff_idx = 0
-                        quick_disconnect_count = 0
                     else:
                         backoff_idx += 1
                     continue
@@ -638,7 +638,6 @@ class QQAdapter(BasePlatformAdapter):
 
                 if await self._reconnect(backoff_idx):
                     backoff_idx = 0
-                    quick_disconnect_count = 0
                 else:
                     backoff_idx += 1
                     if backoff_idx >= MAX_RECONNECT_ATTEMPTS:
@@ -660,7 +659,6 @@ class QQAdapter(BasePlatformAdapter):
 
                 if await self._reconnect(backoff_idx):
                     backoff_idx = 0
-                    quick_disconnect_count = 0
                 else:
                     backoff_idx += 1
 
