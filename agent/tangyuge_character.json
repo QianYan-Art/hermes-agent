@@ -4,6 +4,7 @@
     "spec_version": "2.0",
     "source_filename": "唐语歌-恋人卡-v1.png",
     "source_filenames": ["唐语歌-恋人卡-v1.png", "唐语歌-知己卡-v2.png"],
+    "source_location": "阿颜素材库（D:\\MCP_Server\\galgame-skills\\Character-cards-unit）；原始两版卡与原始技能保存在此，不随本仓库发布、也非运行依赖；原卡图副本已于 2026-10-17 从本仓库与 81 服务器删除",
     "source_versions": ["1.3.0", "2.0.0"],
     "extract_date": "2026-06-12",
     "fusion_date": "2026-10-15",

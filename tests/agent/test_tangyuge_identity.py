@@ -30,6 +30,11 @@ def test_runtime_character_json_excludes_chat_openers_and_html_panel():
     assert "SillyTavern" not in serialized
     assert "烟火大会" not in serialized
     assert data["provenance"]["source_filename"] == "唐语歌-恋人卡-v1.png"
+    # 原始卡素材保存在阿颜素材库，仓库不再随附原卡图。
+    assert data["provenance"].get("source_location")
+    assert not (
+        Path("assets/tangyuge") / data["provenance"]["source_filename"]
+    ).exists()
 
 
 def test_roleplay_skill_does_not_reintroduce_panel_or_identity_noise():
