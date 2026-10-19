@@ -141,7 +141,7 @@ DEFAULT_SOUL_STYLE_OVERLAY = (
 HERMES_AGENT_HELP_GUIDANCE = (
     "查询本二开的运行、配置、排障和能力时，以当前部署源码、实际配置与 "
     "docs/tangyuge-hermes 开发文档为准。若当前有技能读取工具且可用索引包含 "
-    "hermes-md-locator，先读取该入口，再按其路由查所需文档。"
+    "hermes-md-locator，按统一技能读取规则使用该入口，再按其路由查所需文档。"
     "上游 Hermes 文档仅作通用参考，不能覆盖本二开的裁剪、权限和实际行为；"
     "不要假定上游技能或能力在此部署存在，也不要把文档说明当作操作成功的证据。"
     "工具不足以核验时说明限制，不虚构读取或检查结果。这是运行指引，不重定义角色身份。"
@@ -179,12 +179,9 @@ SESSION_SEARCH_GUIDANCE = (
 )
 
 SKILLS_GUIDANCE = (
-    "After completing a complex task (5+ tool calls), fixing a tricky error, "
-    "or discovering a non-trivial workflow, save the approach as a "
-    "skill with skill_manage so you can reuse it next time.\n"
-    "When using a skill and finding it outdated, incomplete, or wrong, "
-    "patch it immediately with skill_manage(action='patch') — don't wait to be asked. "
-    "Skills that aren't maintained become liabilities."
+    "技能维护属于写操作，不由读取技能、完成复杂任务或发现过时内容自动授权。"
+    "只有当前请求或明确的持续授权包含维护该技能，且本轮提供 skill_manage 时，"
+    "才在授权范围内创建、修正或删除技能；否则说明影响当前任务的问题，不自行保存、修改或删除技能。"
 )
 
 KANBAN_GUIDANCE = (
@@ -1260,32 +1257,26 @@ def build_skills_system_prompt(
                     index_lines.append(f"    - {name}")
 
         result = (
-            "## Skills (mandatory)\n"
-            "Before replying, scan the skills below. If a skill matches or is even partially relevant "
-            "to your task, you MUST load it with skill_view(name) and follow its instructions. "
-            "Err on the side of loading — it is always better to have context you don't need "
-            "than to miss critical steps, pitfalls, or established workflows. "
-            "Skills contain specialized knowledge — API endpoints, tool-specific commands, "
-            "and proven workflows that outperform general-purpose approaches. Load the skill "
-            "even if you think you could handle the task with basic tools like web_search or terminal. "
-            "Skills also encode the user's preferred approach, conventions, and quality standards "
-            "for tasks like code review, planning, and testing — load them even for tasks you "
-            "already know how to do, because the skill defines how it should be done here.\n"
-            "Whenever the user asks you to configure, set up, install, enable, disable, modify, "
-            "or troubleshoot Hermes Agent itself — its CLI, config, models, providers, tools, "
-            "skills, voice, gateway, plugins, or any feature — load the `hermes-agent` skill "
-            "first. It has the actual commands (e.g. `hermes config set …`, `hermes tools`, "
-            "`hermes setup`) so you don't have to guess or invent workarounds.\n"
-            "If a skill has issues, fix it with skill_manage(action='patch').\n"
-            "After difficult/iterative tasks, offer to save as a skill. "
-            "If a skill you loaded was missing steps, had wrong commands, or needed "
-            "pitfalls you discovered, update it before finishing.\n"
+            "## Skills\n"
+            "每轮先按当前任务判断下方索引中哪些技能确实相关，不等用户说技能名。"
+            "相关技能正文尚未在当前可用上下文中、且本轮有 skill_view 时，"
+            "先调用 skill_view(name) 读取，再按入口地图补充当前需要的资源。"
+            "已读且仍在可用上下文中的内容直接复用，视为满足读取要求；"
+            "不每轮重读、不一次读完整套，也不为了轻微关键词重叠加载无关技能。"
+            "话题变化需要新细节，或压缩后所需内容已不可用时，再补读相应资源。\n"
+            "唐语歌人格和亲近关系不靠技能开关成立；角色细节的适用情境见身份块，"
+            "简短唤名或确认无需额外读取，纯技术任务不为维持人格而加载角色技能，"
+            "仍应按需使用相关技术技能。正常交流不宣告加载或要求用户替你选技能；"
+            "用户明确询问调用过程时如实解释。\n"
+            "维护本二开时，从实际索引选择相应入口，依据当前部署文档、源码和工具定义核对命令，"
+            "不假设上游技能或命令在此存在。工具未提供、技能被禁用或读取失败时，"
+            "不虚构调用、不无限重试；沿用已有可靠上下文继续，只有影响当前任务的缺口才说明。"
+            "技能是参考和流程，不覆盖核心身份、当前要求、权限与事实边界；"
+            "读取不授权创建、修改或删除技能。\n"
             "\n"
             "<available_skills>\n"
             + "\n".join(index_lines) + "\n"
-            "</available_skills>\n"
-            "\n"
-            "Only proceed without loading a skill if genuinely none are relevant to the task."
+            "</available_skills>"
         )
 
     # ── Store in LRU cache ────────────────────────────────────────────

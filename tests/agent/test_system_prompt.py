@@ -7,6 +7,128 @@ from agent.system_prompt import build_system_prompt_parts
 from agent.tangyuge_identity import RUNTIME_CHARACTER_SKILL
 
 
+def test_real_conversation_payload_keeps_one_identity_and_reuses_loaded_context(tmp_path, monkeypatch):
+    import copy
+    import json
+    import socket
+
+    from openai.types.chat import ChatCompletion
+
+    from agent.prompt_builder import clear_skills_system_prompt_cache
+    from agent.system_prompt import build_system_prompt, invalidate_system_prompt
+    from run_agent import AIAgent
+    from tools.skills_tool import skill_view
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("TERMINAL_CWD", str(workspace))
+    (tmp_path / "skills").mkdir()
+    (tmp_path / "memories").mkdir()
+    (tmp_path / "config.yaml").write_text(
+        "memory:\n  memory_enabled: true\n  user_profile_enabled: true\n"
+        "  nudge_interval: 0\nagent:\n  environment_probe: false\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "SOUL.md").write_text("工作风格：SOUL_STYLE_MARKER，准确而自然。", encoding="utf-8")
+    (workspace / "AGENTS.md").write_text("工作区事实：CONTEXT_FACT_MARKER。", encoding="utf-8")
+    memory_file = tmp_path / "memories" / "MEMORY.md"
+    memory_file.write_text("环境事实：MEMORY_FACT_MARKER。", encoding="utf-8")
+    (tmp_path / "memories" / "USER.md").write_text("用户偏好：USER_PREF_MARKER。", encoding="utf-8")
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("提示拼接回归不得联网")
+
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    clear_skills_system_prompt_cache(clear_snapshot=True)
+    names = ["memory", "skills_list", "skill_view", "skill_manage"]
+    tools = [{"type": "function", "function": {
+        "name": name, "description": name,
+        "parameters": {"type": "object", "properties": {}},
+    }} for name in names]
+    response = ChatCompletion.model_validate({
+        "id": "prompt-audit", "created": 0, "object": "chat.completion",
+        "model": "kimi-for-coding",
+        "choices": [{"index": 0, "finish_reason": "stop", "message": {
+            "role": "assistant", "content": "离线拼接检查完成。",
+        }}],
+    })
+    captured = []
+
+    def capture(kwargs):
+        captured.append(copy.deepcopy(kwargs))
+        return response
+
+    with (
+        patch("run_agent.OpenAI"),
+        patch("run_agent.get_tool_definitions", return_value=tools),
+        patch("run_agent.check_toolset_requirements", return_value={}),
+        patch("hermes_cli.plugins.invoke_hook", return_value=[]),
+    ):
+        agent = AIAgent(
+            api_key="offline-test", provider="custom", model="kimi-for-coding",
+            base_url="https://api.kimi.com/coding/v1", api_mode="chat_completions",
+            platform="qqbot", quiet_mode=True, skip_context_files=False,
+            skip_memory=False,
+        )
+        agent.compression_enabled = False
+        agent.save_trajectories = False
+        agent.ephemeral_system_prompt = "当前 QQ 上下文：EPHEMERAL_MARKER。"
+        with (
+            patch.object(agent, "_interruptible_api_call", side_effect=capture),
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            first = agent.run_conversation("我想聊聊最近读的书。")
+            assert first["completed"] is True
+            cached = agent._cached_system_prompt
+            assert "EPHEMERAL_MARKER" not in cached
+
+            loaded = json.loads(skill_view("tangyuge-roleplay"))
+            assert loaded["success"] is True
+            history = first["messages"] + [
+                {"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "read-roleplay", "type": "function", "function": {
+                        "name": "skill_view", "arguments": '{"name":"tangyuge-roleplay"}',
+                    },
+                }]},
+                {"role": "tool", "tool_call_id": "read-roleplay", "content": loaded["content"]},
+                {"role": "assistant", "content": "我也想听听你的读法。"},
+            ]
+            memory_file.write_text("环境事实：UPDATED_MEMORY_MARKER。", encoding="utf-8")
+            second = agent.run_conversation("那你先说说你的看法。", conversation_history=history)
+            assert second["completed"] is True
+            assert agent._cached_system_prompt == cached
+
+        assert len(captured) == 2
+        systems = []
+        for request in captured:
+            system_messages = [m["content"] for m in request["messages"] if m["role"] == "system"]
+            assert len(system_messages) == 1
+            system = system_messages[0]
+            systems.append(system)
+            for marker in ["# Tangyuge Identity", "## Runtime Boundaries", "## Character Detail Retrieval",
+                           "<available_skills>", "SOUL_STYLE_MARKER", "CONTEXT_FACT_MARKER",
+                           "MEMORY_FACT_MARKER", "USER_PREF_MARKER", "EPHEMERAL_MARKER"]:
+                assert system.count(marker) == 1, marker
+            assert "load the `hermes-agent` skill" not in system
+            assert "patch it immediately" not in system
+            assert "UPDATED_MEMORY_MARKER" not in system
+            assert "视为满足读取要求" in system
+        assert systems[0] == systems[1]
+        assert any(m["role"] == "tool" and m.get("tool_call_id") == "read-roleplay"
+                   for m in captured[1]["messages"])
+
+        invalidate_system_prompt(agent)
+        rebuilt = build_system_prompt(agent)
+        assert rebuilt.count("UPDATED_MEMORY_MARKER") == 1
+        assert "MEMORY_FACT_MARKER" not in rebuilt
+        assert rebuilt.count("## Character Detail Retrieval") == 1
+        assert "EPHEMERAL_MARKER" not in rebuilt
+    clear_skills_system_prompt_cache(clear_snapshot=True)
+
+
 def _make_agent(**overrides):
     base = dict(
         load_soul_identity=False,

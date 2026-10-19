@@ -96,7 +96,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             stable_parts.append(_soul_content)
             _soul_loaded = True
 
-    # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
+    # 当前二开的文档定位指引，不要求已移除的上游技能。
     stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
 
     # Universal task-completion / no-fabrication guidance.  Applied to ALL

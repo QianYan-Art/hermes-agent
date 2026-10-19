@@ -1080,6 +1080,16 @@ class TestAbortOnSummaryFailure:
 
 
 class TestSummaryPrefixNormalization:
+    def test_pre_update_memory_priority_prefix_is_replaced(self):
+        from agent.context_compressor import _HISTORICAL_SUMMARY_PREFIXES
+
+        old = next(p for p in _HISTORICAL_SUMMARY_PREFIXES if "ALWAYS authoritative" in p)
+        summary = ContextCompressor._with_summary_prefix(old + "\n已完成的工作事实")
+
+        assert summary == SUMMARY_PREFIX + "\n已完成的工作事实"
+        assert "ALWAYS authoritative" not in summary
+        assert "current explicit user requests" in summary
+
     def test_legacy_prefix_is_replaced(self):
         summary = ContextCompressor._with_summary_prefix("[CONTEXT SUMMARY]: did work")
         assert summary == f"{SUMMARY_PREFIX}\ndid work"
@@ -1087,6 +1097,37 @@ class TestSummaryPrefixNormalization:
     def test_existing_new_prefix_is_not_duplicated(self):
         summary = ContextCompressor._with_summary_prefix(f"{SUMMARY_PREFIX}\ndid work")
         assert summary == f"{SUMMARY_PREFIX}\ndid work"
+
+
+@pytest.mark.parametrize("multimodal", [False, True])
+def test_compression_note_upgrade_preserves_source_and_is_idempotent(multimodal):
+    from copy import deepcopy
+    from agent.context_compressor import (
+        _COMPRESSION_SYSTEM_NOTE,
+        _LEGACY_COMPRESSION_SYSTEM_NOTE,
+        _normalize_compression_system_note,
+    )
+
+    source = "原始身份与工作规则\n\n" + _LEGACY_COMPRESSION_SYSTEM_NOTE
+    if multimodal:
+        source = [
+            {"type": "text", "text": source},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,test"}},
+        ]
+    before = deepcopy(source)
+    first = _normalize_compression_system_note(source)
+    second = _normalize_compression_system_note(first)
+
+    assert source == before
+    assert first == second
+    text = first if isinstance(first, str) else "\n".join(p.get("text", "") for p in first)
+    assert "原始身份与工作规则" in text
+    assert text.count(_COMPRESSION_SYSTEM_NOTE) == 1
+    assert _LEGACY_COMPRESSION_SYSTEM_NOTE not in text
+    assert "Current explicit user requests take precedence" in text
+    if multimodal:
+        assert first[1] == before[1]
+        assert first[-1]["text"].startswith("\n\n")
 
 
 class TestCompressWithClient:
@@ -1115,7 +1156,7 @@ class TestCompressWithClient:
         assert isinstance(result[0]["content"], list)
         assert any(
             isinstance(block, dict)
-            and "compacted into a handoff summary" in block.get("text", "")
+            and "compaction does not change instruction priority" in block.get("text", "")
             for block in result[0]["content"]
         )
 

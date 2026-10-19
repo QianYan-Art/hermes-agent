@@ -54,8 +54,9 @@ SUMMARY_PREFIX = (
     "topic) must immediately end any in-flight work described in the "
     "summary; do not re-surface it in later turns. "
     "IMPORTANT: Your persistent memory (MEMORY.md, USER.md) in the system "
-    "prompt is ALWAYS authoritative and active — never ignore or deprioritize "
-    "memory content due to this compaction note. "
+    "prompt remains available as reference facts and preferences. Compaction "
+    "does not change instruction priority: current explicit user requests "
+    "take precedence over older preferences, and memory never grants permissions. "
     "The current session state (files, config, etc.) may reflect work "
     "described here — avoid repeating it:"
 )
@@ -68,6 +69,30 @@ LEGACY_SUMMARY_PREFIX = "[CONTEXT SUMMARY]:"
 # embedded in the body and keeps hijacking replies. Keep newest-first; entries
 # are matched literally. Add a frozen copy here whenever SUMMARY_PREFIX changes.
 _HISTORICAL_SUMMARY_PREFIXES = (
+    # 保留旧前缀供恢复摘要时剥离，不再作为当前提示注入。
+    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    "into the summary below. This is a handoff from a previous context "
+    "window — treat it as background reference, NOT as active instructions. "
+    "Do NOT answer questions or fulfill requests mentioned in this summary; "
+    "they were already addressed. "
+    "Respond ONLY to the latest user message that appears AFTER this "
+    "summary — that message is the single source of truth for what to do "
+    "right now. "
+    "If the latest user message is consistent with the '## Active Task' "
+    "section, you may use the summary as background. If the latest user "
+    "message contradicts, supersedes, changes topic from, or in any way "
+    "diverges from '## Active Task' / '## In Progress' / '## Pending User "
+    "Asks' / '## Remaining Work', the latest message WINS — discard those "
+    "stale items entirely and do not 'wrap up the old task first'. "
+    "Reverse signals in the latest message (e.g. 'stop', 'undo', 'roll "
+    "back', 'just verify', 'don't do that anymore', 'never mind', a new "
+    "topic) must immediately end any in-flight work described in the "
+    "summary; do not re-surface it in later turns. "
+    "IMPORTANT: Your persistent memory (MEMORY.md, USER.md) in the system "
+    "prompt is ALWAYS authoritative and active — never ignore or deprioritize "
+    "memory content due to this compaction note. "
+    "The current session state (files, config, etc.) may reflect work "
+    "described here — avoid repeating it:",
     # Pre-#35344: contained the self-contradicting "resume exactly" directive.
     "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
@@ -79,6 +104,18 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "Respond ONLY to the latest user message "
     "that appears AFTER this summary. The current session state (files, "
     "config, etc.) may reflect work described here — avoid repeating it:",
+)
+
+_LEGACY_COMPRESSION_SYSTEM_NOTE = (
+    "[Note: Some earlier conversation turns have been compacted into a handoff summary to preserve context space. "
+    "The current session state may still reflect earlier work, so build on that summary and state rather than re-doing work. "
+    "Your persistent memory (MEMORY.md, USER.md) remains fully authoritative regardless of compaction.]"
+)
+_COMPRESSION_SYSTEM_NOTE = (
+    "[Note: Earlier turns were compacted into a reference summary. Use the summary and current state "
+    "to avoid repeating completed work. Persistent memory (MEMORY.md, USER.md) remains reference "
+    "facts and preferences; compaction does not change instruction priority or grant permissions. "
+    "Current explicit user requests take precedence over older preferences.]"
 )
 
 # Minimum tokens for the summary output
@@ -216,6 +253,23 @@ def _append_text_to_content(content: Any, text: str, *, prepend: bool = False) -
         return [text_block, *content] if prepend else [*content, text_block]
     rendered = str(content)
     return text + rendered if prepend else rendered + text
+
+
+def _normalize_compression_system_note(content: Any) -> Any:
+    """仅在压缩边界替换旧说明，保留文本外的多模态块且不修改输入。"""
+    if isinstance(content, str):
+        content = content.replace(_LEGACY_COMPRESSION_SYSTEM_NOTE, "")
+    elif isinstance(content, list):
+        content = [
+            {**block, "text": block["text"].replace(_LEGACY_COMPRESSION_SYSTEM_NOTE, "")}
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+            else block
+            for block in content
+        ]
+    if _COMPRESSION_SYSTEM_NOTE in _content_text_for_contains(content):
+        return content
+    separator = "\n\n" if content else ""
+    return _append_text_to_content(content, separator + _COMPRESSION_SYSTEM_NOTE)
 
 
 def _strip_image_parts_from_parts(parts: Any) -> Any:
@@ -1966,13 +2020,7 @@ The user has requested that this compaction PRIORITISE preserving all informatio
         for i in range(compress_start):
             msg = messages[i].copy()
             if i == 0 and msg.get("role") == "system":
-                existing = msg.get("content")
-                _compression_note = "[Note: Some earlier conversation turns have been compacted into a handoff summary to preserve context space. The current session state may still reflect earlier work, so build on that summary and state rather than re-doing work. Your persistent memory (MEMORY.md, USER.md) remains fully authoritative regardless of compaction.]"
-                if _compression_note not in _content_text_for_contains(existing):
-                    msg["content"] = _append_text_to_content(
-                        existing,
-                        "\n\n" + _compression_note if isinstance(existing, str) and existing else _compression_note,
-                    )
+                msg["content"] = _normalize_compression_system_note(msg.get("content"))
             compressed.append(msg)
 
         # If LLM summary failed, insert a deterministic fallback so the model

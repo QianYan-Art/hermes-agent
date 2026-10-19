@@ -269,6 +269,34 @@ class TestBuildSkillsSystemPrompt:
         assert "Debug Python scripts" in result
         assert "available_skills" in result
 
+    def test_skill_loading_guidance_reuses_context_and_uses_current_index(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        skills_dir = tmp_path / "skills" / "current-workflow"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: current-workflow\ndescription: 当前任务流程.\n---\n",
+            encoding="utf-8",
+        )
+
+        result = build_skills_system_prompt(available_tools={"skill_view"})
+
+        assert "current-workflow" in result
+        assert "已读且仍在可用上下文中的内容直接复用" in result
+        assert "视为满足读取要求" in result
+        assert "压缩后所需内容已不可用" in result
+        assert "工具未提供、技能被禁用或读取失败" in result
+        assert "load the `hermes-agent` skill" not in result
+        assert "先调用 skill_view(name)" in result
+        assert "patch it immediately" not in result
+
+    def test_skill_management_guidance_requires_write_authorization(self):
+        from agent.prompt_builder import SKILLS_GUIDANCE
+
+        assert "不由读取技能" in SKILLS_GUIDANCE
+        assert "明确的持续授权" in SKILLS_GUIDANCE
+        assert "本轮提供 skill_manage" in SKILLS_GUIDANCE
+        assert "patch it immediately" not in SKILLS_GUIDANCE
+
     def test_deduplicates_skills(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         cat_dir = tmp_path / "skills" / "tools"

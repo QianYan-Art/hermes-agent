@@ -43,7 +43,10 @@ bundled skill catalog. In particular, broad upstream skills such as
 - `mail-vps-ops` 查询全部邮箱时默认覆盖所有域名，不添加 `--domain` 或
   数量限制，也不要求用户提供邮箱地址；只有用户明确指定域名时才过滤。
   邮件服务主机名不是邮箱域名白名单，具体规则见 `08-mail-vps.md`。
-- Sub-agents default to no memory/skill mutation capability.
+- 技能读取与写入分别授权：发现流程过时或复杂任务结束，不自动授予技能维护权限。
+  主代理仅在当前请求或明确持续授权覆盖该目标、且本轮有相应工具时，才能在范围内
+  创建、修正或删除技能；否则只说明影响当前任务的问题，不自行保存或改写。
+- 子代理默认不具有记忆或技能修改能力；读取参考不改变这一边界。
 
 ## Runtime Guard
 
