@@ -249,6 +249,15 @@ class TestTangyugeIdentityOrdering:
         assert "skill_view(name='hermes-agent')" not in parts["stable"]
         assert "always holds the latest" not in parts["stable"]
 
+    def test_failed_queries_do_not_establish_missing_or_obsolete_paths(self):
+        parts = build_system_prompt_parts(_make_agent(skip_context_files=True))
+
+        assert "按统一技能读取规则优先使用该入口" in parts["stable"]
+        assert "查询被拒绝或读取失败只表示未能核验" in parts["stable"]
+        assert "不证明目标不存在、路径过时或部署布局已改变" in parts["stable"]
+        assert "仓库路径以仓库根目录为基准" in parts["stable"]
+        assert "技能资源相对路径以技能目录为基准" in parts["stable"]
+
     def test_memory_guidance_does_not_require_unavailable_history_tool(self):
         parts = build_system_prompt_parts(
             _make_agent(skip_context_files=True, valid_tool_names=["memory"])
