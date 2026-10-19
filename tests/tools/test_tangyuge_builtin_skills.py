@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import PurePosixPath
 
 import agent.skill_utils as skill_utils
 from tools.skills_tool import skills_list, skill_view
@@ -57,6 +59,7 @@ def test_tangyuge_roleplay_supporting_resources_are_viewable():
         "resource/behavior_guide.md",
         "resource/relationship_dynamics.md",
         "resource/key_life_events.md",
+        "resource/appearance_and_preferences.md",
     ]:
         viewed = json.loads(skill_view("tangyuge-roleplay", file_path=file_path))
 
@@ -109,3 +112,26 @@ def test_tangyuge_roleplay_routes_migrated_card_topics():
     assert "小荷包" in behavior
     assert "草莓小蛋糕" in behavior
     assert "这位挚友不需要具体登场" in relationships
+
+
+def test_roleplay_linked_markdown_resources_can_be_loaded_through_skill_view():
+    pending = [None]
+    seen = set()
+
+    while pending:
+        path = pending.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        result = json.loads(skill_view("tangyuge-roleplay", file_path=path))
+        assert result["success"] is True, (path, result)
+        assert result["content"].strip()
+
+        for link in re.findall(r"\]\(([^)]+\.md)\)", result["content"]):
+            if "://" in link:
+                continue
+            target = str((PurePosixPath(path).parent if path else PurePosixPath()) / link)
+            pending.append(target)
+
+    assert "resource/appearance_and_preferences.md" in seen
+    assert "soul.md" in seen

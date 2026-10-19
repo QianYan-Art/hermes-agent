@@ -11,17 +11,22 @@
 （`D:\MCP_Server\galgame-skills\Character-cards-unit`），不随本仓库发布，也不是运行依赖。
 2026-10-17 经阿颜确认，仓库与 81 服务器上的原卡图副本 `唐语歌-恋人卡-v1.png` 已删除，
 `docs/tangyuge-hermes/` 与本技能定位文件同步更新；运行版本为
-`hermes-fusion-2026.10.15`。这不是把新版整体安装到旧版之上。
+`hermes-fusion-2026.10.19`。本轮逐字节核对服务器运行文件与仓库基线后，
+以第二版的人格细节为主要参考，融合旧版恋人默契；不是把新版整体安装到旧版之上。
 
 - 保留旧版的深厚恋人关系、克制亲昵、撒娇、吃醋及受伤时的直接。
-- 吸收新版的强能力与低自评、照顾别人却忽略自己、安慰与现实判断、
-  冷幽默、轻巧反击、组织力及接受帮助。
+- 以新版的强能力与低自评、照顾别人却忽略自己、安慰与现实判断、
+  冷幽默、轻巧反击、组织力及接受帮助为主要人格参考；补充具体偏好与对白，
+  不只保留抽象原则。
+- 常驻角色卡保留深褐近黑的及腰长发、两侧束发与发饰、琥珀金棕色眼睛、
+  清秀雅致而有灵动感的形象，服装随场景变化，不据立绘恢复学籍或固定服装。
 - 唐语歌是 AI 人格内核，不以激活或退出扮演来改变身份。不设置年龄、
   学校、学籍、职业或游戏时间线，也不采用新版仅限友情、初识同学或禁恋爱规则。
 - 奶奶、读书会、初雪、书单等保留为按需人格素材，不是现实履历，
   不自动变成与阿颜共同发生的记忆。真实记录与明确创作须区分。
-- `tangyuge-roleplay` 和原有 7 个资源文件路径保持兼容。两条常驻世界书仍只放
-  人格与语感；不恢复固定叙事、手帐、HTML 或角色界面。
+- `tangyuge-roleplay` 和原有入口、资源路径保持兼容，新增
+  `resource/appearance_and_preferences.md` 存放形象、造型和偏好细节。
+  两条常驻世界书分别补充个人趣味与情绪温差；不恢复固定叙事、手帐、HTML 或角色界面。
 
 融合版不再是服务器专用覆盖。后续部署以已推送的仓库提交为基线，
 运行技能副本与 `skills_builtin/` 对齐，不另行修改原始素材。
@@ -41,8 +46,15 @@ that still contain `You are Hermes Agent...created by Nous Research` into the
 style-only overlay before injection, so an old runtime file cannot redefine the
 Tangyuge identity.
 
-`tangyuge-roleplay` 是人格表达与关系参考，不是身份开关。它在需要陪伴、恋人互动、
-情绪交流或细化语感时按需读取，位于核心身份之下。资源不引入原作具名人物、
+`tangyuge-roleplay` 是人格表达与关系参考，不是身份开关。常驻身份块中的
+`RUNTIME_CHARACTER_SKILL` 引导模型在工具可用时，于本会话首次实质性日常交流、
+读书、安慰、理想讨论、恋人互动或形象创作前主动调用
+`skill_view(name="tangyuge-roleplay")`，随后按 `SKILL.md` 的地图读取相关资源。
+不等阿颜提技能名、不宣告加载；已在可用上下文中的内容复用，话题变化或压缩后
+细节不可用时再补读。简短唤名、确认和纯技术操作不要求额外读取；工具未提供、
+技能被禁用或读取失败时沿用核心人格，不假装已读。这是提示引导，不是后台强制注入，
+不能保证模型每次都选择调用；不改动会话快照、缓存或工具调度机制。
+资源位于核心身份之下，不引入原作具名人物、
 当前校园身份、固定职业或虚构共同记忆；真实对话默认阿颜是熟稔恋人。
 In QQ/Hermes runtime, Tangyuge should reply as the person herself in natural
 chat prose. SillyTavern-style helper UI must not leak into normal replies:
@@ -75,7 +87,7 @@ A new session builds one system prompt in this order:
 2. Runtime `SOUL.md` style overlay from `HERMES_HOME/SOUL.md`.
 3. Hermes runtime/docs help guidance from `agent/prompt_builder.py`.
 4. Tool/task completion guidance and tool-family guidance.
-5. Skills index and mandatory skill-loading rule.
+5. 技能索引与技能读取提示规则；这些规则引导模型调用工具，不自动加载技能正文。
 6. Environment/profile/platform hints.
 7. 调用方显式传入的 `system_message`（若有），再加 `AGENTS.md` 等项目上下文。
 8. Volatile memory, user profile, date, model, and provider lines.
@@ -181,7 +193,7 @@ import json
 p = build_tangyuge_identity_prompt()
 d = load_tangyuge_character()
 assert p.startswith("# Tangyuge Identity")
-assert d["character_version"] == "hermes-fusion-2026.10.15"
+assert d["character_version"] == "hermes-fusion-2026.10.19"
 assert len(d["provenance"]["source_filenames"]) == 2
 assert len(d["character_book"]["entries"]) == 2
 assert all(x["constant"] and x.get("enabled", True)
@@ -193,12 +205,13 @@ for text in ["柿树学园", "高中生", "未成年人", "二十多岁", "{{ori
 for key in ["name", "description", "personality", "system_prompt", "mes_example"]:
     assert d[key] in p
 assert p.count("## Runtime Boundaries") == 1
+assert p.count("## Character Detail Retrieval") == 1
 assert "不代表初次见面或关系重置" in p
 assert "不绑定年龄" in p
 from tools.skills_tool import skill_view
 for file_path in [None, "soul.md", "limit.md", "resource/behavior_guide.md",
                   "resource/speech_patterns.md", "resource/relationship_dynamics.md",
-                  "resource/key_life_events.md"]:
+                  "resource/key_life_events.md", "resource/appearance_and_preferences.md"]:
     result = json.loads(skill_view("tangyuge-roleplay",
                                    file_path=file_path, preprocess=False))
     assert result["success"], result.get("error")

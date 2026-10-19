@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agent.system_prompt import build_system_prompt_parts
+from agent.tangyuge_identity import RUNTIME_CHARACTER_SKILL
 
 
 def _make_agent(**overrides):
@@ -58,6 +59,21 @@ class TestContextFileCwd:
 
 
 class TestTangyugeIdentityOrdering:
+    def test_character_skill_guidance_is_stable_and_does_not_preload_resources(self):
+        for tools in ([], ["skills_list", "skill_view"]):
+            with patch("tools.skills_tool.skill_view") as view:
+                first = build_system_prompt_parts(
+                    _make_agent(skip_context_files=True, valid_tool_names=tools)
+                )
+                second = build_system_prompt_parts(
+                    _make_agent(skip_context_files=True, valid_tool_names=tools)
+                )
+
+            assert first["stable"] == second["stable"]
+            assert first["stable"].count(RUNTIME_CHARACTER_SKILL) == 1
+            assert RUNTIME_CHARACTER_SKILL not in first["volatile"]
+            view.assert_not_called()
+
     def test_tangyuge_identity_is_first_stable_block(self):
         parts = build_system_prompt_parts(_make_agent(skip_context_files=True))
 

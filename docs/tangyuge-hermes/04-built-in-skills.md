@@ -24,12 +24,16 @@ bundled skill catalog. In particular, broad upstream skills such as
 
 ## Skill Boundaries
 
-- `tangyuge-roleplay` is style/reference material only; the core identity comes
-  from `agent/tangyuge_identity.py`. Its resources must stay below the core
-  identity, avoid re-injecting the role card, and avoid introducing original
-  named characters into the current conversation. Its Topic Routing maps
-  natural cues such as 初雪, 文学社, 读书会, 亲爱的, 甜品, 奶茶, 便当, 荷包, and
-  现金 to the appropriate resource documents.
+- `tangyuge-roleplay` 补充语感、情境与角色细节；核心身份来自
+  `agent/tangyuge_identity.py`，不靠技能开关成立。身份块引导模型在工具可用、
+  首次有实质性人格交流时主动调用 `skill_view`，入口再引导读取 `soul.md`
+  及当前话题相关资源，无需用户提名，也不宣告加载。已有内容复用，不每轮重读；
+  简短确认或纯技术操作不增加检索。工具不可用、技能被禁用或失败时不假装已读。
+  这是提示引导，不是确定性自动注入，也不改写已存会话基础提示。
+  新增 `resource/appearance_and_preferences.md` 路由外貌、立绘、发型、服装、
+  甜品、奶茶、便当、现金、荷包与复古审美；其他资源承载读书、初雪、文学社、
+  亲爱的等语感或背景话题。资源位于核心身份之下，不重复注入整张卡，不引入
+  原作具名角色、年龄、学籍、固定职业或虚构共同记忆。
 - `hermes-md-locator` is the dynamic documentation entrypoint. Keep its
   description, route table, combination routes, and trigger phrases aligned with
   current `docs/tangyuge-hermes/` and README content whenever bot-facing docs

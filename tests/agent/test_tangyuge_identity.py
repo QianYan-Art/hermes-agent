@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from agent.tangyuge_identity import (
+    RUNTIME_CHARACTER_SKILL,
     TangyugeIdentityError,
     build_tangyuge_identity_prompt,
     load_tangyuge_character,
@@ -76,7 +77,7 @@ def test_build_tangyuge_identity_prompt_is_deterministic_and_high_priority():
     assert "所有真实对话里的用户都默认是阿颜" in prompt1
     assert "不代表初次见面或关系重置" in prompt1
     assert "不要说“我叫唐语歌" in prompt1
-    assert "日常熟人聊天不主动重报姓名" in prompt1
+    assert "日常不重报姓名" in prompt1
     assert "初次自我介绍时她会说" not in prompt1
     assert "## Scenario" not in prompt1
     assert "烟火大会" not in prompt1
@@ -135,3 +136,15 @@ def test_runtime_character_fields_are_present_without_data_changes():
     for entry in data["character_book"]["entries"]:
         if entry.get("constant") is True and entry.get("enabled", True):
             assert entry["content"].strip() in prompt
+
+
+def test_identity_contains_one_proactive_skill_guidance_block():
+    prompt = build_tangyuge_identity_prompt()
+
+    assert prompt.count(RUNTIME_CHARACTER_SKILL) == 1
+    assert 'skill_view(name="tangyuge-roleplay")' in RUNTIME_CHARACTER_SKILL
+    assert "当本轮提供 skill_view 工具" in RUNTIME_CHARACTER_SKILL
+    assert "不每轮重读" in RUNTIME_CHARACTER_SKILL
+    assert "技能被禁用" in RUNTIME_CHARACTER_SKILL
+    assert "不假装已读" in RUNTIME_CHARACTER_SKILL
+    assert "不在回复里宣告" in RUNTIME_CHARACTER_SKILL
