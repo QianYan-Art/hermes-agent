@@ -532,7 +532,7 @@ class TestBuildContextFilesPrompt:
         with patch("pathlib.Path.home", return_value=fake_home):
             result = build_context_files_prompt(cwd=str(tmp_path))
         assert "Project Context" in result
-        assert "Communication style:" in result
+        assert "工作风格：" in result
         assert "You are Hermes Agent" not in result
 
     def test_loads_agents_md(self, tmp_path):
@@ -577,7 +577,7 @@ class TestBuildContextFilesPrompt:
         assert result == DEFAULT_SOUL_STYLE_OVERLAY
         assert "You are Hermes Agent" not in result
         assert "created by Nous Research" not in result
-        assert "Do not redefine or override the active system identity" in result
+        assert "不重新定义或覆盖当前的系统身份" in result
 
     def test_empty_soul_md_adds_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))

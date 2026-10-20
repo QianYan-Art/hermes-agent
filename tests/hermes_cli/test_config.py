@@ -56,7 +56,7 @@ class TestEnsureHermesHome:
             assert content != ""
             assert "Hermes Agent" not in content
             assert "Nous Research" not in content
-            assert "active system identity" in content
+            assert "不重新定义或覆盖当前的系统身份" in content
 
     def test_does_not_overwrite_existing_soul_md(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):

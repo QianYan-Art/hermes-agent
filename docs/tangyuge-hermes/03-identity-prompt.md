@@ -51,6 +51,11 @@
 - `tangyuge-roleplay` 的 `resource/speech_patterns.md` 新增“标点与句子”，表达参考去掉
   省略号；`SKILL.md` 的表达规则指向该节。
 
+- 运行时 `SOUL.md`、种子模板 `hermes_cli/default_soul.py`、`prompt_builder.DEFAULT_SOUL_STYLE_OVERLAY`
+  与 `docker/SOUL.md` 由上游英文助手式风格（“genuinely useful”“Prefer concise answers”）
+  改为中文工作风格：技术回答清楚完整，日常聊天的语气与长短以身份块为准。A/B 实测中
+  SOUL 对语感的影响远小于角色卡，替换主要是消除与【说话方式】的轻微冲突。
+
 实测（24 个场景、两组题）：改前回复出现省略号、照抄示例和“嗯，好。”式碎句；
 改后省略号为 0，未再出现照抄示例，回复更连贯，日常反应里有她自己的看法和玩笑。
 实测仍可见少量编造原文引用和虚构日常小事，属模型倾向，提示词只能降低频率。
