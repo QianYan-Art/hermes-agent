@@ -11,7 +11,7 @@
 （`D:\MCP_Server\galgame-skills\Character-cards-unit`），不随本仓库发布，也不是运行依赖。
 2026-10-17 经阿颜确认，仓库与 81 服务器上的原卡图副本 `唐语歌-恋人卡-v1.png` 已删除，
 `docs/tangyuge-hermes/` 与本技能定位文件同步更新；运行版本为
-`hermes-fusion-2026.10.19`。本轮逐字节核对服务器运行文件与仓库基线后，
+`hermes-fusion-2026.10.20`。本轮逐字节核对服务器运行文件与仓库基线后，
 以第二版的人格细节为主要参考，融合旧版恋人默契；不是把新版整体安装到旧版之上。
 
 - 保留旧版的深厚恋人关系、克制亲昵、撒娇、吃醋及受伤时的直接。
@@ -27,6 +27,33 @@
 - `tangyuge-roleplay` 和原有入口、资源路径保持兼容，新增
   `resource/appearance_and_preferences.md` 存放形象、造型和偏好细节。
   两条常驻世界书分别补充个人趣味与情绪温差；不恢复固定叙事、手帐、HTML 或角色界面。
+
+### 2026-10-20 语言润色
+
+阿颜反馈对话“AI 感”重：喜欢把一句话用句号、逗号、省略号切成短句。用真实 Kimi
+（`kimi-for-coding`，thinking low，提供 `skill_view`）对比改前改后，确认原因主要在
+提示词文本本身：
+
+- 角色卡和技能大量使用“X，不 Y；A、B，也不 C”式规则短语，模型会照着这种
+  否定排比和碎句节奏说话。
+- 卡中写了“一点停顿”“藏半句”“没说完又补上的半句话”“短句”等表达技巧，
+  示例对白里有多处 `……`，模型照搬成“嗯，好。那我就在。”“……再赖一会儿吧”。
+- “讨利息”“桂花乌龙”“书页”等具体道具在卡中反复出现，被当成口头禅硬塞进回复。
+
+本轮只改语言，不改人格设定、关系、边界和技能读取契约：
+
+- `description`、`personality`、`system_prompt`、`mes_example` 与两条世界书改写为
+  通顺的叙述句，删去教模型“停顿、短句、藏半句”的写法；示例去掉省略号，并注明
+  不照搬用词与道具。
+- `system_prompt` 新增【说话方式】：像真人打字聊天、一句话说完整、不用标点切碎句子、
+  少比喻、不必每次以提问结尾、避免客服式收尾和泛泛问候，聊书拿不准原文时不编引文。
+- `RUNTIME_RELATIONSHIP_DEFAULTS`、`RUNTIME_CHARACTER_SKILL` 改为通顺表述，语义不变。
+- `tangyuge-roleplay` 的 `resource/speech_patterns.md` 新增“标点与句子”，表达参考去掉
+  省略号；`SKILL.md` 的表达规则指向该节。
+
+实测（24 个场景、两组题）：改前回复出现省略号、照抄示例和“嗯，好。”式碎句；
+改后省略号为 0，未再出现照抄示例，回复更连贯，日常反应里有她自己的看法和玩笑。
+实测仍可见少量编造原文引用和虚构日常小事，属模型倾向，提示词只能降低频率。
 
 融合版不再是服务器专用覆盖。后续部署以已推送的仓库提交为基线，
 运行技能副本与 `skills_builtin/` 对齐，不另行修改原始素材。
@@ -225,7 +252,7 @@ import json
 p = build_tangyuge_identity_prompt()
 d = load_tangyuge_character()
 assert p.startswith("# Tangyuge Identity")
-assert d["character_version"] == "hermes-fusion-2026.10.19"
+assert d["character_version"] == "hermes-fusion-2026.10.20"
 assert len(d["provenance"]["source_filenames"]) == 2
 assert len(d["character_book"]["entries"]) == 2
 assert all(x["constant"] and x.get("enabled", True)
@@ -239,7 +266,7 @@ for key in ["name", "description", "personality", "system_prompt", "mes_example"
 assert p.count("## Runtime Boundaries") == 1
 assert p.count("## Character Detail Retrieval") == 1
 assert "不代表初次见面或关系重置" in p
-assert "不绑定年龄" in p
+assert "没有设定好的年龄" in p
 from tools.skills_tool import skill_view
 for file_path in [None, "soul.md", "limit.md", "resource/behavior_guide.md",
                   "resource/speech_patterns.md", "resource/relationship_dynamics.md",

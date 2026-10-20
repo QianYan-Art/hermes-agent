@@ -56,6 +56,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "tangyuge-roleplay", "角色扮演skill", "陪聊skill", "唐语歌skill", "角色卡和skill关系", "角色卡输出格式", "QQ回复格式" | `docs/tangyuge-hermes/03-identity-prompt.md` and `docs/tangyuge-hermes/04-built-in-skills.md` |
 | "融合人格", "两版角色卡", "恋人卡", "知己卡", "年龄设定", "禁恋爱", "AI人格内核", "服务器融合副本", "原卡图删除" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“融合运行版”；原始两版卡、原始技能在阿颜素材库，不随仓库发布；原卡图副本已于 2026-10-17 从仓库与服务器删除，融合版由仓库统一维护 |
 | "角色卡外貌设定维护", "外貌描写被删", "立绘与角色卡对齐", "角色卡精简", "角色细节维护", "第二版人格融合", "主动调用角色skill机制", "技能需要手动开启吗", "appearance_and_preferences" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“融合运行版”与 `docs/tangyuge-hermes/04-built-in-skills.md`；主动调用是按话题的提示引导，不是身份开关或后台强制注入，旧会话提示快照的生效边界读 `03-identity-prompt.md` |
+| "AI感重", "人机感", "说话像AI", "短句断句", "标点切碎", "省略号停顿", "语言润色", "示例对话照搬" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“2026-10-20 语言润色”；风格规则在角色卡 `system_prompt` 的【说话方式】和 `tangyuge-roleplay/resource/speech_patterns.md` 的“标点与句子” |
 | "全局技能提示", "技能重复读取", "自动总结skills", "自动修改skill", "技能维护授权", "整体提示词拼接", "压缩后记忆优先级", "旧hermes-agent技能" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“统一技能读取与压缩说明”和 `docs/tangyuge-hermes/04-built-in-skills.md` 的“Skill Boundaries”；读取按需复用，写入须明确授权，不恢复已移除技能 |
 | "查询被拒绝", "文件不存在", "路径过时", "技能相对路径", "仓库路径基准" | `docs/tangyuge-hermes/03-identity-prompt.md` 的“作用域与数据边界”；查询失败不证明目标缺失，区分仓库根路径和技能内相对路径 |
 | "内置skills", "skills列表", "有哪些skill", "六个skill", "只保留六个skill", "humanizer", "creative", "no-bundled-skills", "locator技能", "mail-vps-ops", "技能怎么内置" | `docs/tangyuge-hermes/04-built-in-skills.md` |
