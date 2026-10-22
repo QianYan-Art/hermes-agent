@@ -76,7 +76,9 @@ PAGE_SNAPSHOT_SCRIPT = r"""(expectedAccount) => {
     "请进行安全验证", "验证后继续"
   ];
   const verificationRequired = challengeWidgetVisible ||
-    challengePhrases.some((phrase) => bodyText.includes(phrase));
+    challengePhrases.some((phrase) => bodyText.includes(phrase)) ||
+    ["接收短信验证码", "验证登录密码", "发送短信验证"]
+      .filter((phrase) => bodyText.includes(phrase)).length >= 2;
   const idSelectors = [
     '[data-e2e*="user-id"]', '[data-e2e*="uid"]', '[data-e2e*="account-id"]',
     '[data-testid*="user-id"]', '[class*="userId"]', '[class*="accountId"]'
@@ -98,6 +100,8 @@ PAGE_SNAPSHOT_SCRIPT = r"""(expectedAccount) => {
     verification_required: verificationRequired,
     login_control_visible: loginControlVisible,
     login_prompt_visible: loginPromptVisible,
+    qr_expired: ["二维码已过期", "二维码已失效", "二维码失效", "二维码过期"].some((phrase) => bodyText.includes(phrase)),
+    phone_confirmation_pending: ["请在手机上确认登录", "请在抖音上确认登录", "扫码成功"].some((phrase) => bodyText.includes(phrase)),
     qr_visible: false,
     page_error: location.protocol === "chrome-error:"
   };
@@ -383,14 +387,18 @@ class PlaywrightBrowser:
         state = classify_page(snapshot, self.config.expected_account)
         if state in {"logged_in", "account_mismatch", "verification_required"}:
             return make_response(state)
+        if snapshot.get("phone_confirmation_pending"):
+            return make_response("login_required", "已扫码，请在抖音手机端确认登录后再检查状态。")
 
         current_url = page.url
-        if not _is_douyin_host(current_url):
+        if not _is_douyin_host(current_url) or snapshot.get("qr_expired"):
             await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=15000)
             await page.wait_for_timeout(1200)
 
         snapshot = await self._wait_for_login_ui(page, wait_for_qr=False)
         state = classify_page(snapshot, self.config.expected_account)
+        if snapshot.get("phone_confirmation_pending"):
+            return make_response("login_required", "已扫码，请在抖音手机端确认登录后再检查状态。")
         if state == "login_required" and not snapshot.get("qr_visible"):
             if await self._click_explicit_login(page):
                 snapshot = await self._wait_for_login_ui(page, wait_for_qr=True)

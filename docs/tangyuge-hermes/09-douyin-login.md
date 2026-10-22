@@ -18,6 +18,8 @@
 - 说“登录抖音”时调用 `douyin_login(action="login")`，若返回 `media_tag`，
   必须在本次私聊最终回复中原样带上标签，QQ 才会投递二维码。不要转发至其他会话。
 - 阿颜用抖音手机端扫码并确认后，再检查状态；二维码过期则再次请求登录。
+  明确检测到二维码过期时，`login` 只刷新固定登录页；等待手机确认时不重复发码，
+  已识别正确账号登录时也不重新导航或登录。
 - `logged_in` 必须同时识别创作者后台和配置的账号，不以页面可打开或 Cookie 存在为依据。
 - `unknown` 不代表退出；`account_mismatch` 不代表可以自行切号；
   `verification_required` 需要人工完成验证，不解验证码、不绕过风控、不反复尝试。
@@ -52,7 +54,7 @@ Hermes venv Python 执行 `ops/douyin-login/install.py --expected-account <已�
 
 安装器内部以 `--system`、`--gid`、`--home-dir`、`--shell` 创建隔离账号，
 仅将 hermes 追加进套接字访问组；以 `systemctl enable --now` 启动独立服务。
-它不执行系统整体升级，不修改其他服务配置；Playwright 的系统依赖安装仍会增加
+它不执行系统整体升级，不修改其他服务配置；浏览器依赖安装仍会增加
 共享系统库，应先核对磁盘、内存和包管理器状态。重复运行不会清空 profile。
 APT 使用 `--no-install-recommends`，不为无桌面的服务器增装打印机、设备发现等推荐服务。
 浏览器固定使用 `/usr/bin/chromium`，来自 Debian 的 `chromium` 与
@@ -68,6 +70,27 @@ APT 使用 `--no-install-recommends`，不为无桌面的服务器增装打印�
 不能作为测试残留删除。QQ 已投递图片及聊天历史不随文件清理而撤回。
 
 ## 验证边界
+
+### 临时人工验证窗口
+
+仅在阿颜当次明确允许时，由运维临时提供 noVNC 人工窗口。首次服务器扫码已观察到
+“接收短信验证码 / 验证登录密码 / 发送短信验证”的设备验证选择，它不是已登录状态，
+手机端不一定另有提示。不要自动触发短信，不让模型接收登录密码或验证码。
+
+窗口使用 Debian `x11vnc`、`novnc`、`websockify`，安装时不包含推荐组件。
+VNC 与 WebSocket 分别只监听 `127.0.0.1:5905`、`127.0.0.1:6085`，关闭 IPv6
+监听，设置临时 VNC 密码；Windows 经 SSH `127.0.0.1:16085 -> 127.0.0.1:6085`
+转发后，在本机浏览器打开 noVNC。密码不写 URL，抖音验证码由阿颜自己在网页输入。
+两个临时 systemd 单元设 `RuntimeMaxSec=15min`，不设开机启动；验证完成或超时后
+关闭转发、服务及密码文件，不在公网开远程桌面端口。
+运维入口为 `ops/douyin-login/manual_window.py open|close`；可选包用
+`apt-get install --no-install-recommends x11vnc novnc websockify` 安装。
+启动器以 `--unit`、`--property` 创建临时单元，经 `--target` 进程的 `--mount`
+命名空间连接现有显示；websockify 的 `--web` 只服务 noVNC 静态文件，不导出运行目录。
+
+人工验证仅控制已有独立浏览器，不重启、不切换 profile。结束后再验证账号与重启
+持久性。临时窗口当前依赖本机 SSH 转发，不宣称它可以在 Windows 离线时从 QQ 打开；
+常规扫码和登录状态工具仍在服务器运行，额外验证须另行人工接管。
 
 协议、权限、错误与页面状态判别的单元测试不等于真实登录成功。
 服务器首次扫码后，还需检查正确账号、重启执行服务后保持登录；未完成时明确标记
