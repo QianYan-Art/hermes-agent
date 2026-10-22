@@ -4,7 +4,6 @@
 import argparse
 import os
 from pathlib import Path
-import pwd
 import secrets
 import shutil
 import socket
@@ -14,6 +13,31 @@ import time
 
 UNITS = ("hermes-douyin-manual-web.service", "hermes-douyin-manual-vnc.service")
 PASSWORD_FILE = Path("/run/hermes-douyin/manual.pass")
+
+
+def start_units(pid, display, authority):
+    subprocess.run([
+        "systemd-run", "--unit=hermes-douyin-manual-vnc", "--property=RuntimeMaxSec=15min",
+        "nsenter", "--target", pid, "--mount", "--", "runuser", "-u", "douyin-runner", "--",
+        "/usr/bin/x11vnc", "-norc", "-nocmds", "-localhost", "-listen", "127.0.0.1", "-no6",
+        "-rfbport", "5905", "-passwdfile", "rm:" + str(PASSWORD_FILE), "-display", display,
+        "-auth", authority, "-noshm", "-noxdamage", "-nosel", "-forever",
+    ], check=True)
+    subprocess.run([
+        "systemd-run", "--unit=hermes-douyin-manual-web", "--property=RuntimeMaxSec=15min",
+        "--property=User=douyin-runner", "--property=Group=hermes-douyin",
+        "/usr/bin/websockify", "--web=/usr/share/novnc", "127.0.0.1:6085", "127.0.0.1:5905",
+    ], check=True)
+    for port in (5905, 6085):
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("临时窗口监听启动失败")
+                time.sleep(0.1)
 
 
 def close_window():
@@ -27,6 +51,8 @@ def close_window():
 
 
 def open_window():
+    import pwd
+
     for command in ("x11vnc", "websockify", "nsenter"):
         if not shutil.which(command):
             raise RuntimeError("请先安装临时验证窗口的可选依赖")
@@ -59,28 +85,7 @@ def open_window():
         f.write(password + "\n")
         os.fchown(f.fileno(), runner.pw_uid, runner.pw_gid)
     try:
-        subprocess.run([
-            "systemd-run", "--unit=hermes-douyin-manual-vnc", "--property=RuntimeMaxSec=15min",
-            "nsenter", "--target", pid, "--mount", "--", "runuser", "-u", "douyin-runner", "--",
-            "/usr/bin/x11vnc", "-norc", "-nocmds", "-localhost", "-listen", "127.0.0.1", "-no6",
-            "-rfbport", "5905", "-passwdfile", "rm:" + str(PASSWORD_FILE), "-display", display,
-            "-auth", authority, "-noshm", "-noxdamage", "-nosel", "-forever",
-        ], check=True)
-        for port in (5905, 6085):
-            deadline = time.monotonic() + 5
-            while True:
-                try:
-                    with socket.create_connection(("127.0.0.1", port), timeout=1):
-                        break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("临时窗口监听启动失败")
-                    time.sleep(0.1)
-        subprocess.run([
-            "systemd-run", "--unit=hermes-douyin-manual-web", "--property=RuntimeMaxSec=15min",
-            "--property=User=douyin-runner", "--property=Group=hermes-douyin",
-            "/usr/bin/websockify", "--web=/usr/share/novnc", "127.0.0.1:6085", "127.0.0.1:5905",
-        ], check=True)
+        start_units(pid, display, authority)
     except BaseException:
         close_window()
         raise
