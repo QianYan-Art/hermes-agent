@@ -36,7 +36,8 @@ def open_window():
     for pid in (Path("/sys/fs/cgroup") / group.lstrip("/") / "cgroup.procs").read_text().split():
         proc = Path("/proc") / pid
         try:
-            if proc.stat().st_uid == runner.pw_uid and b"/opt/hermes-douyin/service.py" in (proc / "cmdline").read_bytes().split(b"\0"):
+            arguments = (proc / "cmdline").read_bytes().split(b"\0")
+            if proc.stat().st_uid == runner.pw_uid and arguments[:2] == [b"/opt/hermes-douyin/venv/bin/python", b"/opt/hermes-douyin/service.py"]:
                 candidates.append(pid)
         except FileNotFoundError:
             continue
