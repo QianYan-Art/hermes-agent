@@ -147,7 +147,7 @@ def activate_plugin():
 
 
 def prepare(expected):
-    run("apt-get", "install", "-y", "python3-venv", "xvfb", "xauth", "fonts-noto-cjk")
+    run("apt-get", "install", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk")
     try:
         grp.getgrnam("hermes-douyin")
     except KeyError:
@@ -170,8 +170,6 @@ def prepare(expected):
     if not (DEST / "venv/bin/python").exists():
         run("python3", "-m", "venv", str(DEST / "venv"))
     run(str(DEST / "venv/bin/python"), "-m", "pip", "install", "-r", str(DEST / "requirements.txt"))
-    run(str(DEST / "venv/bin/playwright"), "install-deps", "chromium")
-    run("runuser", "-u", "douyin-runner", "--", "env", "PLAYWRIGHT_BROWSERS_PATH=" + str(STATE / "ms-playwright"), str(DEST / "venv/bin/playwright"), "install", "chromium")
     atomic_write(
         Path("/etc/hermes-douyin.env"),
         f"DOUYIN_ALLOWED_UID={hermes.pw_uid}\nDOUYIN_EXPECTED_ACCOUNT={expected}\n",

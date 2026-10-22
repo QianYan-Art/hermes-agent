@@ -45,7 +45,7 @@
 
 先提交、推送并确认 GitHub main，再将服务器源码快进至同一提交。root 使用
 Hermes venv Python 执行 `ops/douyin-login/install.py --expected-account <已核实抖音号>`，
-安装独立 venv、Playwright Chromium、Xvfb 和服务；再执行 `--activate-plugin`
+安装独立 venv、Debian Chromium、Xvfb 和服务；再执行 `--activate-plugin`
 配置用户插件和 QQ 工具组，待当前代理空闲后重启网关。不要把 Cookie 当作该参数。
 激活步骤按 YAML 解析后保存，仅增加这两个列表项，但会重新排版并移除 YAML 注释。
 部署验收须比较配置语义，不以文件逐字节相同作为该文件的判断依据。
@@ -54,6 +54,9 @@ Hermes venv Python 执行 `ops/douyin-login/install.py --expected-account <已�
 仅将 hermes 追加进套接字访问组；以 `systemctl enable --now` 启动独立服务。
 它不执行系统整体升级，不修改其他服务配置；Playwright 的系统依赖安装仍会增加
 共享系统库，应先核对磁盘、内存和包管理器状态。重复运行不会清空 profile。
+浏览器固定使用 `/usr/bin/chromium`，来自 Debian 的 `chromium` 与
+`chromium-sandbox` 包，Playwright 仅作为驱动。首次部署的官方浏览器下载链路过慢，
+因此不依赖 Google 下载；需以真实启动和页面测试验证此组合，不关闭 Chromium 沙箱。
 
 检查 `hermes-douyin.service`、`hermes-gateway.service`、实际工具 schema 和 QQ 连接。
 回滚时停用独立服务并从配置移除这两个新增列表项，撤掉专属网关 drop-in；

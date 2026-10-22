@@ -306,6 +306,7 @@ class PlaywrightBrowser:
             self._playwright = await async_playwright().start()
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.config.profile_dir),
+                executable_path="/usr/bin/chromium",
                 headless=False,
                 chromium_sandbox=True,
             )

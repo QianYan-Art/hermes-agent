@@ -10,7 +10,6 @@ Group=hermes-douyin
 WorkingDirectory=/opt/hermes-douyin
 Environment=DOUYIN_DATA_DIR=/var/lib/hermes-douyin
 Environment=DOUYIN_SOCKET_PATH=/run/hermes-douyin/login.sock
-Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/hermes-douyin/ms-playwright
 EnvironmentFile=/etc/hermes-douyin.env
 ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x900x24 -nolisten tcp" /opt/hermes-douyin/venv/bin/python /opt/hermes-douyin/service.py
 RuntimeDirectory=hermes-douyin
