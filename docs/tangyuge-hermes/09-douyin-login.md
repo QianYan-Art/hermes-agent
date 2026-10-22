@@ -54,6 +54,7 @@ Hermes venv Python 执行 `ops/douyin-login/install.py --expected-account <已�
 仅将 hermes 追加进套接字访问组；以 `systemctl enable --now` 启动独立服务。
 它不执行系统整体升级，不修改其他服务配置；Playwright 的系统依赖安装仍会增加
 共享系统库，应先核对磁盘、内存和包管理器状态。重复运行不会清空 profile。
+APT 使用 `--no-install-recommends`，不为无桌面的服务器增装打印机、设备发现等推荐服务。
 浏览器固定使用 `/usr/bin/chromium`，来自 Debian 的 `chromium` 与
 `chromium-sandbox` 包，Playwright 仅作为驱动。首次部署的官方浏览器下载链路过慢，
 因此不依赖 Google 下载；需以真实启动和页面测试验证此组合，不关闭 Chromium 沙箱。

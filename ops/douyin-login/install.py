@@ -147,7 +147,7 @@ def activate_plugin():
 
 
 def prepare(expected):
-    run("apt-get", "install", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk")
+    run("apt-get", "install", "--no-install-recommends", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk")
     try:
         grp.getgrnam("hermes-douyin")
     except KeyError:
