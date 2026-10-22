@@ -1,0 +1,5 @@
+name: douyin-login
+version: "0.1.0"
+description: 抖音服务器登录状态与扫码入口，不提供发布操作。
+author: QianYan
+kind: standalone

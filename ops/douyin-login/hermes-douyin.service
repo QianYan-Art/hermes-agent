@@ -1,0 +1,31 @@
+[Unit]
+Description=Hermes Douyin creator login service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=douyin-runner
+Group=hermes-douyin
+WorkingDirectory=/opt/hermes-douyin
+Environment=DOUYIN_DATA_DIR=/var/lib/hermes-douyin
+Environment=DOUYIN_SOCKET_PATH=/run/hermes-douyin/login.sock
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/hermes-douyin/ms-playwright
+EnvironmentFile=/etc/hermes-douyin.env
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x900x24 -nolisten tcp" /opt/hermes-douyin/venv/bin/python /opt/hermes-douyin/service.py
+RuntimeDirectory=hermes-douyin
+RuntimeDirectoryMode=0750
+StateDirectory=hermes-douyin
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/hermes-douyin /run/hermes-douyin
+
+[Install]
+WantedBy=multi-user.target

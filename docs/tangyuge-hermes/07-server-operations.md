@@ -24,6 +24,10 @@ docs.
 
 ## Current Runtime Shape
 
+抖音服务器登录的独立插件、工具边界、扫码与验证操作见
+`09-douyin-login.md`。不要将本阶段登录入口描述为视频发布或后台统计能力，
+也不要把其浏览器 profile 当成无用缓存清理。
+
 Default model provider:
 
 - Provider slug: `kimi-code`（`providers:` 下的命名自定义 provider，运行时

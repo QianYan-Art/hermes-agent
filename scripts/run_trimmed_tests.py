@@ -25,6 +25,8 @@ COMPILE_TARGETS = (
     "plugins/model-providers/minimax",
     "plugins/model-providers/deepseek",
     "plugins/rtk-rewrite",
+    "ops/douyin-login",
+    "ops/douyin-plugin",
     "tests/trimmed_manifest.py",
     "tests/hermes_cli/test_tangyuge_trimmed_profile.py",
 )
