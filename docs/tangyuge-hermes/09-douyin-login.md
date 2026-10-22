@@ -43,6 +43,11 @@
 不暴露浏览器调试 TCP、VNC、任意 URL、JavaScript、文件读写或 Cookie 导出接口。
 原始浏览器登录凭据不进入源码、日志、Hermes 提示词和本机素材库。
 
+独立服务使用 systemd `Type=notify`，套接字就绪后由 Python 上报真实 `MAINPID`，
+并将通知权限缩回主进程、从子进程环境移除通知地址。`KillMode=mixed` 先让该进程
+处理 SIGTERM 并关闭持久上下文，超时才清理其余进程；不先向 Chromium 整组发退出信号。
+要求 systemd 254 或更新版本，安装器在修改系统前校验此条件。
+
 ## 部署入口
 
 先提交、推送并确认 GitHub main，再将服务器源码快进至同一提交。root 使用
@@ -87,10 +92,16 @@ VNC 与 WebSocket 分别只监听 `127.0.0.1:5905`、`127.0.0.1:6085`，关闭 I
 `apt-get install --no-install-recommends x11vnc novnc websockify` 安装。
 启动器以 `--unit`、`--property` 创建临时单元，经 `--target` 进程的 `--mount`
 命名空间连接现有显示；websockify 的 `--web` 只服务 noVNC 静态文件，不导出运行目录。
+重复开启前以 `systemctl is-active --quiet` 检查旧窗口，已有窗口时拒绝覆盖；
+关闭后核实两个服务都不活跃，再宣布入口已关闭。
 
 人工验证仅控制已有独立浏览器，不重启、不切换 profile。结束后再验证账号与重启
 持久性。临时窗口当前依赖本机 SSH 转发，不宣称它可以在 Windows 离线时从 QQ 打开；
 常规扫码和登录状态工具仍在服务器运行，额外验证须另行人工接管。
+
+一次只保留一个 VNC 客户端。切换到系统 Chrome/Edge 前，先断开 Codex 内置窗口；
+否则即使临时口令正确，新连接也可能因旧客户端独占而被拒绝。内置窗口无法传递
+键盘时使用系统浏览器；noVNC 左侧 Clipboard 不是抖音输入框，本通道禁用剪贴板同步。
 
 协议、权限、错误与页面状态判别的单元测试不等于真实登录成功。
 服务器首次扫码后，还需检查正确账号、重启执行服务后保持登录；未完成时明确标记

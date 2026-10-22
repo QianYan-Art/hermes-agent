@@ -506,6 +506,19 @@ async def _handle_connection(
             pass
 
 
+def notify_systemd_ready() -> None:
+    """使 systemd 只向真正的服务进程发送退出信号。"""
+    address = os.environ.pop("NOTIFY_SOCKET", None)
+    if not address:
+        return
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notifier:
+        notifier.settimeout(2)
+        notifier.connect(address)
+        notifier.sendall(f"MAINPID={os.getpid()}\nNOTIFYACCESS=main\nREADY=1".encode())
+
+
 async def run_server(config: ServiceConfig) -> None:
     if not hasattr(socket, "SO_PEERCRED"):
         raise ConfigError("当前系统不支持 Unix peer 凭据校验")
@@ -548,6 +561,7 @@ async def run_server(config: ServiceConfig) -> None:
             raise ConfigError("创建的 socket 类型无效")
         socket_identity = (socket_info.st_dev, socket_info.st_ino)
         os.chmod(config.socket_path, 0o660)
+        notify_systemd_ready()
         LOGGER.info("抖音登录服务已启动。")
         async with server:
             await stopping.wait()

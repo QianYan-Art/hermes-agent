@@ -147,6 +147,9 @@ def activate_plugin():
 
 
 def prepare(expected):
+    version = re.match(r"systemd (\d+)", subprocess.check_output(["systemctl", "--version"], text=True))
+    if version is None or int(version.group(1)) < 254:
+        raise RuntimeError("独立登录服务要求 systemd 254 或更新版本")
     run("apt-get", "install", "--no-install-recommends", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk")
     try:
         grp.getgrnam("hermes-douyin")

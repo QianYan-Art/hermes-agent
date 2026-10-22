@@ -4,7 +4,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 User=douyin-runner
 Group=hermes-douyin
 WorkingDirectory=/opt/hermes-douyin
@@ -20,6 +21,8 @@ UMask=0077
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=45
+TimeoutStartSec=20
+KillMode=mixed
 PrivateTmp=true
 ProtectSystem=strict
 ProtectKernelTunables=true

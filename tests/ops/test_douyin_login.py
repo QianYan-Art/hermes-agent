@@ -51,6 +51,36 @@ def test_login_overlay_overrides_stale_authenticated_background():
     assert douyin_login.classify_page(snapshot, "creator-id") == "login_required"
 
 
+def test_notify_ready_targets_real_process_and_removes_child_environment(monkeypatch):
+    captured = {}
+
+    class Notifier:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def settimeout(self, seconds):
+            assert seconds == 2
+
+        def connect(self, address):
+            captured["address"] = address
+
+        def sendall(self, payload):
+            captured["payload"] = payload
+
+    monkeypatch.setenv("NOTIFY_SOCKET", "@test-notify")
+    monkeypatch.setattr(douyin_login.socket, "AF_UNIX", 1, raising=False)
+    monkeypatch.setattr(douyin_login.socket, "socket", lambda *args: Notifier())
+    douyin_login.notify_systemd_ready()
+    assert captured["address"] == "\0test-notify"
+    assert b"MAINPID=" in captured["payload"]
+    assert b"NOTIFYACCESS=main" in captured["payload"]
+    assert b"READY=1" in captured["payload"]
+    assert "NOTIFY_SOCKET" not in douyin_login.os.environ
+
+
 def test_config_requires_uid_and_absolute_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(douyin_login.socket, "SO_PEERCRED", 17, raising=False)
     data_dir = tmp_path / "state"
