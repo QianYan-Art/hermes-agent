@@ -15,6 +15,38 @@ UNITS = ("hermes-douyin-manual-web.service", "hermes-douyin-manual-vnc.service")
 PASSWORD_FILE = Path("/run/hermes-douyin/manual.pass")
 
 
+def listener_belongs_to_unit(unit, port, *, proc_root=Path("/proc"), cgroup_root=Path("/sys/fs/cgroup")):
+    properties = dict(line.split("=", 1) for line in subprocess.check_output([
+        "systemctl", "show", unit, "-p", "ActiveState", "-p", "ControlGroup",
+    ], text=True).splitlines() if "=" in line)
+    group = "/system.slice/" + unit
+    if properties.get("ActiveState") != "active" or properties.get("ControlGroup") != group:
+        return False
+    # 内核 TCP 表中的监听 inode 必须属于本次单元内的进程，而非仅端口可连接。
+    inodes = set()
+    for line in (proc_root / "net/tcp").read_text().splitlines()[1:]:
+        fields = line.split()
+        if len(fields) > 9 and fields[1] == f"0100007F:{port:04X}" and fields[3] == "0A":
+            inodes.add("socket:[" + fields[9] + "]")
+    if not inodes:
+        return False
+    try:
+        pids = (cgroup_root / group.lstrip("/") / "cgroup.procs").read_text().split()
+        for pid in pids:
+            try:
+                for descriptor in (proc_root / pid / "fd").iterdir():
+                    try:
+                        if os.readlink(descriptor) in inodes:
+                            return True
+                    except FileNotFoundError:
+                        continue
+            except FileNotFoundError:
+                continue
+    except FileNotFoundError:
+        return False
+    return False
+
+
 def start_units(pid, display, authority):
     subprocess.run([
         "systemd-run", "--unit=hermes-douyin-manual-vnc", "--property=RuntimeMaxSec=15min",
@@ -28,16 +60,18 @@ def start_units(pid, display, authority):
         "--property=User=douyin-runner", "--property=Group=hermes-douyin",
         "/usr/bin/websockify", "--web=/usr/share/novnc", "127.0.0.1:6085", "127.0.0.1:5905",
     ], check=True)
-    for port in (5905, 6085):
+    for port, unit in ((5905, UNITS[1]), (6085, UNITS[0])):
         deadline = time.monotonic() + 5
         while True:
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=1):
-                    break
+                    if listener_belongs_to_unit(unit, port):
+                        break
             except OSError:
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("临时窗口监听启动失败")
-                time.sleep(0.1)
+                pass
+            if time.monotonic() >= deadline:
+                raise RuntimeError("临时窗口监听启动失败或端口不属于本次服务")
+            time.sleep(0.1)
 
 
 def close_window():
