@@ -13,6 +13,7 @@ Environment=DOUYIN_DATA_DIR=/var/lib/hermes-douyin
 Environment=DOUYIN_SOCKET_PATH=/run/hermes-douyin/login.sock
 EnvironmentFile=/etc/hermes-douyin.env
 ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x900x24 -nolisten tcp" /opt/hermes-douyin/venv/bin/python /opt/hermes-douyin/service.py
+ExecStop=/opt/hermes-douyin/venv/bin/python /opt/hermes-douyin/service.py --stop $MAINPID
 RuntimeDirectory=hermes-douyin
 RuntimeDirectoryMode=0750
 StateDirectory=hermes-douyin

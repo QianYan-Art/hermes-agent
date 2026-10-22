@@ -8,10 +8,12 @@ import base64
 import json
 import logging
 import os
+import select
 import signal
 import socket
 import stat
 import struct
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -425,13 +427,13 @@ class PlaywrightBrowser:
         if context is not None:
             try:
                 await context.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning("浏览器上下文关闭失败，异常类型：%s", type(exc).__name__)
         if playwright is not None:
             try:
                 await playwright.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning("浏览器驱动关闭失败，异常类型：%s", type(exc).__name__)
 
 
 class LoginService:
@@ -583,9 +585,44 @@ async def run_server(config: ServiceConfig) -> None:
             loop.remove_signal_handler(signum)
 
 
+def stop_service(pid: int, *, proc_root: Path = Path("/proc")) -> None:
+    """同步等待主进程保存浏览器状态，避免 systemd 提前清理整个进程组。"""
+    if pid <= 1 or pid == os.getpid():
+        raise ConfigError("停止目标无效")
+    try:
+        descriptor = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return
+    try:
+        if select.select([descriptor], [], [], 0)[0]:
+            return
+        process = proc_root / str(pid)
+        try:
+            command = (process / "cmdline").read_bytes().split(b"\0")
+            owner = process.stat().st_uid
+        except FileNotFoundError:
+            return
+        expected = [os.fsencode(sys.executable), os.fsencode(Path(__file__).resolve())]
+        if owner != os.getuid() or command[:2] != expected:
+            raise ConfigError("停止目标不是当前登录服务")
+        try:
+            signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        if not select.select([descriptor], [], [], 40)[0]:
+            raise TimeoutError("等待抖音登录服务退出超时")
+    finally:
+        os.close(descriptor)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == "--stop":
+            stop_service(int(sys.argv[2]))
+            return 0
+        if len(sys.argv) != 1:
+            raise ConfigError("服务参数无效")
         config = ServiceConfig.from_env()
         asyncio.run(run_server(config))
     except ConfigError:

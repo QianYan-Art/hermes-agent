@@ -44,8 +44,10 @@
 原始浏览器登录凭据不进入源码、日志、Hermes 提示词和本机素材库。
 
 独立服务使用 systemd `Type=notify`，套接字就绪后由 Python 上报真实 `MAINPID`，
-并将通知权限缩回主进程、从子进程环境移除通知地址。`KillMode=mixed` 先让该进程
-处理 SIGTERM 并关闭持久上下文，超时才清理其余进程；不先向 Chromium 整组发退出信号。
+并将通知权限缩回主进程、从子进程环境移除通知地址。同步 `ExecStop` 调用
+`service.py --stop $MAINPID`，使用 pidfd
+核对同用户、相同服务命令的主进程，发送 SIGTERM 并等待最多 40 秒，给持久上下文
+保存及关闭的机会。`KillMode=mixed` 在其后清理残余进程；不先向 Chromium 整组发退出信号。
 要求 systemd 254 或更新版本，安装器在修改系统前校验此条件。
 
 ## 部署入口

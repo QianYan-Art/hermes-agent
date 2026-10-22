@@ -81,6 +81,62 @@ def test_notify_ready_targets_real_process_and_removes_child_environment(monkeyp
     assert "NOTIFY_SOCKET" not in douyin_login.os.environ
 
 
+@pytest.mark.parametrize("outcome", ["exited", "timeout", "wrong_command", "wrong_owner", "zombie", "signal_race"])
+def test_stop_service_checks_target_and_waits_for_exit(tmp_path, monkeypatch, outcome):
+    pid = 123456
+    process = tmp_path / str(pid)
+    process.mkdir()
+    command = [sys.executable, str(SERVICE_PATH.resolve())]
+    if outcome in {"wrong_command", "zombie"}:
+        command[1] = "other-service.py"
+    (process / "cmdline").write_bytes(b"\0".join(map(douyin_login.os.fsencode, command)))
+    monkeypatch.setattr(douyin_login.os, "getuid", lambda: process.stat().st_uid + (outcome == "wrong_owner"), raising=False)
+    monkeypatch.setattr(douyin_login.os, "pidfd_open", lambda target: 99 if target == pid else None, raising=False)
+    sent, closed = [], []
+    def send_signal(*args):
+        sent.append(args)
+        if outcome == "signal_race":
+            raise ProcessLookupError
+
+    monkeypatch.setattr(douyin_login.signal, "pidfd_send_signal", send_signal, raising=False)
+    monkeypatch.setattr(douyin_login.os, "close", closed.append)
+
+    def wait(readers, writers, errors, timeout):
+        if timeout == 0:
+            return ([99] if outcome == "zombie" else [], [], [])
+        assert (readers, writers, errors, timeout) == ([99], [], [], 40)
+        return ([] if outcome == "timeout" else [99], [], [])
+
+    monkeypatch.setattr(douyin_login.select, "select", wait)
+    if outcome in {"wrong_command", "wrong_owner"}:
+        with pytest.raises(douyin_login.ConfigError):
+            douyin_login.stop_service(pid, proc_root=tmp_path)
+        assert sent == []
+    elif outcome == "timeout":
+        with pytest.raises(TimeoutError):
+            douyin_login.stop_service(pid, proc_root=tmp_path)
+    else:
+        douyin_login.stop_service(pid, proc_root=tmp_path)
+    assert closed == [99]
+    if outcome in {"exited", "timeout"}:
+        assert sent == [(99, douyin_login.signal.SIGTERM)]
+
+
+def test_stop_service_accepts_an_already_exited_target(monkeypatch):
+    def missing(pid):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(douyin_login.os, "pidfd_open", missing, raising=False)
+    douyin_login.stop_service(123456)
+    with pytest.raises(douyin_login.ConfigError):
+        douyin_login.stop_service(1)
+
+
+def test_systemd_stop_uses_synchronous_helper():
+    unit = (SERVICE_PATH.parent / "hermes-douyin.service").read_text(encoding="utf-8")
+    assert "ExecStop=/opt/hermes-douyin/venv/bin/python /opt/hermes-douyin/service.py --stop $MAINPID" in unit
+
+
 def test_config_requires_uid_and_absolute_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(douyin_login.socket, "SO_PEERCRED", 17, raising=False)
     data_dir = tmp_path / "state"
