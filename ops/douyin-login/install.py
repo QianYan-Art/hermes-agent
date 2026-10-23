@@ -167,7 +167,7 @@ def prepare(expected):
     STATE.mkdir(mode=0o700, exist_ok=True)
     os.chown(STATE, runner.pw_uid, group.gr_gid)
     os.chmod(STATE, 0o700)
-    for name in ("service.py", "requirements.txt"):
+    for name in ("service.py", "requirements.txt", "content.py", "releases.py", "stage_release.py"):
         shutil.copyfile(ROOT / "ops/douyin-login" / name, DEST / name)
         os.chmod(DEST / name, 0o644)
     if not (DEST / "venv/bin/python").exists():

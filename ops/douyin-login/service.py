@@ -166,8 +166,8 @@ class ServiceConfig:
         return self.data_dir / "chromium-profile"
 
 
-def parse_request(payload: bytes) -> str:
-    """校验单请求协议，只返回唯一允许的操作名。"""
+def parse_request(payload: bytes) -> str | dict:
+    """校验单行协议，区分登录操作与严格受限的作品请求。"""
     if len(payload) > MAX_REQUEST_BYTES:
         raise ProtocolError("请求超过 4096 字节限制")
     line = payload[:-1] if payload.endswith(b"\n") else payload
@@ -198,6 +198,12 @@ def parse_request(payload: bytes) -> str:
         raise
     except (json.JSONDecodeError, TypeError) as exc:
         raise ProtocolError("请求 JSON 无效") from exc
+    if isinstance(value, dict) and value.get("action") == "content" and set(value) == {"action", "request"}:
+        from content import validate_request
+        try:
+            return validate_request(value["request"])
+        except ValueError as exc:
+            raise ProtocolError(str(exc)) from exc
     if not isinstance(value, dict) or set(value) != {"action"}:
         raise ProtocolError("请求只能包含 action 字段")
     action = value["action"]
@@ -447,8 +453,18 @@ class LoginService:
         self.browser = browser
         self.operation_timeout = operation_timeout
         self._browser_lock = asyncio.Lock()
+        self._content = None
 
-    async def process(self, action: str) -> dict[str, object]:
+    async def process(self, action: str | dict) -> dict[str, object]:
+        if isinstance(action, dict):
+            try:
+                if self._content is None:
+                    from content import ContentManager
+                    self._content = ContentManager(self.browser, self._browser_lock)
+                return await self._content.process(action)
+            except (ImportError, ValueError, OSError) as exc:
+                LOGGER.warning("作品服务初始化失败，异常类型：%s", type(exc).__name__)
+                return make_response("unavailable", "作品服务状态无效，请人工检查；登录目录未被清空。")
         async with self._browser_lock:
             try:
                 return await asyncio.wait_for(
@@ -573,6 +589,8 @@ async def run_server(config: ServiceConfig) -> None:
             await server.wait_closed()
         if connection_tasks:
             await asyncio.gather(*tuple(connection_tasks), return_exceptions=True)
+        if service._content is not None:
+            await service._content.close()
         await service.browser.close()
         if socket_identity is not None:
             try:
