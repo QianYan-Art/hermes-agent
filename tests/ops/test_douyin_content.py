@@ -422,7 +422,7 @@ async def test_saved_metadata_allows_only_editor_zero_width_separator(manager, a
 
 
 @pytest.mark.asyncio
-async def test_resume_draft_requires_banner_and_matching_metadata(manager, content, monkeypatch):
+async def test_draft_banner_requires_banner_and_allowed_origin(manager, content):
     events = []
 
     class Target:
@@ -436,20 +436,36 @@ async def test_resume_draft_requires_banner_and_matching_metadata(manager, conte
             return True
 
         async def click(self):
-            events.append("只点继续编辑")
-            page.url = "https://creator.douyin.com/creator-micro/content/post/video?enter_from=draft"
-
-    async def verify(page, plan):
-        events.append("核对物料")
-
-    monkeypatch.setattr(manager, "_verify_metadata", verify)
+            events.append("不应消费暂存")
     page = SimpleNamespace(url=content.UPLOAD_URL, get_by_text=lambda *a, **k: Target())
-    await manager._resume_browser_draft(page, {})
-    assert events == ["只点继续编辑", "核对物料"]
+    await manager._verify_draft_banner(page)
+    assert events == []
     page.url = "https://example.com/creator-micro/content/upload"
     with pytest.raises(ValueError, match="允许的草稿入口"):
-        await manager._resume_browser_draft(page, {})
-    assert len(events) == 2
+        await manager._verify_draft_banner(page)
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_draft_banner_check_does_not_consume_saved_slot(manager, content):
+    clicks = []
+
+    class Target:
+        async def wait_for(self, **_):
+            pass
+
+        async def count(self):
+            return 1
+
+        async def is_visible(self):
+            return True
+
+        async def click(self):
+            clicks.append("不应点击继续编辑")
+
+    page = SimpleNamespace(url=content.UPLOAD_URL, get_by_text=lambda *_, **__: Target())
+    await manager._verify_draft_banner(page)
+    assert clicks == []
 
 
 @pytest.mark.asyncio

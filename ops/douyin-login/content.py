@@ -523,7 +523,7 @@ class ContentManager:
         if actual.replace("\u200b", "") != plan["description"].replace("\u200b", ""):
             raise ValueError("草稿简介发生变化")
 
-    async def _resume_browser_draft(self, page, plan):
+    async def _verify_draft_banner(self, page):
         if not _safe_editor_url(page.url) or urlsplit(page.url).path != urlsplit(UPLOAD_URL).path:
             raise ValueError("没有返回允许的草稿入口")
         notice = page.get_by_text(re.compile(r"你还有上次未发布的视频"))
@@ -533,10 +533,6 @@ class ContentManager:
         resume = page.get_by_text("继续编辑", exact=True)
         if await resume.count() != 1 or not await resume.is_visible():
             raise ValueError("无法唯一定位暂存作品")
-        await resume.click()
-        if not _safe_editor_url(page.url):
-            raise ValueError("暂存作品编辑页不在允许范围")
-        await self._verify_metadata(page, plan)
 
     async def _execute(self, job, plan, release):
         # 再次校验文件，避免排队期间被替换的作品沿用旧确认。
@@ -623,11 +619,11 @@ class ContentManager:
             await success.first.wait_for(state="visible", timeout=5000)
         except Exception:
             # 当前平台的“暂存离开”返回上传页，不一定显示成功 toast。
-            # 只恢复并核对已有作品；这里不能再次上传或保存。
-            await self._resume_browser_draft(page, plan)
-            job["resume_mode"] = "browser_slot"
-            job.update(state="needs_attention", phase="暂存视频身份待核实",
-                       message="暂存可恢复且标题简介一致，但无法自动核实视频身份；需人工核对，不能正式发布。")
+            # 只核对恢复入口，不消费暂存进入一个尚未重新保存的编辑态。
+            await self._verify_draft_banner(page)
+            job["resume_mode"] = "browser_slot_unopened"
+            job.update(state="needs_attention", phase="暂存入口已保留，身份待核实",
+                       message="页面出现唯一暂存恢复入口，已保留且未重新打开；没有可核实的视频标识，不能据此正式发布。")
             self._save_job(job)
             return
         message = "页面已确认草稿保存成功，没有点击正式发布。"

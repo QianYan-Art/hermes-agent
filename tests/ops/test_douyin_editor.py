@@ -455,8 +455,15 @@ class FakeConfirmDialog:
     async def element_handle(self):
         return self
 
+    async def element_handles(self):
+        return [self] if self.visible else []
+
     async def evaluate(self, _script, original):
-        return self is original
+        return {
+            "same": self is original,
+            "connected": self.visible,
+            "text": self.text,
+        }
 
     async def wait_for(self, *, state, timeout):
         assert state == "hidden"
@@ -488,6 +495,27 @@ async def test_confirmation_waits_for_cover_dialog_when_no_recommendation_appear
 
     await editor._confirm_cover_dialog(page)
 
+    assert not original.visible
+
+
+@pytest.mark.asyncio
+async def test_confirmation_skips_dialog_removed_before_handle_snapshot():
+    class DisappearingDialog(FakeConfirmDialog):
+        async def element_handles(self):
+            self.visible = False
+            return []
+
+        async def evaluate(self, _script, original):
+            raise AssertionError("不应对已移除弹窗执行候选快照")
+
+    original = DisappearingDialog(
+        "设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]}
+    )
+    page = FakeConfirmationPage([original])
+
+    await editor._confirm_cover_dialog(page)
+
+    assert original.buttons["完成"][0].click_count == 1
     assert not original.visible
 
 
@@ -658,6 +686,7 @@ class FakeCoverCard:
         )
         self.button = FakeChooseButton()
         self.visible = True
+        self.hovered = False
 
     def locator(self, selector):
         assert selector in {"..", "img", "*"}
@@ -671,6 +700,9 @@ class FakeCoverCard:
 
     async def is_visible(self):
         return self.visible
+
+    async def hover(self):
+        self.hovered = True
 
     async def evaluate(self, script):
         if "tagName" in script:
@@ -710,6 +742,30 @@ async def test_orientation_card_uses_unique_exact_choose_text_within_card(orient
     card, choose_text = await editor._orientation_card(page, orientation)
 
     assert card.title == title
+    assert choose_text is card.button
+
+
+@pytest.mark.asyncio
+async def test_orientation_card_hovers_before_waiting_for_choose_text():
+    class ChooseTextAfterHover(FakeChooseButton):
+        def __init__(self, card):
+            super().__init__()
+            self.card = card
+
+        async def count(self):
+            return 1 if self.card.hovered else 0
+
+        async def is_visible(self):
+            return self.card.hovered
+
+    page = FakeCoverPage("old-landscape.jpg", "old-portrait.jpg")
+    card = page.cards["横封面4:3"]
+    card.button = ChooseTextAfterHover(card)
+
+    selected_card, choose_text = await editor._orientation_card(page, "landscape")
+
+    assert selected_card is card
+    assert card.hovered
     assert choose_text is card.button
 
 

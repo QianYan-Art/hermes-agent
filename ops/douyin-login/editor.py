@@ -258,9 +258,27 @@ async def _orientation_card(page, orientation: str):
         text = await scope.inner_text()
         if len(text) > 1000 or title not in text or other_title in text:
             continue
+
         choose_text = scope.get_by_text("选择封面", exact=True)
-        if await choose_text.count() == 1 and await choose_text.is_visible():
+        count = await choose_text.count()
+        if count > 1:
+            raise ValueError(f"无法在“{title}”卡片中唯一定位“选择封面”")
+        if count == 1 and await choose_text.is_visible():
             return scope, choose_text
+
+        await scope.hover()
+        deadline = monotonic() + 1
+        while True:
+            choose_text = scope.get_by_text("选择封面", exact=True)
+            count = await choose_text.count()
+            if count > 1:
+                raise ValueError(f"悬停后“{title}”卡片中的“选择封面”不唯一")
+            if count == 1 and await choose_text.is_visible():
+                return scope, choose_text
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(0.05, remaining))
     raise ValueError(f"无法在短祖先范围内唯一定位“{title}”的选择封面按钮")
 
 
@@ -380,11 +398,24 @@ async def _handle_post_confirmation_dialogs(page, cover_dialog, cover_dialog_han
     while True:
         recommendation_dialogs = []
         for candidate in await _visible_dialogs(page):
-            same_as_cover = await candidate.evaluate(
-                "(element, original) => element === original",
+            handles = await candidate.element_handles()
+            if len(handles) != 1:
+                continue
+            handle = handles[0]
+            if not await handle.is_visible():
+                continue
+            snapshot = await handle.evaluate(
+                "(element, original) => ({"
+                "same: element === original, "
+                "connected: element.isConnected, "
+                "text: element.innerText"
+                "})",
                 cover_dialog_handle,
             )
-            text = await candidate.inner_text()
+            if not snapshot["connected"]:
+                continue
+            same_as_cover = snapshot["same"]
+            text = snapshot["text"]
             if heading_text in text:
                 recommendation_dialogs.append(candidate)
             elif same_as_cover and (
