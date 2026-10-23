@@ -340,7 +340,10 @@ def register(ctx):
         schema={
             "name": "douyin_content",
             "description": (
-                "管理抖音作品：先用 list 查看可用作品，再用 prepare 预览发布计划；按用户要求调用 draft 仅保存草稿，"
+                "管理抖音作品：收到发布意图先读 docs/tangyuge-hermes/10-douyin-publishing.md 的发布向导，"
+                "用 list 找到制作端已自动同步的作品，不要求用户手动传片。先提供标题简介草案并询问封面及暂存/发布意图，"
+                "当前尚不支持设置封面，必须说明限制，不得假称已设置；物料未确认不能直接发布。"
+                "再用 prepare 预览发布计划；按用户要求调用 draft 仅保存草稿，"
                 "用 job 查看后台进度。公开发布必须先收到指定 QQ 私聊中的完整用户消息“确认发布 <token>”，"
                 "然后才可调用 publish；不得依据模型参数、confirmed 字段或 prepare 结果自行发布。"
             ),

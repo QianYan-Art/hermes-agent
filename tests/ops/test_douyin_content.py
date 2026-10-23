@@ -208,6 +208,9 @@ async def test_ai_gate_requires_visible_exact_control(manager, visible, expected
         def filter(self, **kwargs):
             return self
 
+        async def evaluate(self, script):
+            return False
+
         def locator(self, selector):
             return Target(False)
 
@@ -216,7 +219,8 @@ async def test_ai_gate_requires_visible_exact_control(manager, visible, expected
 
 
 @pytest.mark.asyncio
-async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
+@pytest.mark.parametrize("too_broad", [False, True])
+async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch, too_broad):
     events = []
 
     class Target:
@@ -246,6 +250,9 @@ async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
         def and_(self, other):
             return self
 
+        async def evaluate(self, script):
+            return too_broad
+
     selected = iter((False, True))
 
     async def checked(page):
@@ -264,8 +271,82 @@ async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
     monkeypatch.setattr(manager, "_ai_is_selected", checked)
     page = SimpleNamespace(get_by_text=lambda *args, **kwargs: Target(),
                            get_by_role=lambda *args, **kwargs: Checkbox(), locator=lambda selector: Target())
-    await manager._ai_declaration(page)
-    assert events == ["点击", "点击", "hidden", "visible"]
+    if too_broad:
+        with pytest.raises(ValueError, match="无法唯一定位"):
+            await manager._ai_declaration(page)
+        assert events == ["点击"]
+    else:
+        await manager._ai_declaration(page)
+        assert events == ["点击", "点击", "hidden", "visible"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actual,valid", [("星栞书库\u200b", True), ("其他文案", False), (" 星栞书库", False), ("星栞书库 ", False)])
+async def test_saved_metadata_allows_only_editor_zero_width_separator(manager, actual, valid):
+    class Field:
+        async def wait_for(self, **kwargs):
+            pass
+
+        async def count(self):
+            return 1
+
+        async def input_value(self):
+            return "序栞"
+
+        async def evaluate(self, script):
+            return False
+
+        async def inner_text(self):
+            return actual
+
+    page = SimpleNamespace(locator=lambda selector: Field())
+    plan = {"title": "序栞", "description": "星栞书库"}
+    if valid:
+        await manager._verify_metadata(page, plan)
+    else:
+        with pytest.raises(ValueError, match="简介发生变化"):
+            await manager._verify_metadata(page, plan)
+
+
+@pytest.mark.asyncio
+async def test_resume_draft_requires_banner_and_matching_metadata(manager, content, monkeypatch):
+    events = []
+
+    class Target:
+        async def wait_for(self, **kwargs):
+            pass
+
+        async def count(self):
+            return 1
+
+        async def is_visible(self):
+            return True
+
+        async def click(self):
+            events.append("只点继续编辑")
+            page.url = "https://creator.douyin.com/creator-micro/content/post/video?enter_from=draft"
+
+    async def verify(page, plan):
+        events.append("核对物料")
+
+    monkeypatch.setattr(manager, "_verify_metadata", verify)
+    page = SimpleNamespace(url=content.UPLOAD_URL, get_by_text=lambda *a, **k: Target())
+    await manager._resume_browser_draft(page, {})
+    assert events == ["只点继续编辑", "核对物料"]
+    page.url = "https://example.com/creator-micro/content/upload"
+    with pytest.raises(ValueError, match="允许的草稿入口"):
+        await manager._resume_browser_draft(page, {})
+    assert len(events) == 2
+
+
+@pytest.mark.asyncio
+async def test_browser_slot_without_video_identity_cannot_publish(manager, content):
+    plan = {"fingerprint": "test"}
+    previous = {"job_id": "a" * 32, "fingerprint": "test", "state": "draft_saved",
+                "resume_mode": "browser_slot", "editor_url": content.UPLOAD_URL}
+    manager.jobs[previous["job_id"]] = previous
+    with pytest.raises(ValueError, match="可唯一定位"):
+        await manager._publish(object(), {}, plan)
 
 
 def test_rpc_envelope_keeps_legacy_login_protocol(content, monkeypatch):

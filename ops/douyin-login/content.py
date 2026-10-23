@@ -348,8 +348,10 @@ class ContentManager:
         heading = page.get_by_text("请选择声明类型（单选）", exact=True)
         if await heading.count() == 1 and await heading.is_visible():
             scope = heading
-            for _ in range(6):
+            for _ in range(12):
                 scope = scope.locator("..")
+                if await scope.evaluate("e => ['BODY','HTML'].includes(e.tagName) || e.innerText.length > 1500"):
+                    break
                 confirm = scope.get_by_role("button", name="确定", exact=True)
                 cancel = scope.get_by_role("button", name="取消", exact=True)
                 if await confirm.count() == 1 and await cancel.count() == 1:
@@ -358,6 +360,49 @@ class ContentManager:
                     await page.get_by_text("内容由AI生成", exact=True).and_(page.locator(":visible")).wait_for(state="visible", timeout=10000)
                     return
             raise ValueError("AI声明确认弹窗无法唯一定位")
+
+    async def _dismiss_preview_tip(self, page):
+        heading = page.get_by_text("视频预览功能", exact=True)
+        if await heading.count() != 1 or not await heading.is_visible():
+            return
+        scope = heading
+        for _ in range(6):
+            scope = scope.locator("..")
+            if await scope.evaluate("e => ['BODY','HTML'].includes(e.tagName) || e.innerText.length > 600"):
+                break
+            button = scope.get_by_role("button", name="我知道了", exact=True)
+            if await button.count() == 1 and await button.is_visible():
+                await button.click()
+                return
+        raise ValueError("视频预览说明无法安全关闭")
+
+    async def _verify_metadata(self, page, plan):
+        title = page.locator('input[placeholder*="作品标题"],input[placeholder*="填写标题"]')
+        await title.wait_for(state="visible", timeout=15000)
+        if await title.count() != 1 or await title.input_value() != plan["title"]:
+            raise ValueError("草稿标题不匹配")
+        description = self._description_field(page)
+        if await description.count() != 1:
+            raise ValueError("草稿简介无法唯一核对")
+        actual = await description.input_value() if await description.evaluate("e => e.tagName === 'TEXTAREA'") else await description.inner_text()
+        # 编辑器可能自动加入零宽分隔符，不改变用户可见的文案。
+        if actual.replace("\u200b", "") != plan["description"].replace("\u200b", ""):
+            raise ValueError("草稿简介发生变化")
+
+    async def _resume_browser_draft(self, page, plan):
+        if not _safe_editor_url(page.url) or urlsplit(page.url).path != urlsplit(UPLOAD_URL).path:
+            raise ValueError("没有返回允许的草稿入口")
+        notice = page.get_by_text(re.compile(r"你还有上次未发布的视频"))
+        await notice.wait_for(state="visible", timeout=15000)
+        if await notice.count() != 1:
+            raise ValueError("暂存提示不唯一")
+        resume = page.get_by_text("继续编辑", exact=True)
+        if await resume.count() != 1 or not await resume.is_visible():
+            raise ValueError("无法唯一定位暂存作品")
+        await resume.click()
+        if not _safe_editor_url(page.url):
+            raise ValueError("暂存作品编辑页不在允许范围")
+        await self._verify_metadata(page, plan)
 
     async def _execute(self, job, plan, release):
         # 再次校验文件，避免排队期间被替换的作品沿用旧确认。
@@ -389,6 +434,7 @@ class ContentManager:
         uploading = page.get_by_text("取消上传", exact=True)
         if await uploading.count() == 1:
             await uploading.wait_for(state="hidden", timeout=300000)
+        await self._dismiss_preview_tip(page)
         save = await self._button(page, ("保存草稿", "暂存离开"))
         deadline = time.monotonic() + 300
         while not await save.is_enabled():
@@ -408,7 +454,17 @@ class ContentManager:
             confirm = await self._button(dialog, ("保存草稿", "暂存", "保存并离开", "确定"))
             await confirm.click()
         success = page.get_by_text(re.compile(r"^(草稿保存成功|已保存草稿|草稿已保存|保存草稿成功|已保存至草稿箱|保存成功|暂存成功|已暂存)$"))
-        await success.first.wait_for(state="visible", timeout=20000)
+        try:
+            await success.first.wait_for(state="visible", timeout=5000)
+        except Exception:
+            # 当前平台的“暂存离开”返回上传页，不一定显示成功 toast。
+            # 只恢复并核对已有作品；这里不能再次上传或保存。
+            await self._resume_browser_draft(page, plan)
+            job["resume_mode"] = "browser_slot"
+            job.update(state="needs_attention", phase="暂存视频身份待核实",
+                       message="暂存可恢复且标题简介一致，但无法自动核实视频身份；需人工核对，不能正式发布。")
+            self._save_job(job)
+            return
         message = "页面已确认草稿保存成功，没有点击正式发布。"
         if not job["ai_declaration_verified"]:
             message += "平台AI声明未确认，正式发布前必须再核验。"
@@ -423,18 +479,11 @@ class ContentManager:
         if not _safe_editor_url(editor_url) or urlsplit(editor_url).path.endswith("/upload") or not identified:
             raise ValueError("没有可唯一定位的已存草稿；请人工核对，不重新上传")
         await page.goto(editor_url, wait_until="domcontentloaded", timeout=30000)
-        title = page.locator('input[placeholder*="作品标题"],input[placeholder*="填写标题"]')
-        await title.wait_for(state="visible", timeout=15000)
-        if await title.count() != 1 or await title.input_value() != plan["title"]:
-            raise ValueError("草稿内容不匹配，不公开发布")
-        description = self._description_field(page)
-        if await description.count() != 1:
-            raise ValueError("草稿简介无法唯一核对，不公开发布")
-        actual = await description.input_value() if await description.evaluate("e => e.tagName === 'TEXTAREA'") else await description.inner_text()
-        if actual.strip() != plan["description"].strip():
-            raise ValueError("草稿简介发生变化，不公开发布")
+        await self._verify_metadata(page, plan)
         await self._ai_declaration(page)
+        await self._dismiss_preview_tip(page)
         publish = await self._button(page, ("发布",))
+        job["commit_attempted"] = True
         self._phase(job, "正式发布，结果待确认")
         await publish.click()
         await page.get_by_text(re.compile(r"^(发布成功|作品发布成功|发布成功，正在审核)$")).first.wait_for(state="visible", timeout=30000)
@@ -444,7 +493,7 @@ class ContentManager:
     async def _metrics(self):
         page = await self._account_page()
         fields = await page.evaluate("""() => {
-          const labels = ['粉丝总数','总粉丝','获赞总数','总获赞','作品总数','播放量','点赞量','评论量','分享量'];
+          const labels = ['关注','粉丝指数','获赞','粉丝总数','总粉丝','获赞总数','总获赞','作品总数','播放量','点赞量','评论量','分享量'];
           const fields = [];
           for (const label of labels) {
             const node = Array.from(document.querySelectorAll('span,div,p')).find(e=>e.children.length===0 && e.innerText.trim()===label);

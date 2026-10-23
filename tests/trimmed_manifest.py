@@ -60,6 +60,7 @@ TRIMMED_TEST_TARGETS = (
     "tests/ops/test_douyin_install.py",
     "tests/ops/test_douyin_releases.py",
     "tests/ops/test_douyin_content.py",
+    "tests/ops/test_douyin_sync.py",
     "tests/tools/test_tts_remote_metadata.py",
     "tests/tools/test_tts_command_providers.py",
     "tests/plugins/image_gen/test_openai_provider.py",

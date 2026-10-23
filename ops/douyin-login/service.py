@@ -14,8 +14,11 @@ import socket
 import stat
 import struct
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 LOGIN_URL = "https://creator.douyin.com/creator-micro/home"
@@ -25,6 +28,14 @@ REQUEST_TIMEOUT_SECONDS = 30
 LOGIN_WAIT_SECONDS = 8
 READ_TIMEOUT_SECONDS = 5
 WRITE_TIMEOUT_SECONDS = 5
+GATEWAY_UNIT = "hermes-gateway.service"
+GATEWAY_MAIN_PID_TIMEOUT_SECONDS = 1.0
+BROWSER_IDLE_SECONDS = 180.0
+BROWSER_CONTEXT_CLOSE_TIMEOUT_SECONDS = 15.0
+PLAYWRIGHT_STOP_TIMEOUT_SECONDS = 5.0
+MANUAL_WINDOW_GRACE_SECONDS = 15 * 60
+MANUAL_WINDOW_RECHECK_SECONDS = 5.0
+MANUAL_WINDOW_PASSWORD_FILE = Path("/run/hermes-douyin/manual.pass")
 QR_SELECTORS = (
     'img[alt*="二维码"]',
     'img[aria-label*="二维码"]',
@@ -212,8 +223,8 @@ def parse_request(payload: bytes) -> str | dict:
     return action
 
 
-def peer_uid(peer_socket: socket.socket) -> int:
-    """从 Linux SO_PEERCRED 读取连接方 UID。"""
+def _peer_credentials(peer_socket: socket.socket) -> tuple[int, int]:
+    """从 Linux SO_PEERCRED 读取连接方 PID 和 UID。"""
     if not hasattr(socket, "SO_PEERCRED"):
         raise OSError("SO_PEERCRED 不可用")
     credentials = peer_socket.getsockopt(
@@ -221,12 +232,73 @@ def peer_uid(peer_socket: socket.socket) -> int:
     )
     if isinstance(credentials, int):
         raise OSError("SO_PEERCRED 返回了无效凭据")
-    _pid, uid, _gid = struct.unpack("3i", credentials)
-    return uid
+    pid, uid, _gid = struct.unpack("3i", credentials)
+    return pid, uid
+
+
+def peer_uid(peer_socket: socket.socket) -> int:
+    """从 Linux SO_PEERCRED 读取连接方 UID。"""
+    return _peer_credentials(peer_socket)[1]
+
+
+def peer_pid(peer_socket: socket.socket) -> int:
+    """从 Linux SO_PEERCRED 读取连接方 PID。"""
+    return _peer_credentials(peer_socket)[0]
 
 
 def is_peer_authorized(peer_socket: socket.socket, allowed_uid: int) -> bool:
     return peer_uid(peer_socket) == allowed_uid
+
+
+async def _gateway_main_pid_matches(peer_process_id: int) -> bool:
+    if peer_process_id <= 0:
+        return False
+    process: asyncio.subprocess.Process | None = None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl",
+            "show",
+            GATEWAY_UNIT,
+            "--property=MainPID",
+            "--value",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _stderr = await asyncio.wait_for(
+            process.communicate(), timeout=GATEWAY_MAIN_PID_TIMEOUT_SECONDS
+        )
+        if process.returncode != 0:
+            return False
+        value = stdout.decode("ascii").strip()
+        if not value.isdecimal():
+            return False
+        main_pid = int(value)
+        return main_pid > 0 and main_pid == peer_process_id
+    except Exception as exc:
+        LOGGER.debug(
+            "无法确认 gateway 主进程 PID，异常类型：%s", type(exc).__name__
+        )
+        return False
+    finally:
+        if process is not None and process.returncode is None:
+            try:
+                process.kill()
+            except (ProcessLookupError, OSError):
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), timeout=0.25)
+            except Exception:
+                pass
+
+
+async def is_peer_gateway_main_process(peer_socket: socket.socket) -> bool:
+    try:
+        return await _gateway_main_pid_matches(peer_pid(peer_socket))
+    except Exception as exc:
+        LOGGER.debug(
+            "无法读取发布调用方 PID，异常类型：%s", type(exc).__name__
+        )
+        return False
 
 
 def _is_douyin_host(url: str) -> bool:
@@ -432,14 +504,33 @@ class PlaywrightBrowser:
         self._initial_navigation_done = False
         if context is not None:
             try:
-                await context.close()
+                await asyncio.wait_for(
+                    context.close(), timeout=BROWSER_CONTEXT_CLOSE_TIMEOUT_SECONDS
+                )
             except Exception as exc:
                 LOGGER.warning("浏览器上下文关闭失败，异常类型：%s", type(exc).__name__)
         if playwright is not None:
             try:
-                await playwright.stop()
+                await asyncio.wait_for(
+                    playwright.stop(), timeout=PLAYWRIGHT_STOP_TIMEOUT_SECONDS
+                )
             except Exception as exc:
                 LOGGER.warning("浏览器驱动关闭失败，异常类型：%s", type(exc).__name__)
+
+
+class BrowserActivityLock(asyncio.Lock):
+    def __init__(self, on_activity: Callable[[], None]) -> None:
+        super().__init__()
+        self._on_activity = on_activity
+
+    async def acquire(self) -> Literal[True]:
+        await super().acquire()
+        self._on_activity()
+        return True
+
+    def release(self) -> None:
+        super().release()
+        self._on_activity()
 
 
 class LoginService:
@@ -449,11 +540,122 @@ class LoginService:
         self,
         browser: PlaywrightBrowser,
         operation_timeout: float = REQUEST_TIMEOUT_SECONDS,
+        *,
+        clock: Callable[[], float] | None = None,
+        wall_clock: Callable[[], float] | None = None,
     ) -> None:
         self.browser = browser
         self.operation_timeout = operation_timeout
-        self._browser_lock = asyncio.Lock()
+        self._clock = clock or time.monotonic
+        self._wall_clock = wall_clock or time.time
+        self._last_browser_activity: float | None = None
+        self._activity_generation = 0
+        self._activity_event = asyncio.Event()
+        self._idle_task: asyncio.Task[None] | None = None
+        self._browser_lock = BrowserActivityLock(self._record_browser_activity)
         self._content = None
+
+    def _record_browser_activity(self) -> None:
+        self._activity_generation += 1
+        self._last_browser_activity = self._clock()
+        self._activity_event.set()
+
+    def _manual_window_remaining(self) -> float | None:
+        try:
+            modified = MANUAL_WINDOW_PASSWORD_FILE.stat().st_mtime
+        except OSError:
+            return None
+        age = self._wall_clock() - modified
+        if age < 0 or age >= MANUAL_WINDOW_GRACE_SECONDS:
+            return None
+        return MANUAL_WINDOW_GRACE_SECONDS - age
+
+    async def _wait_for_activity(self, timeout: float | None = None) -> None:
+        try:
+            if timeout is None:
+                await self._activity_event.wait()
+            else:
+                await asyncio.wait_for(
+                    self._activity_event.wait(), timeout=max(timeout, 0.001)
+                )
+        except asyncio.TimeoutError:
+            pass
+
+    async def _close_browser_if_idle(self) -> bool:
+        last_activity = self._last_browser_activity
+        generation = self._activity_generation
+        if (
+            last_activity is None
+            or self._clock() - last_activity < BROWSER_IDLE_SECONDS
+        ):
+            return False
+
+        async with self._browser_lock:
+            # 取得检查锁会记录一次活动；代数再变化说明等待期间执行了浏览器操作。
+            if self._activity_generation != generation + 1:
+                return False
+            if self._clock() - last_activity < BROWSER_IDLE_SECONDS:
+                return False
+            if self._manual_window_remaining() is not None:
+                return False
+            close_task = asyncio.create_task(self.browser.close())
+            try:
+                await asyncio.shield(close_task)
+            except asyncio.CancelledError:
+                try:
+                    await asyncio.shield(close_task)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "空闲浏览器关闭失败，异常类型：%s", type(exc).__name__
+                    )
+                raise
+
+        self._last_browser_activity = None
+        return True
+
+    async def _idle_monitor(self) -> None:
+        while True:
+            self._activity_event.clear()
+            last_activity = self._last_browser_activity
+            if last_activity is None:
+                await self._wait_for_activity()
+                continue
+
+            idle_remaining = BROWSER_IDLE_SECONDS - (
+                self._clock() - last_activity
+            )
+            if idle_remaining > 0:
+                await self._wait_for_activity(idle_remaining)
+                continue
+
+            manual_remaining = self._manual_window_remaining()
+            if manual_remaining is not None:
+                await self._wait_for_activity(
+                    min(MANUAL_WINDOW_RECHECK_SECONDS, manual_remaining)
+                )
+                continue
+
+            try:
+                await self._close_browser_if_idle()
+            except Exception as exc:
+                LOGGER.warning(
+                    "空闲浏览器关闭失败，异常类型：%s", type(exc).__name__
+                )
+                await self._wait_for_activity(MANUAL_WINDOW_RECHECK_SECONDS)
+
+    def start_idle_monitor(self) -> None:
+        if self._idle_task is None or self._idle_task.done():
+            self._idle_task = asyncio.create_task(
+                self._idle_monitor(), name="douyin-browser-idle"
+            )
+
+    async def stop_idle_monitor(self) -> None:
+        task = self._idle_task
+        if task is None:
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self._idle_task = None
 
     async def process(self, action: str | dict) -> dict[str, object]:
         if isinstance(action, dict):
@@ -512,6 +714,15 @@ async def _handle_connection(
         except (ProtocolError, ValueError) as exc:
             message = str(exc) if isinstance(exc, ProtocolError) else "请求行超过长度限制。"
             await _write_response(writer, make_response("page_error", message))
+            return
+        if (
+            isinstance(action, dict)
+            and action.get("action") == "publish"
+            and not await is_peer_gateway_main_process(peer_socket)
+        ):
+            await _write_response(
+                writer, make_response("unavailable", "发布请求仅允许由 gateway 主进程发起。")
+            )
             return
         await _write_response(writer, await service.process(action))
     except (ConnectionError, OSError, asyncio.TimeoutError):
@@ -579,6 +790,7 @@ async def run_server(config: ServiceConfig) -> None:
             raise ConfigError("创建的 socket 类型无效")
         socket_identity = (socket_info.st_dev, socket_info.st_ino)
         os.chmod(config.socket_path, 0o660)
+        service.start_idle_monitor()
         notify_systemd_ready()
         LOGGER.info("抖音登录服务已启动。")
         async with server:
@@ -587,6 +799,7 @@ async def run_server(config: ServiceConfig) -> None:
         if server is not None:
             server.close()
             await server.wait_closed()
+        await service.stop_idle_monitor()
         if connection_tasks:
             await asyncio.gather(*tuple(connection_tasks), return_exceptions=True)
         if service._content is not None:
