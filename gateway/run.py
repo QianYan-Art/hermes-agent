@@ -761,6 +761,14 @@ def _collect_auto_append_media_tags(
             for tag in _douyin_preview_media_tags(str(msg.get("content") or "")):
                 if tag[6:] not in history_media_paths:
                     media_tags.append(tag)
+            for tag in _douyin_qr_media_tags(str(msg.get("content") or ""), nested=True):
+                if tag[6:] not in history_media_paths:
+                    media_tags.append(tag)
+            continue
+        if tool_name == "douyin_login":
+            for tag in _douyin_qr_media_tags(str(msg.get("content") or "")):
+                if tag[6:] not in history_media_paths:
+                    media_tags.append(tag)
             continue
         if tool_name not in _AUTO_APPEND_MEDIA_TOOL_NAMES:
             continue
@@ -775,6 +783,37 @@ def _collect_auto_append_media_tags(
             has_voice_directive = True
 
     return media_tags, has_voice_directive
+
+
+def _douyin_qr_media_tags(content: str, *, nested: bool = False) -> List[str]:
+    try:
+        result = json.loads(content)
+        if not isinstance(result, dict):
+            return []
+        if nested:
+            if result.get("state") != "login_required" or result.get("recovery") != {"action": "login"}:
+                return []
+            result = result.get("login")
+        if not isinstance(result, dict) or result.get("state") != "login_required" or type(result.get("ok")) is not bool:
+            return []
+        tag = result.get("media_tag")
+        if not isinstance(tag, str) or not tag.startswith("MEDIA:"):
+            return []
+        path = Path(tag[6:])
+        directory = get_hermes_home() / "cache" / "douyin-login"
+        if (path.parent != directory or not re.fullmatch(r"qr-[a-zA-Z0-9_-]{6,64}\.png", path.name)
+                or any(p.is_symlink() for p in (path, directory, directory.parent)) or not path.is_file()
+                or path.resolve().parent != directory.resolve()):
+            return []
+        info = path.stat()
+        if not 8 <= info.st_size <= 2 * 1024 * 1024 or not 0 <= time.time() - info.st_mtime <= 600:
+            return []
+        with path.open("rb") as stream:
+            if stream.read(8) != b"\x89PNG\r\n\x1a\n":
+                return []
+        return [tag]
+    except (ValueError, TypeError, OSError):
+        return []
 
 
 def _douyin_preview_media_tags(content: str) -> List[str]:

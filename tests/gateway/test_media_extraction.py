@@ -16,6 +16,61 @@ import re
 import json
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_douyin_qr_uses_current_turn_structured_attachment(tmp_path, monkeypatch, nested):
+    from gateway import run
+    monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)
+    image = tmp_path / "cache/douyin-login/qr-test1234.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+    tag = f"MEDIA:{image}"
+    payload = {"ok": True, "state": "login_required", "media_tag": tag}
+    if nested:
+        payload = {"ok": False, "state": "login_required", "recovery": {"action": "login"}, "login": payload}
+    name = "douyin_content" if nested else "douyin_login"
+    messages = [{"role": "assistant", "tool_calls": [{"id": "qr", "function": {"name": name}}]},
+                {"role": "tool", "tool_call_id": "qr", "content": json.dumps(payload)}]
+    assert run._collect_auto_append_media_tags(messages) == ([tag], False)
+    assert run._collect_auto_append_media_tags(messages, history_media_paths={str(image)}) == ([], False)
+    assert run._collect_auto_append_media_tags(messages + [{"role": "user", "content": "你好"}], history_offset=2) == ([], False)
+
+
+@pytest.mark.parametrize("case", ["outside", "missing", "expired", "bad_png", "prose", "verification", "symlink"])
+def test_douyin_qr_rejects_untrusted_or_stale_artifacts(tmp_path, monkeypatch, case):
+    import os
+    from gateway import run
+    monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)
+    image = tmp_path / "cache/douyin-login/qr-test1234.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+    if case == "outside":
+        image = tmp_path / "qr-private1.png"
+        image.write_bytes(b"\x89PNG\r\n\x1a\nsecret")
+    elif case == "missing":
+        image.unlink()
+    elif case == "expired":
+        os.utime(image, (1, 1))
+    elif case == "bad_png":
+        image.write_bytes(b"not-an-image")
+    elif case == "symlink":
+        target = tmp_path / "secret.png"
+        target.write_bytes(image.read_bytes())
+        image.unlink()
+        try:
+            image.symlink_to(target)
+        except OSError:
+            pytest.skip("本机无创建符号链接权限")
+    payload = {"ok": True, "state": "verification_required" if case == "verification" else "login_required", "media_tag": f"MEDIA:{image}"}
+    if case == "prose":
+        payload["message"] = payload.pop("media_tag")
+    assert run._douyin_qr_media_tags(json.dumps(payload)) == []
+
+
+def test_qr_cache_is_in_strict_media_roots():
+    from gateway.platforms import base
+    assert base._HERMES_HOME / "cache/douyin-login" in base.MEDIA_DELIVERY_SAFE_ROOTS
+
+
 def test_douyin_cover_preview_is_attached_without_model_echo(tmp_path, monkeypatch):
     from gateway import run
     monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)

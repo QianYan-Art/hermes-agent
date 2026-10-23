@@ -905,6 +905,7 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     _HERMES_HOME / "cache" / "documents",
     _HERMES_HOME / "cache" / "screenshots",
     _HERMES_HOME / "cache" / "douyin-covers",
+    _HERMES_HOME / "cache" / "douyin-login",
 )
 
 # Default recency window for trusting freshly-produced files (seconds).

@@ -20,6 +20,73 @@ TOKEN = "a" * 32
 OTHER_TOKEN = "b" * 32
 
 
+@pytest.mark.asyncio
+async def test_fixture_login_recovery_pipeline_attaches_qr_without_model_echo(tmp_path, monkeypatch, owner_context):
+    import hermes_constants
+    from gateway import run
+    from gateway.platforms import base
+    image_module = pytest.importorskip("PIL.Image")
+    data = io.BytesIO()
+    image_module.new("RGB", (20, 20), "white").save(data, format="PNG")
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)
+
+    async def failed_prepare(request):
+        return plugin._validate_content_response({"ok": False, "state": "login_required", "message": "需要扫码",
+            "recovery": {"action": "login"}}, action=request["action"])
+
+    async def login(action, *, recovery=False):
+        assert action == "login" and recovery is True
+        return {"ok": True, "state": "login_required", "message": "模拟二维码，不连接抖音",
+                "qr_png_base64": base64.b64encode(data.getvalue()).decode()}
+
+    monkeypatch.setattr(plugin, "_request_content", failed_prepare)
+    monkeypatch.setattr(plugin, "_request", login)
+    output = await plugin.handle_content({"action": "prepare", "release_id": "ep00", "cover_id": "a" * 64})
+    result = json.loads(output)
+    assert "qr_png_base64" not in output
+    tag = result["login"]["media_tag"]
+    messages = [{"role": "assistant", "tool_calls": [{"id": "prepare", "function": {"name": "douyin_content"}}]},
+                {"role": "tool", "tool_call_id": "prepare", "content": output}]
+    assert run._collect_auto_append_media_tags(messages) == ([tag], False)
+    monkeypatch.setattr(base, "MEDIA_DELIVERY_SAFE_ROOTS", (tmp_path / "cache/douyin-login",))
+    monkeypatch.setenv("HERMES_MEDIA_DELIVERY_STRICT", "1")
+    monkeypatch.setenv("HERMES_MEDIA_TRUST_RECENT_FILES", "0")
+    assert base.validate_media_delivery_path(tag[6:]) == str(Path(tag[6:]).resolve())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state,recovery", [("verification_required", "manual_verification"),
+    ("account_mismatch", "check_account"), ("unknown", "check_status"), ("needs_attention", "inspect_result")])
+async def test_non_login_failures_never_request_qr(monkeypatch, owner_context, state, recovery):
+    async def result(_):
+        return {"ok": False, "state": state, "message": "停止", "recovery": {"action": recovery}}
+    async def forbidden(*_, **__):
+        pytest.fail("此错误不得触发扫码恢复")
+    monkeypatch.setattr(plugin, "_request_content", result)
+    monkeypatch.setattr(plugin, "_request", forbidden)
+    output = json.loads(await plugin.handle_content({"action": "job", "job_id": "a" * 32}))
+    assert "login" not in output
+
+
+@pytest.mark.asyncio
+async def test_automatic_qr_is_never_attached_outside_owner_scope(monkeypatch, owner_context):
+    async def result(_):
+        return {"ok": False, "state": "login_required", "message": "停止", "recovery": {"action": "login"}}
+    async def forbidden(*_, **__):
+        pytest.fail("非本人会话不得自动获取二维码")
+    monkeypatch.setattr(plugin, "_request_content", result)
+    monkeypatch.setattr(plugin, "_owner_qq_dm_scope", lambda: None)
+    monkeypatch.setattr(plugin, "_request", forbidden)
+    assert "login" not in json.loads(await plugin.handle_content({"action": "job", "job_id": "a" * 32}))
+
+
+@pytest.mark.parametrize("recovery", [{"action": []}, {"action": "shell"}, {"action": "login", "url": "x"}])
+def test_recovery_response_cannot_expand_into_arbitrary_operations(recovery):
+    with pytest.raises(ValueError):
+        plugin._validate_content_response({"ok": False, "state": "login_required", "message": "停止", "recovery": recovery})
+
+
 @pytest.mark.parametrize("times", [[], [10 ** 400], [float("inf")], [True]])
 def test_cover_times_reject_huge_or_empty_values(times):
     with pytest.raises(ValueError):

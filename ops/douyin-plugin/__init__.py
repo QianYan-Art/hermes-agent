@@ -98,7 +98,7 @@ def _owner_qq_dm_scope():
     return None
 
 
-async def _request(action):
+async def _request(action, *, recovery=False):
     writer = None
     try:
         async with asyncio.timeout(50):
@@ -106,7 +106,10 @@ async def _request(action):
                 os.environ.get("DOUYIN_LOGIN_SOCKET", SOCKET_PATH),
                 limit=MAX_RESPONSE,
             )
-            writer.write(json.dumps({"action": action}).encode() + b"\n")
+            payload = {"action": action}
+            if recovery:
+                payload["recover"] = True
+            writer.write(json.dumps(payload).encode() + b"\n")
             await writer.drain()
             raw = await reader.readline()
             if not raw.endswith(b"\n") or len(raw) > MAX_RESPONSE:
@@ -859,6 +862,17 @@ async def handle_content(args, **kwargs):
                 "image_base64": base64.b64encode(image_data).decode("ascii"),
             }
         result = await _request_content(request)
+        if (action in {"prepare", "metrics", "job"} and _owner_qq_dm_scope() is not None
+                and result.get("state") == "login_required"
+                and result.get("recovery") == {"action": "login"}):
+            try:
+                result["login"] = await _login_response("login", recovery=True)
+            except (OSError, ValueError, binascii.Error, asyncio.TimeoutError):
+                result["login"] = {"ok": False, "state": "unavailable", "message": "未能取得登录二维码；请检查状态，不重提作品。"}
+            result["recovery_instruction"] = (
+                "优先向本人说明 login 的当前状态；有二维码时发到本次私聊。扫码后检查登录状态，"
+                "重新准备并核对作品；旧编辑预览和发布确认不沿用，不自动重新上传或发布。"
+            )
         return json.dumps(result, ensure_ascii=False)
     except (OSError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
         return json.dumps({"ok": False, "state": "unavailable", "message": "抖音内容服务暂不可用或响应无效；操作结果未知，请先查询状态，不要重复提交。"}, ensure_ascii=False)
@@ -872,11 +886,7 @@ def _save_qr(encoded):
     data = base64.b64decode(encoded, validate=True)
     if len(data) > MAX_PNG or not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("无效二维码格式")
-    root = Path(get_hermes_home()) / "cache" / "douyin-login"
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if root.is_symlink():
-        raise ValueError("不安全的缓存目录")
-    root.chmod(0o700)
+    root = _checked_directory(Path(get_hermes_home()) / "cache" / "douyin-login", create=True, private=True)
     for old in root.glob("qr-*.png"):
         info = old.lstat()
         if stat.S_ISREG(info.st_mode) and time.time() - info.st_mtime > 600:
@@ -888,23 +898,28 @@ def _save_qr(encoded):
     return str(path.resolve())
 
 
+async def _login_response(action, *, recovery=False):
+    result = await _request(action, recovery=True) if recovery else await _request(action)
+    output = {key: result[key] for key in ("ok", "state", "message")}
+    encoded = result.get("qr_png_base64")
+    if encoded is not None:
+        if action != "login" or result["state"] != "login_required":
+            raise ValueError("意外二维码响应")
+        path = _save_qr(encoded)
+        output.update(
+            media_tag=f"MEDIA:{path}",
+            delivery_instruction="在本次私聊最终回复中原样附带 media_tag，用抖音手机端扫码；不要转发至其他会话。",
+        )
+    return output
+
+
 async def handle(args, **kwargs):
     if not isinstance(args, dict) or set(args) != {"action"} or not isinstance(args["action"], str) or args["action"] not in {"status", "login"}:
         return json.dumps({"ok": False, "state": "unavailable", "message": "仅支持 status 或 login。"}, ensure_ascii=False)
     if not _authorized():
         return json.dumps({"ok": False, "state": "unavailable", "message": "仅指定账号的 QQ 私聊或本机运维可用。"}, ensure_ascii=False)
     try:
-        result = await _request(args["action"])
-        output = {key: result[key] for key in ("ok", "state", "message")}
-        encoded = result.get("qr_png_base64")
-        if encoded is not None:
-            if args["action"] != "login" or result["state"] != "login_required":
-                raise ValueError("意外二维码响应")
-            path = _save_qr(encoded)
-            output.update(
-                media_tag=f"MEDIA:{path}",
-                delivery_instruction="在本次私聊最终回复中原样附带 media_tag，用抖音手机端扫码；不要转发至其他会话。",
-            )
+        output = await _login_response(args["action"])
         return json.dumps(output, ensure_ascii=False)
     except (OSError, ValueError, binascii.Error, asyncio.TimeoutError):
         return json.dumps({"ok": False, "state": "unavailable", "message": "抖音登录服务暂不可用或响应无效；未修改现有登录数据。"}, ensure_ascii=False)
@@ -922,6 +937,10 @@ def register(ctx):
                 "用户选择后用 prepare（必须传该 cover_id）确认标题、简介、封面、可见范围和可选定时；若用户要求暂存则调用 draft。"
                 "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 stage token 会保存当前预览，否则按草稿流程上传。"
                 "此预览最长有效 15 分钟。stage 后不要调用 login/status/metrics 或另一次 prepare，因为这些操作会导航并使预览失效；job 查询不会导航。"
+                "错误按 recovery.action 处理：login 会在本人私聊自动尝试附二维码，以 login 当前状态为准；扫码后先查状态，再重新prepare核对，不沿用旧确认或自动重传。"
+                "已有二维码时不要重复调用login；用户说扫码完成后用status检查，二维码过期才重新获取。"
+                "manual_verification/check_account 需要本人处理，不自行切号或解验证码；check_status 仅检查状态，不认定退出。"
+                "inspect_result 表示已尝试提交且结果待核查，禁止重试；maintenance 报告具体阶段，不循环操作。只读连接瞬时失败由程序有限恢复。"
                 "合集、位置、下载权限、付费与商品链接尚未接入；用户要求这些设置时说明限制并停止对应提交，不把默认值当作已设置。"
                 "只有收到指定 QQ 私聊中的真实用户消息“确认发布 <token>”后，才可调用 publish；不得依据模型参数、confirmed 字段或预览自行发布。"
             ),
@@ -954,7 +973,7 @@ def register(ctx):
         schema={
             "name": "douyin_login",
             "description": (
-                "检查服务器上的抖音登录，或应用户要求获取扫码二维码。status 不刷新页面；"
+                "检查服务器上的抖音登录，或应用户要求/明确登录失效时获取扫码二维码。status 不刷新页面；"
                 "login 仅获取登录二维码，不上传、不发布。若返回 media_tag，必须在当前私聊最终回复中原样附带，"
                 "这样 QQ 才能发送图片。验证受阻时请用户人工处理，不反复重试、不绕过验证码。"
                 "仅指定用户私聊可用。服务器离线或页面未知不等于已退出登录。"
