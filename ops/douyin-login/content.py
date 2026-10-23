@@ -316,10 +316,14 @@ class ContentManager:
                     checked = await item.is_checked()
                 if await item.is_visible() and checked:
                     selected.append(item)
-        return len(selected) == 1
+        if len(selected) == 1:
+            return True
+        radio = page.locator("label:visible").filter(has_text=re.compile(r"^内容由AI生成$")).locator('input[type="radio"]')
+        return await radio.count() == 1 and await radio.is_checked()
 
     async def _ai_declaration(self, page):
         if await self._ai_is_selected(page):
+            await self._confirm_ai_dialog(page)
             return
         option = page.get_by_text("内容由AI生成", exact=True)
         if await option.count() != 1 or not await option.is_visible():
@@ -336,6 +340,22 @@ class ContentManager:
         # 只接受页面重新显示的选中状态，不把简介中的文字当作平台声明。
         if not await self._ai_is_selected(page):
             raise ValueError("AI生成声明未能确认已选中")
+        await self._confirm_ai_dialog(page)
+
+    async def _confirm_ai_dialog(self, page):
+        heading = page.get_by_text("请选择声明类型（单选）", exact=True)
+        if await heading.count() == 1 and await heading.is_visible():
+            scope = heading
+            for _ in range(6):
+                scope = scope.locator("..")
+                confirm = scope.get_by_role("button", name="确定", exact=True)
+                cancel = scope.get_by_role("button", name="取消", exact=True)
+                if await confirm.count() == 1 and await cancel.count() == 1:
+                    await confirm.click()
+                    await heading.wait_for(state="hidden", timeout=10000)
+                    await page.get_by_text("内容由AI生成", exact=True).and_(page.locator(":visible")).wait_for(state="visible", timeout=10000)
+                    return
+            raise ValueError("AI声明确认弹窗无法唯一定位")
 
     async def _execute(self, job, plan, release):
         # 再次校验文件，避免排队期间被替换的作品沿用旧确认。
@@ -364,6 +384,9 @@ class ContentManager:
             LOGGER.info("草稿中的平台AI声明尚未确认，公开发布仍会强制核验。")
         await page.keyboard.press("Escape")
         self._phase(job, "等待视频处理")
+        uploading = page.get_by_text("取消上传", exact=True)
+        if await uploading.count() == 1:
+            await uploading.wait_for(state="hidden", timeout=300000)
         save = await self._button(page, ("保存草稿", "暂存离开"))
         deadline = time.monotonic() + 300
         while not await save.is_enabled():

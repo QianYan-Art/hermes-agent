@@ -205,8 +205,64 @@ async def test_ai_gate_requires_visible_exact_control(manager, visible, expected
         async def is_checked(self):
             return True
 
-    page = SimpleNamespace(get_by_role=lambda role, **kwargs: Target(role == "checkbox"))
+        def filter(self, **kwargs):
+            return self
+
+        def locator(self, selector):
+            return Target(False)
+
+    page = SimpleNamespace(get_by_role=lambda role, **kwargs: Target(role == "checkbox"), locator=lambda selector: Target(False))
     assert await manager._ai_is_selected(page) is expected
+
+
+@pytest.mark.asyncio
+async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
+    events = []
+
+    class Target:
+        async def count(self):
+            return 1
+
+        async def is_visible(self):
+            return True
+
+        async def click(self):
+            events.append("确认")
+
+        async def wait_for(self, **kwargs):
+            events.append(kwargs["state"])
+
+        def locator(self, selector):
+            assert selector == ".."
+            return self
+
+        def get_by_role(self, role, **kwargs):
+            assert role == "button" and kwargs["name"] in ("确定", "取消")
+            return self
+
+        def and_(self, other):
+            return self
+
+    selected = iter((False, True))
+
+    async def checked(page):
+        return next(selected)
+
+    class Checkbox:
+        async def count(self):
+            return 1
+
+        async def is_visible(self):
+            return True
+
+        async def check(self):
+            events.append("选择")
+
+    monkeypatch.setattr(manager, "_ai_is_selected", checked)
+    page = SimpleNamespace(get_by_text=lambda *args, **kwargs: Target(),
+                           get_by_role=lambda *args, **kwargs: Checkbox(), locator=lambda selector: Target())
+    await manager._ai_declaration(page)
+    assert events == ["选择", "确认", "hidden", "visible"]
 
 
 def test_rpc_envelope_keeps_legacy_login_protocol(content, monkeypatch):
