@@ -231,6 +231,12 @@ async def test_unknown_publish_result_is_not_retried_even_after_restart(manager,
     again = await resumed.process({"action": "publish", "token": token})
     assert again["state"] == "needs_attention" and resumed.tasks == {}
     assert len(attempts) == 1 and len(resumed.jobs) == 1
+    changed = await manager.process({"action": "prepare", "release_id": "ep00", "title": "修改后的文案"})
+    changed_token = changed["plan"]["token"]
+    manager._staged[changed_token] = {"deadline": time.monotonic() + 100}
+    result = await manager.process({"action": "publish", "token": changed_token})
+    assert result["state"] == "needs_attention" and len(manager.jobs) == 1
+    assert "换文案" in result["message"]
 
 
 @pytest.mark.asyncio

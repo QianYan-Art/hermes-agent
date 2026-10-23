@@ -353,6 +353,10 @@ class ContentManager:
                         self.tasks[job["job_id"]] = task
                         task.add_done_callback(lambda _task: self.tasks.pop(job["job_id"], None))
                     return self._job_response(job)
+            if any(j.get("release_id") == plan["release_id"] and j.get("action") == "publish"
+                   and j.get("commit_attempted") is True and j.get("state") == "needs_attention"
+                   for j in self.jobs.values()):
+                raise ValueError("这份视频已有结果未知的发布提交；须先人工核实平台结果，不能换文案或封面后重提")
             if action == "publish" and (token not in self._staged or self.editor_lease_remaining() <= 0):
                 raise ValueError("须先stage并核对这份物料的实时编辑预览；旧暂存槽不能直接发布")
             if any(j.get("state") == "in_progress" for j in self.jobs.values()):
@@ -372,10 +376,12 @@ class ContentManager:
                 await asyncio.wait_for(self._execute(job, plan, release), timeout=JOB_TIMEOUT)
         except (Exception, asyncio.CancelledError) as exc:
             self.invalidate_editor()
-            frames = [frame for frame in traceback.extract_tb(exc.__traceback__) if Path(frame.filename).name == "content.py"]
+            frames = [frame for frame in traceback.extract_tb(exc.__traceback__) if Path(frame.filename).name in {"content.py", "editor.py", "covers.py"}]
             location = frames[-1].lineno if frames else 0
-            LOGGER.warning("作品任务停止，异常类型：%s，执行模块行号：%s", type(exc).__name__, location)
-            job.update(state="needs_attention", phase="结果待核实", message="操作未确认完成；请人工核查草稿或作品，不要自动重复提交。")
+            module = Path(frames[-1].filename).name if frames else "unknown"
+            LOGGER.warning("作品任务停止，异常类型：%s，执行模块：%s，行号：%s", type(exc).__name__, module, location)
+            phase = job.get("phase", "未知步骤")
+            job.update(state="needs_attention", phase=phase + "：结果待核实", message="操作未确认完成；请人工核查草稿或作品，不要自动重复提交。")
             if not isinstance(exc, asyncio.CancelledError):
                 try:
                     context = self.browser._context

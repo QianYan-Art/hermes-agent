@@ -464,63 +464,9 @@ async def test_orientation_card_uses_unique_exact_choose_text_within_card(orient
     assert choose_text is card.button
 
 
-class FakeUploadInput:
-    def __init__(self, accept):
-        self.accept = accept
-        self.path = None
-
-    async def count(self):
-        return 1
-
-    async def get_attribute(self, name):
-        return self.accept if name == "accept" else None
-
-    async def set_input_files(self, path):
-        self.path = Path(path)
-
-    async def evaluate(self, _script):
-        return self.path.name if self.path else ""
-
-
-class FakeUploadInputs:
-    def __init__(self, inputs):
-        self.inputs = inputs
-
-    async def count(self):
-        return len(self.inputs)
-
-    async def get_attribute(self, name):
-        assert len(self.inputs) == 1
-        return await self.inputs[0].get_attribute(name)
-
-    async def set_input_files(self, path):
-        assert len(self.inputs) == 1
-        await self.inputs[0].set_input_files(path)
-
-    async def evaluate(self, script):
-        assert len(self.inputs) == 1
-        return await self.inputs[0].evaluate(script)
-
-
-class FakeUploadContainer:
-    def __init__(self, inputs, parent=None, tag="DIV"):
-        self.inputs = inputs
-        self.parent = parent
-        self.tag = tag
-
-    def locator(self, selector):
-        if selector == "..":
-            return self.parent or FakeUploadContainer([], tag="BODY")
-        assert selector == editor._COVER_UPLOAD_INPUT_SELECTOR
-        return FakeUploadInputs(self.inputs)
-
-    async def evaluate(self, _script):
-        return self.tag
-
-
 class FakeUploadAnchor:
-    def __init__(self, parent):
-        self.parent = parent
+    def __init__(self):
+        self.click_count = 0
 
     async def count(self):
         return 1
@@ -528,15 +474,59 @@ class FakeUploadAnchor:
     async def is_visible(self):
         return True
 
-    def locator(self, selector):
-        assert selector == ".."
-        return self.parent
+    async def click(self):
+        self.click_count += 1
+
+
+class FakeChooserElement:
+    def __init__(self, input_type="file", accept=editor._COVER_MODAL_ACCEPT):
+        self.input_type = input_type
+        self.accept = accept
+        self.path = None
+
+    async def get_attribute(self, name):
+        return {"type": self.input_type, "accept": self.accept}.get(name)
+
+    async def evaluate(self, _script):
+        return self.path.name if self.path else ""
+
+
+class FakeFileChooser:
+    def __init__(self, input_type="file", accept=editor._COVER_MODAL_ACCEPT):
+        self.element = FakeChooserElement(input_type, accept)
+
+    async def set_files(self, path):
+        self.element.path = Path(path)
+
+
+class FakeFileChooserExpectation:
+    def __init__(self, chooser, anchor):
+        self.chooser = chooser
+        self.anchor = anchor
+        self.exited = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        self.exited = True
+        if exc is None and (self.chooser is None or self.anchor.click_count != 1):
+            raise TimeoutError("file chooser event missing")
+
+    @property
+    def value(self):
+        async def resolve():
+            assert self.exited
+            if self.chooser is None:
+                raise TimeoutError("file chooser event missing")
+            return self.chooser
+
+        return resolve()
 
 
 class FakeUploadDialog:
-    def __init__(self, inputs):
-        self.upload_container = FakeUploadContainer(inputs)
-        self.upload_anchor = FakeUploadAnchor(self.upload_container)
+    def __init__(self):
+        self.upload_anchor = FakeUploadAnchor()
         self.visible = True
 
     async def is_visible(self):
@@ -551,37 +541,68 @@ class FakeUploadDialog:
 
 
 @pytest.mark.asyncio
-async def test_cover_upload_input_uses_unique_modal_local_file_input():
-    inputs = [FakeUploadInput(editor._COVER_MODAL_ACCEPT)]
-    dialog = FakeUploadDialog(inputs)
+async def test_choose_cover_file_uses_unique_dialog_anchor_and_filechooser(tmp_path):
+    path = _jpeg(tmp_path / "cover.jpg")
+    dialog = FakeUploadDialog()
+    chooser = FakeFileChooser()
 
-    upload = await editor._cover_upload_input(dialog)
+    class Page:
+        def expect_file_chooser(self, *, timeout):
+            assert timeout == 10000
+            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
 
-    assert upload.inputs == inputs
+    await editor._choose_cover_file(Page(), dialog, path)
+
+    assert dialog.upload_anchor.click_count == 1
+    assert chooser.element.path == path
 
 
 @pytest.mark.asyncio
-async def test_cover_upload_input_fails_closed_when_local_scope_is_ambiguous():
-    dialog = FakeUploadDialog([
-        FakeUploadInput(editor._COVER_MODAL_ACCEPT),
-        FakeUploadInput(editor._COVER_MODAL_ACCEPT),
-    ])
+async def test_choose_cover_file_rejects_unobserved_accept(tmp_path):
+    path = _jpeg(tmp_path / "cover.jpg")
+    dialog = FakeUploadDialog()
+    chooser = FakeFileChooser(accept="image/png,image/jpeg")
 
-    with pytest.raises(ValueError, match="图片输入框不唯一"):
-        await editor._cover_upload_input(dialog)
+    class Page:
+        def expect_file_chooser(self, *, timeout):
+            assert timeout == 10000
+            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
+
+    with pytest.raises(ValueError, match="控件与已观察"):
+        await editor._choose_cover_file(Page(), dialog, path)
+
+    assert chooser.element.path is None
+
+
+@pytest.mark.asyncio
+async def test_choose_cover_file_fails_closed_without_filechooser_event(tmp_path):
+    path = _jpeg(tmp_path / "cover.jpg")
+    dialog = FakeUploadDialog()
+
+    class Page:
+        def expect_file_chooser(self, *, timeout):
+            assert timeout == 10000
+            return FakeFileChooserExpectation(None, dialog.upload_anchor)
+
+    with pytest.raises(ValueError, match="未能可靠触发"):
+        await editor._choose_cover_file(Page(), dialog, path)
 
 
 @pytest.mark.asyncio
 async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkeypatch, tmp_path):
     path = _jpeg(tmp_path / "landscape.jpg")
-    upload = FakeUploadInput(editor._COVER_MODAL_ACCEPT)
-    dialog = FakeUploadDialog([upload])
+    dialog = FakeUploadDialog()
+    chooser = FakeFileChooser()
     card = FakeCoverCard("横封面4:3", "old.jpg")
 
     class PageWithoutGlobalLocator:
         def get_by_role(self, role):
             assert role == "dialog"
             return FakeLabels([dialog])
+
+        def expect_file_chooser(self, *, timeout):
+            assert timeout == 10000
+            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
 
     async def orientation_card(*_args):
         return card, card.button
@@ -602,7 +623,8 @@ async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkey
 
     result = await editor._apply_cover_orientation(PageWithoutGlobalLocator(), "landscape", path)
 
-    assert upload.path == path
+    assert dialog.upload_anchor.click_count == 1
+    assert chooser.element.path == path
     assert result["orientation"] == "landscape"
 
 

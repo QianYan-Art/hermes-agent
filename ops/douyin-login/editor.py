@@ -25,9 +25,6 @@ _ISO_WITH_OFFSET = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"
     r"(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})$"
 )
-_COVER_UPLOAD_INPUT_SELECTOR = (
-    'input[type="file"][accept*="image/png"][accept*="image/jpeg"]'
-)
 _COVER_MODAL_ACCEPT = "image/png,image/jpeg,image/jpg,image/bmp,image/webp,image/tif"
 
 
@@ -301,27 +298,6 @@ async def _visible_cover_dialog(page):
     return visible_dialogs[0]
 
 
-async def _cover_upload_input(dialog):
-    anchor = dialog.get_by_text("上传封面", exact=True)
-    anchor = await _unique_visible(anchor, "封面上传区域")
-    scope = anchor
-    for _ in range(5):
-        scope = scope.locator("..")
-        tag = await scope.evaluate("element => element.tagName")
-        if str(tag).upper() in {"BODY", "HTML"}:
-            break
-        inputs = scope.locator(_COVER_UPLOAD_INPUT_SELECTOR)
-        count = await inputs.count()
-        if count > 1:
-            raise ValueError("封面上传区域内图片输入框不唯一")
-        if count == 1:
-            accept = await inputs.get_attribute("accept")
-            if accept != _COVER_MODAL_ACCEPT:
-                raise ValueError("封面弹窗图片输入框 accept 与已观察控件不一致")
-            return inputs
-    raise ValueError("无法在封面上传区域的有限祖先范围内定位唯一图片输入框")
-
-
 async def _confirm_cover_dialog(page) -> None:
     dialog = await _visible_cover_dialog(page)
 
@@ -369,20 +345,37 @@ async def _wait_for_unique_thumbnail_change(
         await asyncio.sleep(min(0.1, remaining))
 
 
+async def _choose_cover_file(page, dialog, path: Path) -> None:
+    anchor = dialog.get_by_text("上传封面", exact=True)
+    anchor = await _unique_visible(anchor, "封面上传区域")
+    try:
+        async with page.expect_file_chooser(timeout=10000) as pending:
+            await anchor.click()
+        chooser = await pending.value
+    except Exception as exc:
+        raise ValueError("点击封面上传区域后未能可靠触发文件选择器") from exc
+
+    input_element = chooser.element
+    input_type = await input_element.get_attribute("type")
+    accept = await input_element.get_attribute("accept")
+    if input_type != "file" or accept != _COVER_MODAL_ACCEPT:
+        raise ValueError("封面文件选择器控件与已观察的图片输入框不一致")
+
+    await chooser.set_files(str(path))
+    selected_name = await input_element.evaluate(
+        "element => element.files && element.files.length === 1 ? element.files[0].name : ''"
+    )
+    if selected_name != path.name:
+        raise ValueError("封面文件选择器读回的文件名与目标 JPEG 不一致")
+
+
 async def _apply_cover_orientation(page, orientation: str, path: Path) -> dict[str, str]:
     card, choose_button = await _orientation_card(page, orientation)
     before = await _image_sources(card)
     await choose_button.click()
 
     dialog = await _visible_cover_dialog(page)
-    upload = await _cover_upload_input(dialog)
-    await upload.set_input_files(str(path))
-    selected_name = await upload.evaluate(
-        "element => element.files && element.files.length === 1 ? element.files[0].name : ''"
-    )
-    if selected_name != path.name:
-        raise ValueError("封面图片输入框读回的文件名与目标 JPEG 不一致")
-
+    await _choose_cover_file(page, dialog, path)
     await _confirm_cover_dialog(page)
     changed = await _wait_for_unique_thumbnail_change(card, before)
     return {
