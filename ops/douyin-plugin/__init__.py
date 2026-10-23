@@ -911,8 +911,9 @@ def register(ctx):
                 "管理抖音作品。先用 list 选择服务器上的成品；用 covers 查看视频帧，或在指定 QQ 私聊中用 cover_sources 列候选图片、"
                 "再按 image_id 调用 cover_import。把候选 MEDIA 预览给用户并等待其明确选择 cover_id，禁止自行选封面。"
                 "用户选择后用 prepare（必须传该 cover_id）确认标题、简介、封面、可见范围和可选定时；若用户要求暂存则调用 draft。"
-                "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，绝不代替用户点击保存或发布；用户要求保存草稿时调用 draft，同一有效 stage token 会保存当前预览，否则按草稿流程上传。"
+                "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 stage token 会保存当前预览，否则按草稿流程上传。"
                 "此预览最长有效 15 分钟。stage 后不要调用 login/status/metrics 或另一次 prepare，因为这些操作会导航并使预览失效；job 查询不会导航。"
+                "合集、位置、下载权限、付费与商品链接尚未接入；用户要求这些设置时说明限制并停止对应提交，不把默认值当作已设置。"
                 "只有收到指定 QQ 私聊中的真实用户消息“确认发布 <token>”后，才可调用 publish；不得依据模型参数、confirmed 字段或预览自行发布。"
             ),
             "parameters": {

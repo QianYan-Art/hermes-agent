@@ -265,18 +265,37 @@ async def _orientation_card(page, orientation: str):
 
 
 async def _image_sources(card) -> list[str]:
-    images = card.locator("img")
+    descendants = card.locator("*")
+    descendant_count = await descendants.count()
+    if descendant_count > 99:
+        raise ValueError("封面卡片节点数量超过 100，无法安全核实")
+    if not await card.is_visible():
+        return []
+
     sources = []
-    count = await images.count()
-    if count > 20:
-        raise ValueError("封面卡片缩略图候选数量过多，无法安全核实")
-    for index in range(count):
+    images = card.locator("img")
+    image_count = await images.count()
+    for index in range(image_count):
         image = images.nth(index)
         if await image.is_visible():
             source = await image.get_attribute("src")
             if source:
                 sources.append(source)
-    return sources
+
+    for element in [card, *(descendants.nth(index) for index in range(descendant_count))]:
+        if not await element.is_visible():
+            continue
+        background = await element.evaluate(
+            "element => getComputedStyle(element).backgroundImage"
+        )
+        if (
+            isinstance(background, str)
+            and background.strip().lower() != "none"
+            and "url(" in background.lower()
+        ):
+            sources.append(background)
+
+    return list(dict.fromkeys(sources))
 
 
 def _safe_source_summary(source: str) -> str:
@@ -298,8 +317,114 @@ async def _visible_cover_dialog(page):
     return visible_dialogs[0]
 
 
+async def _visible_dialogs(page):
+    visible = []
+    for role in ("dialog", "alertdialog"):
+        candidates = page.get_by_role(role)
+        count = await candidates.count()
+        if count > 10:
+            raise ValueError("确认后弹窗候选数量过多，无法安全核实")
+        for index in range(count):
+            candidate = candidates.nth(index)
+            if await candidate.is_visible():
+                visible.append(candidate)
+    return visible
+
+
+async def _visible_unique_button_or_none(scope, name: str):
+    candidates = scope.get_by_role("button", name=name, exact=True)
+    count = await candidates.count()
+    if count > 10:
+        raise ValueError(f"竖封面推荐弹窗的“{name}”按钮候选过多")
+    visible = []
+    for index in range(count):
+        candidate = candidates.nth(index)
+        if await candidate.is_visible():
+            visible.append(candidate)
+    if len(visible) > 1:
+        raise ValueError(f"竖封面推荐弹窗的“{name}”按钮不唯一")
+    return visible[0] if visible else None
+
+
+async def _dismiss_portrait_recommendation(dialog, timeout_ms: int) -> None:
+    heading_text = "设置竖封面获更多流量"
+    heading = await _unique_visible(
+        dialog.get_by_text(heading_text, exact=True),
+        "竖封面推荐标题",
+    )
+    scope = heading
+    for _ in range(5):
+        scope = scope.locator("..")
+        tag = await scope.evaluate("element => element.tagName")
+        if str(tag).upper() in {"BODY", "HTML"}:
+            break
+        text = await scope.inner_text()
+        if heading_text not in text:
+            continue
+        if len(text) > 1500:
+            raise ValueError("竖封面推荐弹窗范围超过安全文本长度")
+        defer = await _visible_unique_button_or_none(scope, "暂不设置")
+        set_portrait = await _visible_unique_button_or_none(scope, "设置竖封面")
+        if defer is not None and set_portrait is not None:
+            await defer.click()
+            await dialog.wait_for(state="hidden", timeout=timeout_ms)
+            return
+    raise ValueError("无法在短范围内唯一核实竖封面推荐弹窗的两个按钮")
+
+
+async def _handle_post_confirmation_dialogs(page, cover_dialog, cover_dialog_handle) -> None:
+    heading_text = "设置竖封面获更多流量"
+    deadline = monotonic() + 10
+    recommendation_dismissed = False
+
+    while True:
+        recommendation_dialogs = []
+        for candidate in await _visible_dialogs(page):
+            same_as_cover = await candidate.evaluate(
+                "(element, original) => element === original",
+                cover_dialog_handle,
+            )
+            text = await candidate.inner_text()
+            if heading_text in text:
+                recommendation_dialogs.append(candidate)
+            elif same_as_cover and (
+                "设置横封面" in text or "设置竖封面" in text
+            ):
+                continue
+            elif same_as_cover:
+                raise ValueError("确认封面后原弹窗出现未识别内容")
+            else:
+                raise ValueError("确认封面后出现未识别的对话框")
+
+        if len(recommendation_dialogs) > 1:
+            raise ValueError("竖封面推荐对话框不唯一")
+        if recommendation_dialogs:
+            if recommendation_dismissed:
+                raise ValueError("关闭竖封面推荐后再次出现推荐对话框")
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise ValueError("等待竖封面推荐提示超过 10 秒")
+            timeout_ms = max(1, int(remaining * 1000))
+            await _dismiss_portrait_recommendation(
+                recommendation_dialogs[0],
+                timeout_ms,
+            )
+            recommendation_dismissed = True
+            continue
+
+        if not await cover_dialog.is_visible():
+            return
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise ValueError("点击封面完成后原弹窗未在 10 秒内关闭")
+        await asyncio.sleep(min(0.1, remaining))
+
+
 async def _confirm_cover_dialog(page) -> None:
     dialog = await _visible_cover_dialog(page)
+    dialog_handle = await dialog.element_handle()
+    if dialog_handle is None:
+        raise ValueError("封面确认弹窗已脱离页面，无法安全确认")
 
     confirm = None
     for name in ("完成", "确定"):
@@ -315,6 +440,7 @@ async def _confirm_cover_dialog(page) -> None:
         raise ValueError("封面确认弹窗缺少唯一的“完成”或“确定”按钮")
 
     await confirm.click()
+    await _handle_post_confirmation_dialogs(page, dialog, dialog_handle)
     await dialog.wait_for(state="hidden", timeout=10000)
 
 

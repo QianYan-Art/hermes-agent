@@ -376,27 +376,261 @@ async def test_cover_confirmation_fails_closed_without_unique_cover_dialog():
         await editor._confirm_cover_dialog(PageWithoutDialog())
 
 
-class FakeImage:
-    def __init__(self, source):
-        self.source = source
+class FakeDialogButton:
+    def __init__(self, on_click=None):
+        self.click_count = 0
+        self.on_click = on_click
 
     async def is_visible(self):
         return True
 
-    async def get_attribute(self, name):
-        return self.source if name == "src" else None
+    async def click(self):
+        self.click_count += 1
+        if self.on_click is not None:
+            await self.on_click()
 
 
-class FakeImages:
-    def __init__(self, source):
-        self.image = FakeImage(source)
+class FakePromptHeading:
+    def __init__(self, scope):
+        self.scope = scope
 
     async def count(self):
         return 1
 
+    async def is_visible(self):
+        return True
+
+    def locator(self, selector):
+        assert selector == ".."
+        return self.scope
+
+
+class FakePromptScope:
+    def __init__(self, text, buttons):
+        self.text = text
+        self.buttons = buttons
+
+    def locator(self, selector):
+        assert selector == ".."
+        return FakePromptScope("", {})
+
+    async def evaluate(self, _script):
+        return "DIV"
+
+    async def inner_text(self):
+        return self.text
+
+    def get_by_role(self, role, *, name, exact):
+        assert (role, exact) == ("button", True)
+        return FakeLabels(self.buttons.get(name, []))
+
+
+class FakeConfirmDialog:
+    def __init__(self, text, buttons=None, visible=True, prompt_scope=None, role="dialog"):
+        self.text = text
+        self.buttons = buttons or {}
+        self.visible = visible
+        self.prompt_scope = prompt_scope
+        self.role = role
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        return self.visible
+
+    async def inner_text(self):
+        return self.text
+
+    def get_by_role(self, role, *, name, exact):
+        assert (role, exact) == ("button", True)
+        return FakeLabels(self.buttons.get(name, []))
+
+    def get_by_text(self, text, *, exact):
+        assert exact is True
+        if text == "设置竖封面获更多流量" and text in self.text:
+            return FakeLabels([FakePromptHeading(self.prompt_scope)])
+        return FakeLabels([])
+
+    async def element_handle(self):
+        return self
+
+    async def evaluate(self, _script, original):
+        return self is original
+
+    async def wait_for(self, *, state, timeout):
+        assert state == "hidden"
+        assert 0 < timeout <= 10000
+        assert not self.visible
+
+
+class FakeConfirmationPage:
+    def __init__(self, dialogs):
+        self.dialogs = dialogs
+
+    def get_by_role(self, role):
+        if role == "dialog":
+            return FakeLabels([dialog for dialog in self.dialogs if dialog.role == "dialog"])
+        if role == "alertdialog":
+            return FakeLabels([dialog for dialog in self.dialogs if dialog.role == "alertdialog"])
+        raise AssertionError(f"unexpected role: {role}")
+
+
+@pytest.mark.asyncio
+async def test_confirmation_waits_for_cover_dialog_when_no_recommendation_appears():
+    original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
+    page = FakeConfirmationPage([original])
+
+    async def close_cover_dialog():
+        original.visible = False
+
+    original.buttons["完成"][0].on_click = close_cover_dialog
+
+    await editor._confirm_cover_dialog(page)
+
+    assert not original.visible
+
+
+def _recommendation_dialog(original, *, defer_count=1):
+    heading = "设置竖封面获更多流量"
+    copy = (
+        "你的作品可能会在抖音精选APP、个人页、搜索等多个页面以竖封面样式被展示。"
+        "立即设置，可能会帮作品获取更多流量。个人页效果预览 搜索场景效果预览"
+    )
+    text = f"{heading} {copy}"
+    prompt_dialog = FakeConfirmDialog(text)
+    defer_buttons = [FakeDialogButton() for _ in range(defer_count)]
+    setup_button = FakeDialogButton()
+
+    async def defer():
+        prompt_dialog.visible = False
+        original.visible = False
+
+    for button in defer_buttons:
+        button.on_click = defer
+    scope = FakePromptScope(text, {"暂不设置": defer_buttons, "设置竖封面": [setup_button]})
+    prompt_dialog.prompt_scope = scope
+    return prompt_dialog, defer_buttons, setup_button
+
+
+@pytest.mark.asyncio
+async def test_confirmation_dismisses_only_the_recognized_portrait_recommendation():
+    original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
+    prompt, defer_buttons, setup_button = _recommendation_dialog(original)
+
+    class DelayedConfirmationPage(FakeConfirmationPage):
+        def __init__(self):
+            super().__init__([original])
+            self.confirmed = False
+            self.dialog_polls = 0
+
+        def get_by_role(self, role):
+            if role == "dialog" and self.confirmed:
+                self.dialog_polls += 1
+                if self.dialog_polls == 2:
+                    original.text = "设置横封面 设置竖封面 图片处理中"
+                if self.dialog_polls == 3:
+                    prompt.role = "dialog"
+                    self.dialogs.append(prompt)
+            return super().get_by_role(role)
+
+    page = DelayedConfirmationPage()
+
+    async def confirm():
+        page.confirmed = True
+
+    original.buttons["完成"][0].on_click = confirm
+
+    await editor._confirm_cover_dialog(page)
+
+    assert original.buttons["完成"][0].click_count == 1
+    assert defer_buttons[0].click_count == 1
+    assert setup_button.click_count == 0
+    assert page.dialog_polls >= 3
+    assert not prompt.visible
+    assert not original.visible
+
+
+async def _show_prompt(page, prompt):
+    prompt.role = "dialog"
+    page.dialogs.append(prompt)
+
+
+@pytest.mark.asyncio
+async def test_confirmation_stops_on_unrecognized_followup_dialog():
+    original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
+    unknown = FakeConfirmDialog("账号验证")
+    unknown.role = "dialog"
+    page = FakeConfirmationPage([original])
+
+    async def show_unknown():
+        page.dialogs.append(unknown)
+
+    original.buttons["完成"][0].on_click = show_unknown
+
+    with pytest.raises(ValueError, match="未识别的对话框"):
+        await editor._confirm_cover_dialog(page)
+
+    assert original.buttons["完成"][0].click_count == 1
+    assert unknown.visible
+
+
+@pytest.mark.asyncio
+async def test_confirmation_stops_when_original_dialog_changes_to_unknown_content():
+    original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
+    page = FakeConfirmationPage([original])
+
+    async def change_content():
+        original.text = "账号验证"
+
+    original.buttons["完成"][0].on_click = change_content
+
+    with pytest.raises(ValueError, match="原弹窗出现未识别内容"):
+        await editor._confirm_cover_dialog(page)
+
+    assert original.buttons["完成"][0].click_count == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmation_rejects_duplicate_recommendation_buttons():
+    original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
+    page = FakeConfirmationPage([original])
+    prompt, defer_buttons, _ = _recommendation_dialog(original, defer_count=2)
+    original.buttons["完成"][0].on_click = lambda: _show_prompt(page, prompt)
+
+    with pytest.raises(ValueError, match="暂不设置.*不唯一"):
+        await editor._confirm_cover_dialog(page)
+
+    assert all(button.click_count == 0 for button in defer_buttons)
+    assert prompt.visible
+
+
+class FakeImage:
+    def __init__(self, source, background_image="none", visible=True, tag="IMG"):
+        self.source = source
+        self.background_image = background_image
+        self.visible = visible
+        self.tag = tag
+
+    async def is_visible(self):
+        return self.visible
+
+    async def get_attribute(self, name):
+        return self.source if name == "src" else None
+
+    async def evaluate(self, _script):
+        return self.background_image
+
+
+class FakeImages:
+    def __init__(self, source=None, elements=None):
+        self.elements = list(elements) if elements is not None else [FakeImage(source)]
+
+    async def count(self):
+        return len(self.elements)
+
     def nth(self, index):
-        assert index == 0
-        return self.image
+        return self.elements[index]
 
 
 class FakeChooseButton:
@@ -414,20 +648,35 @@ class FakeChooseButton:
 
 
 class FakeCoverCard:
-    def __init__(self, title, source):
+    def __init__(self, title, source, background_image="none", descendant_nodes=None):
         self.title = title
         self.source = source
+        self.background_image = background_image
+        self.image = FakeImage(source)
+        self.descendant_nodes = (
+            list(descendant_nodes) if descendant_nodes is not None else [self.image]
+        )
         self.button = FakeChooseButton()
+        self.visible = True
 
     def locator(self, selector):
-        assert selector == ".." or selector == "img"
+        assert selector in {"..", "img", "*"}
         if selector == "img":
-            return FakeImages(self.source)
+            return FakeImages(
+                elements=[node for node in self.descendant_nodes if node.tag == "IMG"]
+            )
+        if selector == "*":
+            return FakeImages(elements=self.descendant_nodes)
         return self
 
+    async def is_visible(self):
+        return self.visible
+
     async def evaluate(self, script):
-        assert "tagName" in script
-        return "DIV"
+        if "tagName" in script:
+            return "DIV"
+        assert "backgroundImage" in script
+        return self.background_image
 
     async def inner_text(self):
         return self.title
@@ -462,6 +711,39 @@ async def test_orientation_card_uses_unique_exact_choose_text_within_card(orient
 
     assert card.title == title
     assert choose_text is card.button
+
+
+@pytest.mark.asyncio
+async def test_image_sources_reads_visible_css_backgrounds_and_deduplicates_layers():
+    repeated_layers = (
+        'url("https://cdn.test/shared.jpg"), url("https://cdn.test/shared.jpg")'
+    )
+    nodes = [
+        FakeImage("old.jpg"),
+        FakeImage(None, repeated_layers, tag="DIV"),
+        FakeImage(None, repeated_layers, tag="DIV"),
+        FakeImage("hidden.jpg", 'url("https://cdn.test/hidden.jpg")', visible=False),
+    ]
+    card = FakeCoverCard(
+        "横封面4:3",
+        "old.jpg",
+        background_image=repeated_layers,
+        descendant_nodes=nodes,
+    )
+
+    assert await editor._image_sources(card) == ["old.jpg", repeated_layers]
+
+
+@pytest.mark.asyncio
+async def test_image_sources_fails_closed_over_one_hundred_card_nodes():
+    card = FakeCoverCard(
+        "横封面4:3",
+        "old.jpg",
+        descendant_nodes=[FakeImage(None, tag="DIV") for _ in range(100)],
+    )
+
+    with pytest.raises(ValueError, match="节点数量超过 100"):
+        await editor._image_sources(card)
 
 
 class FakeUploadAnchor:
@@ -754,8 +1036,17 @@ class SequenceCard:
         self.reads = 0
 
     def locator(self, selector):
+        if selector == "*":
+            return FakeImages(elements=[])
         assert selector == "img"
         return SequenceImageCollection(self)
+
+    async def is_visible(self):
+        return True
+
+    async def evaluate(self, script):
+        assert "backgroundImage" in script
+        return "none"
 
 
 @pytest.mark.asyncio

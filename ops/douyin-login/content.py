@@ -676,6 +676,11 @@ class ContentManager:
 
     async def _metrics(self):
         page = await self._account_page()
+        try:
+            label = page.get_by_text("粉丝指数", exact=True).and_(page.locator(":visible"))
+            await label.first.wait_for(state="visible", timeout=8000)
+        except Exception:
+            LOGGER.info("首页统计卡片尚未显示，缺失字段不会记为零。")
         fields = await page.evaluate("""() => {
           const labels = ['关注','粉丝指数','获赞','粉丝总数','总粉丝','获赞总数','总获赞','作品总数','播放量','点赞量','评论量','分享量'];
           const fields = [];
