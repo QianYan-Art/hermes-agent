@@ -45,13 +45,15 @@ def validate_request(value):
         raise ValueError("作品请求无效")
     action = value["action"]
     allowed = {
-        "list": {"action"}, "metrics": {"action"},
+        "list": {"action"}, "metrics": {"action"}, "inspect": {"action", "view"},
         "prepare": {"action", "release_id", "title", "description"},
         "draft": {"action", "token"}, "publish": {"action", "token"},
         "job": {"action", "job_id"},
     }
     if action not in allowed or set(value) - allowed[action]:
         raise ValueError("作品请求包含未支持的操作或字段")
+    if action == "inspect" and value.get("view", "current") not in {"current", "saved_editor"}:
+        raise ValueError("只支持当前页或已有暂存编辑页核查")
     if action == "prepare":
         if not isinstance(value.get("release_id"), str) or not ID_PATTERN.fullmatch(value["release_id"]):
             raise ValueError("作品编号无效")
@@ -175,6 +177,7 @@ class ContentManager:
           editable:Array.from(document.querySelectorAll('[contenteditable="true"],textarea')).map(e=>({placeholder:e.getAttribute('data-placeholder')||e.getAttribute('placeholder')||'',role:e.getAttribute('role')||''})).slice(0,20),
           labels:Array.from(document.querySelectorAll('label')).map(e=>e.innerText.trim()).filter(Boolean).slice(0,30),
           ai_controls:Array.from(document.querySelectorAll('label')).filter(e=>e.innerText.trim()==='内容由AI生成').map(e=>({visible:!!(e.offsetWidth||e.offsetHeight),controls:Array.from(e.querySelectorAll('input')).map(i=>({type:i.type,checked:i.checked,visible:!!(i.offsetWidth||i.offsetHeight)}))})).slice(0,4),
+          controls:Array.from(document.querySelectorAll('label,input,button,[role="dialog"]')).filter(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0).slice(-60).map(e=>({tag:e.tagName,role:e.getAttribute('role')||'',text:e.tagName==='INPUT'?'':e.innerText.trim().slice(0,100),type:e.getAttribute('type')||'',placeholder:e.getAttribute('placeholder')||'',checked:e.matches('input[type=radio],input[type=checkbox]')?e.checked:undefined,parent:e.parentElement?.tagName||'',class_name:typeof e.className==='string'?e.className.slice(0,120):''})),
           text_tail:document.body.innerText.slice(-4000)
         })""")
         expected = self.browser.config.expected_account
@@ -199,6 +202,8 @@ class ContentManager:
             if self.browser_lock.locked():
                 return response("needs_attention", "浏览器正在处理其他任务，请先查询任务状态。")
             async with self.browser_lock:
+                if action == "inspect":
+                    return await asyncio.wait_for(self._inspect(request), timeout=PAGE_OPERATION_TIMEOUT)
                 if action == "prepare":
                     return await asyncio.wait_for(self._prepare(request), timeout=PAGE_OPERATION_TIMEOUT)
                 return await asyncio.wait_for(self._metrics(), timeout=PAGE_OPERATION_TIMEOUT)
@@ -209,6 +214,23 @@ class ContentManager:
         except Exception as exc:
             LOGGER.warning("作品操作失败，异常类型：%s", type(exc).__name__)
             return response("page_error", "作品操作失败，请检查服务或页面；没有自动重试。")
+
+    async def _inspect(self, request):
+        # 仅固定创作者页面的有界 DOM 观测，没有任意 URL、脚本或提交入口。
+        if request.get("view", "current") == "saved_editor":
+            page = await self._account_page()
+            await page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=30000)
+            resume = page.get_by_text("继续编辑", exact=True)
+            await resume.wait_for(state="visible", timeout=10000)
+            if await resume.count() != 1:
+                raise ValueError("没有唯一可恢复的暂存作品")
+            await resume.click()
+            await page.locator('input[placeholder*="作品标题"]').wait_for(state="visible", timeout=10000)
+        else:
+            page = await self.browser._page()
+        if not _safe_editor_url(page.url):
+            raise ValueError("当前不是允许的作品页面")
+        return response("ready", "仅核查页面，没有保存或发布。", ui=await self._ui(page))
 
     async def _prepare(self, request):
         release = self.store.load(request["release_id"])
