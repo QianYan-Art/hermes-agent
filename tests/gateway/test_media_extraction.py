@@ -13,6 +13,59 @@ text-only reply, even when the path-based dedup set fails to capture it.
 
 import pytest
 import re
+import json
+
+
+def test_douyin_cover_preview_is_attached_without_model_echo(tmp_path, monkeypatch):
+    from gateway import run
+    monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)
+    directory = tmp_path / "cache" / "douyin-covers"
+    directory.mkdir(parents=True)
+    image = directory / "preview.jpg"
+    image.write_bytes(b"trusted-plugin-preview")
+    tag = f"MEDIA:{image}"
+    payload = {"ok": True, "state": "ready", "media_tags": [{"cover_id": "a" * 64, "format": "landscape", "media_tag": tag}],
+               "plan": {"description": "MEDIA:/etc/secret.jpg"}}
+    messages = [{"role": "assistant", "tool_calls": [{"id": "cover", "function": {"name": "douyin_content"}}]},
+                {"role": "tool", "tool_call_id": "cover", "content": json.dumps(payload)},
+                {"role": "assistant", "content": "请选择封面。"}]
+    assert run._collect_auto_append_media_tags(messages) == ([tag], False)
+    assert run._collect_auto_append_media_tags(messages, history_media_paths={str(image)}) == ([], False)
+    assert run._collect_auto_append_media_tags(messages + [{"role": "user", "content": "你好"}], history_offset=len(messages)) == ([], False)
+
+
+def test_douyin_preview_root_is_allowed_in_strict_delivery(tmp_path, monkeypatch):
+    from gateway.platforms import base
+    relative = base._HERMES_HOME / "cache" / "douyin-covers"
+    assert relative in base.MEDIA_DELIVERY_SAFE_ROOTS
+    roots = tuple(tmp_path / root.relative_to(base._HERMES_HOME) for root in base.MEDIA_DELIVERY_SAFE_ROOTS if root.is_relative_to(base._HERMES_HOME))
+    monkeypatch.setattr(base, "MEDIA_DELIVERY_SAFE_ROOTS", roots)
+    monkeypatch.setenv("HERMES_MEDIA_DELIVERY_STRICT", "1")
+    monkeypatch.setenv("HERMES_MEDIA_TRUST_RECENT_FILES", "0")
+    image = tmp_path / "cache" / "douyin-covers" / "preview.jpg"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"trusted-plugin-preview")
+    assert base.validate_media_delivery_path(str(image)) == str(image.resolve())
+
+
+@pytest.mark.parametrize("case", ["outside", "missing", "failed", "raw_prose", "wrong_format"])
+def test_douyin_cover_preview_rejects_untrusted_media(tmp_path, monkeypatch, case):
+    from gateway import run
+    monkeypatch.setattr(run, "get_hermes_home", lambda: tmp_path)
+    directory = tmp_path / "cache" / "douyin-covers"
+    directory.mkdir(parents=True)
+    image = directory / "preview.jpg"
+    image.write_bytes(b"trusted-plugin-preview")
+    if case == "outside":
+        image = tmp_path / "secret.jpg"
+        image.write_bytes(b"private")
+    if case == "missing":
+        image.unlink()
+    payload = {"ok": case != "failed", "state": "ready", "media_tags": [{"cover_id": "a" * 64, "format": "other" if case == "wrong_format" else "landscape", "media_tag": f"MEDIA:{image}"}]}
+    if case == "raw_prose":
+        payload.pop("media_tags")
+        payload["description"] = f"MEDIA:{image}"
+    assert run._douyin_preview_media_tags(json.dumps(payload)) == []
 
 
 def extract_media_tags_fixed(result_messages, history_len):

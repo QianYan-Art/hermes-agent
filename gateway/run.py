@@ -755,7 +755,14 @@ def _collect_auto_append_media_tags(
         if msg.get("role") not in ("tool", "function"):
             continue
         call_id = str(msg.get("tool_call_id") or msg.get("call_id") or "")
-        if tool_name_by_call_id.get(call_id) not in _AUTO_APPEND_MEDIA_TOOL_NAMES:
+        tool_name = tool_name_by_call_id.get(call_id)
+        if tool_name == "douyin_content":
+            # 仅投递插件生成的结构化封面预览，不扫描标题、简介和页面中的路径示例。
+            for tag in _douyin_preview_media_tags(str(msg.get("content") or "")):
+                if tag[6:] not in history_media_paths:
+                    media_tags.append(tag)
+            continue
+        if tool_name not in _AUTO_APPEND_MEDIA_TOOL_NAMES:
             continue
         content = str(msg.get("content") or "")
         if "MEDIA:" not in content:
@@ -768,6 +775,35 @@ def _collect_auto_append_media_tags(
             has_voice_directive = True
 
     return media_tags, has_voice_directive
+
+
+def _douyin_preview_media_tags(content: str) -> List[str]:
+    try:
+        result = json.loads(content)
+        if not isinstance(result, dict) or result.get("ok") is not True or result.get("state") != "ready":
+            return []
+        items = result.get("media_tags")
+        if not isinstance(items, list) or len(items) > 10:
+            return []
+        directory = get_hermes_home() / "cache" / "douyin-covers"
+        tags = []
+        for item in items:
+            if not isinstance(item, dict) or set(item) != {"cover_id", "format", "media_tag"}:
+                continue
+            if not re.fullmatch(r"[a-f0-9]{64}", str(item["cover_id"])) or item["format"] not in {"landscape", "portrait"}:
+                continue
+            tag = item["media_tag"]
+            if not isinstance(tag, str) or not tag.startswith("MEDIA:"):
+                continue
+            path = Path(tag[6:])
+            if path.parent != directory or path.is_symlink() or path.suffix != ".jpg" or not path.is_file():
+                continue
+            if path.resolve().parent != directory.resolve():
+                continue
+            tags.append(tag)
+        return tags
+    except (ValueError, TypeError, OSError):
+        return []
 
 
 def _response_contains_voice_media(response: str) -> bool:
