@@ -25,8 +25,9 @@ docs.
 ## Current Runtime Shape
 
 抖音服务器登录的独立插件、工具边界、扫码与验证操作见
-`09-douyin-login.md`。不要将本阶段登录入口描述为视频发布或后台统计能力，
-也不要把其浏览器 profile 当成无用缓存清理。
+`09-douyin-login.md`；作品自动交付、封面、stage、草稿及逐次确认发布见
+`10-douyin-publishing.md`。登录工具本身不上传或发布；统计仅限网页可靠可见字段，
+不是官方 API。不要把浏览器 profile、有效原片和防重账本当成无用缓存清理。
 
 Default model provider:
 
