@@ -227,13 +227,16 @@ async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
             return True
 
         async def click(self):
-            events.append("确认")
+            events.append("点击")
 
         async def wait_for(self, **kwargs):
             events.append(kwargs["state"])
 
         def locator(self, selector):
             assert selector == ".."
+            return self
+
+        def filter(self, **kwargs):
             return self
 
         def get_by_role(self, role, **kwargs):
@@ -262,7 +265,7 @@ async def test_ai_modal_requires_scoped_confirmation(manager, monkeypatch):
     page = SimpleNamespace(get_by_text=lambda *args, **kwargs: Target(),
                            get_by_role=lambda *args, **kwargs: Checkbox(), locator=lambda selector: Target())
     await manager._ai_declaration(page)
-    assert events == ["选择", "确认", "hidden", "visible"]
+    assert events == ["点击", "点击", "hidden", "visible"]
 
 
 def test_rpc_envelope_keeps_legacy_login_protocol(content, monkeypatch):

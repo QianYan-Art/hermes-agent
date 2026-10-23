@@ -13,6 +13,7 @@ import re
 import secrets
 import stat
 import time
+import traceback
 from urllib.parse import parse_qs, urlsplit
 import uuid
 
@@ -173,6 +174,7 @@ class ContentManager:
           inputs:Array.from(document.querySelectorAll('input')).map(e=>({type:e.type,accept:e.accept,placeholder:e.placeholder})).slice(0,30),
           editable:Array.from(document.querySelectorAll('[contenteditable="true"],textarea')).map(e=>({placeholder:e.getAttribute('data-placeholder')||e.getAttribute('placeholder')||'',role:e.getAttribute('role')||''})).slice(0,20),
           labels:Array.from(document.querySelectorAll('label')).map(e=>e.innerText.trim()).filter(Boolean).slice(0,30),
+          ai_controls:Array.from(document.querySelectorAll('label')).filter(e=>e.innerText.trim()==='内容由AI生成').map(e=>({visible:!!(e.offsetWidth||e.offsetHeight),controls:Array.from(e.querySelectorAll('input')).map(i=>({type:i.type,checked:i.checked,visible:!!(i.offsetWidth||i.offsetHeight)}))})).slice(0,4),
           text_tail:document.body.innerText.slice(-4000)
         })""")
         expected = self.browser.config.expected_account
@@ -262,7 +264,9 @@ class ContentManager:
             async with self.browser_lock:
                 await asyncio.wait_for(self._execute(job, plan, release), timeout=JOB_TIMEOUT)
         except (Exception, asyncio.CancelledError) as exc:
-            LOGGER.warning("作品任务停止，异常类型：%s", type(exc).__name__)
+            frames = [frame for frame in traceback.extract_tb(exc.__traceback__) if Path(frame.filename).name == "content.py"]
+            location = frames[-1].lineno if frames else 0
+            LOGGER.warning("作品任务停止，异常类型：%s，执行模块行号：%s", type(exc).__name__, location)
             job.update(state="needs_attention", phase="结果待核实", message="操作未确认完成；请人工核查草稿或作品，不要自动重复提交。")
             if not isinstance(exc, asyncio.CancelledError):
                 try:
@@ -325,18 +329,16 @@ class ContentManager:
         if await self._ai_is_selected(page):
             await self._confirm_ai_dialog(page)
             return
-        option = page.get_by_text("内容由AI生成", exact=True)
+        option = page.locator("label:visible").filter(has_text=re.compile(r"^内容由AI生成$"))
         if await option.count() != 1 or not await option.is_visible():
             declaration = page.get_by_text("自主声明", exact=True)
             if await declaration.count() == 1:
                 await declaration.click()
+                await option.wait_for(state="visible", timeout=10000)
         if await option.count() != 1 or not await option.is_visible():
             raise ValueError("AI生成声明控件不可确认")
-        checkbox = page.get_by_role("checkbox", name=re.compile(r"^(内容由AI生成|AI生成|声明内容由AI生成)$"))
-        if await checkbox.count() == 1 and await checkbox.is_visible():
-            await checkbox.check()
-        else:
-            await option.click()
+        # 定制单选框的原生 input 可能隐藏，点击唯一可见的完整标签。
+        await option.click()
         # 只接受页面重新显示的选中状态，不把简介中的文字当作平台声明。
         if not await self._ai_is_selected(page):
             raise ValueError("AI生成声明未能确认已选中")
