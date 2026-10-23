@@ -169,15 +169,16 @@ class ContentManager:
 
     async def _ui(self, page):
         result = await page.evaluate("""() => ({
-          buttons:Array.from(document.querySelectorAll('button,[role="button"]')).map(e=>(e.innerText||e.getAttribute('aria-label')||'').trim()).filter(Boolean).slice(0,60),
+          buttons:Array.from(document.querySelectorAll('button,[role="button"]')).filter(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0).map(e=>(e.innerText||e.getAttribute('aria-label')||'').trim()).filter(Boolean).slice(0,60),
           inputs:Array.from(document.querySelectorAll('input')).map(e=>({type:e.type,accept:e.accept,placeholder:e.placeholder})).slice(0,30),
           editable:Array.from(document.querySelectorAll('[contenteditable="true"],textarea')).map(e=>({placeholder:e.getAttribute('data-placeholder')||e.getAttribute('placeholder')||'',role:e.getAttribute('role')||''})).slice(0,20),
           labels:Array.from(document.querySelectorAll('label')).map(e=>e.innerText.trim()).filter(Boolean).slice(0,30),
-          text_tail:(document.querySelector('main')||document.querySelector('[class*="upload"]')||document.body).innerText.slice(-4000)
+          text_tail:document.body.innerText.slice(-4000)
         })""")
         expected = self.browser.config.expected_account
         if expected:
             result["text_tail"] = result["text_tail"].replace(expected, "[预期账号]")
+        result["page"] = "https://creator.douyin.com" + urlsplit(page.url).path
         return result
 
     async def process(self, request):
@@ -232,6 +233,16 @@ class ContentManager:
             plan, release = self._plan(token)
             for job in self.jobs.values():
                 if job.get("fingerprint") == plan["fingerprint"] and job.get("action") == action:
+                    if (action == "draft" and job.get("root_resume_authorized") is True
+                            and job.get("state") == "needs_attention" and not job.get("commit_attempted")):
+                        if any(other.get("state") == "in_progress" for other in self.jobs.values()):
+                            raise ValueError("已有作品任务在进行，暂不恢复")
+                        job.pop("root_resume_authorized")
+                        job.update(state="in_progress", phase="恢复保存前任务", message="运维已授权恢复，尚未尝试过保存或发布。")
+                        self._save_job(job)
+                        task = asyncio.create_task(self._run(job, plan, release))
+                        self.tasks[job["job_id"]] = task
+                        task.add_done_callback(lambda _task: self.tasks.pop(job["job_id"], None))
                     return self._job_response(job)
             if action == "publish" and not any(j.get("fingerprint") == plan["fingerprint"] and j.get("state") == "draft_saved" for j in self.jobs.values()):
                 raise ValueError("须先成功保存这份物料的草稿，不能直接公开发布")
@@ -281,10 +292,14 @@ class ContentManager:
         if await title.count() != 1:
             raise ValueError("作品标题输入框不唯一")
         await title.fill(plan["title"])
-        description = page.locator('[contenteditable="true"][data-placeholder*="简介"], [contenteditable="true"][data-placeholder*="描述"], textarea[placeholder*="简介"]')
+        description = self._description_field(page)
         if await description.count() != 1:
             raise ValueError("作品简介输入框不唯一")
         await description.fill(plan["description"])
+
+    def _description_field(self, page):
+        # 实际编辑页是无 placeholder 的唯一可见 contenteditable。
+        return page.locator('[contenteditable="true"]:visible, textarea[placeholder*="简介"]:visible')
 
     async def _ai_is_selected(self, page):
         checkbox = page.get_by_role("checkbox", name=re.compile(r"^(内容由AI生成|AI生成|声明内容由AI生成)$"))
@@ -296,7 +311,10 @@ class ContentManager:
             for index in range(min(await candidate.count(), 10)):
                 item = candidate.nth(index)
                 attribute = "aria-selected" if role == "option" else "aria-checked"
-                if await item.is_visible() and await item.get_attribute(attribute) == "true":
+                checked = await item.get_attribute(attribute) == "true"
+                if role == "radio" and await item.get_attribute("type") == "radio":
+                    checked = await item.is_checked()
+                if await item.is_visible() and checked:
                     selected.append(item)
         return len(selected) == 1
 
@@ -360,7 +378,11 @@ class ContentManager:
         job["commit_attempted"] = True
         self._save_job(job)
         await save.click()
-        success = page.get_by_text(re.compile(r"^(草稿保存成功|已保存草稿|保存草稿成功|已保存至草稿箱|保存成功)$"))
+        dialog = page.get_by_role("dialog").filter(has_text=re.compile("草稿|暂存"))
+        if await dialog.count() == 1 and await dialog.is_visible():
+            confirm = await self._button(dialog, ("保存草稿", "暂存", "保存并离开", "确定"))
+            await confirm.click()
+        success = page.get_by_text(re.compile(r"^(草稿保存成功|已保存草稿|草稿已保存|保存草稿成功|已保存至草稿箱|保存成功|暂存成功|已暂存)$"))
         await success.first.wait_for(state="visible", timeout=20000)
         message = "页面已确认草稿保存成功，没有点击正式发布。"
         if not job["ai_declaration_verified"]:
@@ -380,7 +402,7 @@ class ContentManager:
         await title.wait_for(state="visible", timeout=15000)
         if await title.count() != 1 or await title.input_value() != plan["title"]:
             raise ValueError("草稿内容不匹配，不公开发布")
-        description = page.locator('[contenteditable="true"][data-placeholder*="简介"], [contenteditable="true"][data-placeholder*="描述"], textarea[placeholder*="简介"]')
+        description = self._description_field(page)
         if await description.count() != 1:
             raise ValueError("草稿简介无法唯一核对，不公开发布")
         actual = await description.input_value() if await description.evaluate("e => e.tagName === 'TEXTAREA'") else await description.inner_text()

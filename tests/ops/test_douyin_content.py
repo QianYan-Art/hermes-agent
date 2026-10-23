@@ -141,6 +141,35 @@ async def test_restart_does_not_repeat_in_progress_side_effect(manager, content)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("commit_attempted", [False, True])
+async def test_only_root_authorized_precommit_draft_can_resume(manager, content, monkeypatch, commit_attempted):
+    prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
+    token = prepared["plan"]["token"]
+    plan, release = manager._plan(token)
+    job_id = "b" * 32
+    job = {"job_id": job_id, "action": "draft", "release_id": "ep00", "state": "needs_attention", "phase": "未确认",
+           "message": "失败", "updated_at": content.utc_now(), "fingerprint": plan["fingerprint"],
+           "commit_attempted": commit_attempted, "root_resume_authorized": True}
+    manager._save_job(job)
+    invoked = []
+
+    async def execute(current_job, *args):
+        invoked.append(current_job["job_id"])
+        current_job.update(state="draft_saved", phase="草稿已保存", message="模拟确认")
+        manager._save_job(current_job)
+
+    monkeypatch.setattr(manager, "_execute", execute)
+    result = await manager.process({"action": "draft", "token": token})
+    assert result["job"]["job_id"] == job_id
+    if commit_attempted:
+        assert invoked == [] and result["state"] == "needs_attention"
+    else:
+        await asyncio.gather(*list(manager.tasks.values()))
+        assert invoked == [job_id] and len(manager.jobs) == 1
+        assert "root_resume_authorized" not in manager.jobs[job_id]
+
+
+@pytest.mark.asyncio
 async def test_empty_metrics_are_not_reported_as_zero(manager):
     result = await manager.process({"action": "metrics"})
     assert result["metrics"]["fields"] == []
