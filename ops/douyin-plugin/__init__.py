@@ -932,7 +932,7 @@ async def _login_response(action, *, recovery=False):
         path = _save_qr(encoded)
         output.update(
             media_tag=f"MEDIA:{path}",
-            delivery_instruction="在本次私聊最终回复中原样附带 media_tag，用抖音手机端扫码；不要转发至其他会话。",
+            delivery_instruction="网关会把二维码自动附到本次指定私聊回复；说明用抖音手机端扫码即可，不转发其他会话，不展示缓存路径。",
         )
     return output
 
@@ -998,8 +998,8 @@ def register(ctx):
             "name": "douyin_login",
             "description": (
                 "检查服务器上的抖音登录，或应用户要求/明确登录失效时获取扫码二维码。status 不刷新页面；"
-                "login 仅获取登录二维码，不上传、不发布。若返回 media_tag，必须在当前私聊最终回复中原样附带，"
-                "这样 QQ 才能发送图片。验证受阻时请用户人工处理，不反复重试、不绕过验证码。"
+                "login 仅获取登录二维码，不上传、不发布。若返回 media_tag，网关会按专用结构在当前私聊自动附图，"
+                "回复说明扫码步骤即可，不展示缓存路径。验证受阻时请用户人工处理，不反复重试、不绕过验证码。"
                 "仅指定用户私聊可用。服务器离线或页面未知不等于已退出登录。"
             ),
             "parameters": {
