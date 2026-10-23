@@ -335,18 +335,25 @@ def _safe_source_summary(source: str) -> str:
 
 
 async def _visible_cover_dialog(page):
-    dialogs = page.get_by_role("dialog")
-    visible_dialogs = []
-    dialog_count = await dialogs.count()
-    if dialog_count > 10:
-        raise ValueError("封面确认弹窗候选数量过多，无法安全核实")
-    for index in range(dialog_count):
-        dialog = dialogs.nth(index)
-        if await dialog.is_visible() and "封面" in await dialog.inner_text():
-            visible_dialogs.append(dialog)
-    if len(visible_dialogs) != 1:
-        raise ValueError("无法唯一定位可见的封面确认弹窗")
-    return visible_dialogs[0]
+    deadline = monotonic() + 10
+    while True:
+        dialogs = page.get_by_role("dialog")
+        visible_dialogs = []
+        dialog_count = await dialogs.count()
+        if dialog_count > 10:
+            raise ValueError("封面确认弹窗候选数量过多，无法安全核实")
+        for index in range(dialog_count):
+            dialog = dialogs.nth(index)
+            if await dialog.is_visible() and "封面" in await dialog.inner_text():
+                visible_dialogs.append(dialog)
+        if len(visible_dialogs) > 1:
+            raise ValueError("无法唯一定位可见的封面确认弹窗")
+        if visible_dialogs:
+            return visible_dialogs[0]
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise ValueError("等待封面确认弹窗超时")
+        await asyncio.sleep(min(0.1, remaining))
 
 
 async def _visible_dialogs(page):

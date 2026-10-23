@@ -484,6 +484,33 @@ class FakeConfirmationPage:
 
 
 @pytest.mark.asyncio
+async def test_cover_dialog_waits_for_asynchronous_open(monkeypatch):
+    dialog = FakeConfirmDialog("设置横封面")
+    page = FakeConfirmationPage([])
+
+    async def opened(_):
+        page.dialogs.append(dialog)
+
+    monkeypatch.setattr(editor.asyncio, "sleep", opened)
+    assert await editor._visible_cover_dialog(page) is dialog
+
+
+@pytest.mark.asyncio
+async def test_cover_dialog_rejects_ambiguity_without_waiting():
+    page = FakeConfirmationPage([FakeConfirmDialog("设置横封面"), FakeConfirmDialog("设置竖封面")])
+    with pytest.raises(ValueError, match="唯一定位"):
+        await editor._visible_cover_dialog(page)
+
+
+@pytest.mark.asyncio
+async def test_cover_dialog_open_has_a_deadline(monkeypatch):
+    ticks = iter([0, 11])
+    monkeypatch.setattr(editor, "monotonic", lambda: next(ticks))
+    with pytest.raises(ValueError, match="超时"):
+        await editor._visible_cover_dialog(FakeConfirmationPage([]))
+
+
+@pytest.mark.asyncio
 async def test_confirmation_waits_for_cover_dialog_when_no_recommendation_appears():
     original = FakeConfirmDialog("设置横封面 设置竖封面 封面确认", {"完成": [FakeDialogButton()]})
     page = FakeConfirmationPage([original])
