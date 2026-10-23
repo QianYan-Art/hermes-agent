@@ -786,6 +786,8 @@ def _douyin_preview_media_tags(content: str) -> List[str]:
         if not isinstance(items, list) or len(items) > 10:
             return []
         directory = get_hermes_home() / "cache" / "douyin-covers"
+        if directory.is_symlink() or directory.parent.is_symlink():
+            return []
         tags = []
         for item in items:
             if not isinstance(item, dict) or set(item) != {"cover_id", "format", "media_tag"}:

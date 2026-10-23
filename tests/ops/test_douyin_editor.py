@@ -464,6 +464,148 @@ async def test_orientation_card_uses_unique_exact_choose_text_within_card(orient
     assert choose_text is card.button
 
 
+class FakeUploadInput:
+    def __init__(self, accept):
+        self.accept = accept
+        self.path = None
+
+    async def count(self):
+        return 1
+
+    async def get_attribute(self, name):
+        return self.accept if name == "accept" else None
+
+    async def set_input_files(self, path):
+        self.path = Path(path)
+
+    async def evaluate(self, _script):
+        return self.path.name if self.path else ""
+
+
+class FakeUploadInputs:
+    def __init__(self, inputs):
+        self.inputs = inputs
+
+    async def count(self):
+        return len(self.inputs)
+
+    async def get_attribute(self, name):
+        assert len(self.inputs) == 1
+        return await self.inputs[0].get_attribute(name)
+
+    async def set_input_files(self, path):
+        assert len(self.inputs) == 1
+        await self.inputs[0].set_input_files(path)
+
+    async def evaluate(self, script):
+        assert len(self.inputs) == 1
+        return await self.inputs[0].evaluate(script)
+
+
+class FakeUploadContainer:
+    def __init__(self, inputs, parent=None, tag="DIV"):
+        self.inputs = inputs
+        self.parent = parent
+        self.tag = tag
+
+    def locator(self, selector):
+        if selector == "..":
+            return self.parent or FakeUploadContainer([], tag="BODY")
+        assert selector == editor._COVER_UPLOAD_INPUT_SELECTOR
+        return FakeUploadInputs(self.inputs)
+
+    async def evaluate(self, _script):
+        return self.tag
+
+
+class FakeUploadAnchor:
+    def __init__(self, parent):
+        self.parent = parent
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        return True
+
+    def locator(self, selector):
+        assert selector == ".."
+        return self.parent
+
+
+class FakeUploadDialog:
+    def __init__(self, inputs):
+        self.upload_container = FakeUploadContainer(inputs)
+        self.upload_anchor = FakeUploadAnchor(self.upload_container)
+        self.visible = True
+
+    async def is_visible(self):
+        return self.visible
+
+    async def inner_text(self):
+        return "封面 上传封面"
+
+    def get_by_text(self, text, *, exact):
+        assert (text, exact) == ("上传封面", True)
+        return FakeLabels([self.upload_anchor])
+
+
+@pytest.mark.asyncio
+async def test_cover_upload_input_uses_unique_modal_local_file_input():
+    inputs = [FakeUploadInput(editor._COVER_MODAL_ACCEPT)]
+    dialog = FakeUploadDialog(inputs)
+
+    upload = await editor._cover_upload_input(dialog)
+
+    assert upload.inputs == inputs
+
+
+@pytest.mark.asyncio
+async def test_cover_upload_input_fails_closed_when_local_scope_is_ambiguous():
+    dialog = FakeUploadDialog([
+        FakeUploadInput(editor._COVER_MODAL_ACCEPT),
+        FakeUploadInput(editor._COVER_MODAL_ACCEPT),
+    ])
+
+    with pytest.raises(ValueError, match="图片输入框不唯一"):
+        await editor._cover_upload_input(dialog)
+
+
+@pytest.mark.asyncio
+async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkeypatch, tmp_path):
+    path = _jpeg(tmp_path / "landscape.jpg")
+    upload = FakeUploadInput(editor._COVER_MODAL_ACCEPT)
+    dialog = FakeUploadDialog([upload])
+    card = FakeCoverCard("横封面4:3", "old.jpg")
+
+    class PageWithoutGlobalLocator:
+        def get_by_role(self, role):
+            assert role == "dialog"
+            return FakeLabels([dialog])
+
+    async def orientation_card(*_args):
+        return card, card.button
+
+    async def image_sources(*_args):
+        return ["old.jpg"]
+
+    async def confirm_dialog(*_args):
+        return None
+
+    async def changed_thumbnail(*_args):
+        return "new.jpg"
+
+    monkeypatch.setattr(editor, "_orientation_card", orientation_card)
+    monkeypatch.setattr(editor, "_image_sources", image_sources)
+    monkeypatch.setattr(editor, "_confirm_cover_dialog", confirm_dialog)
+    monkeypatch.setattr(editor, "_wait_for_unique_thumbnail_change", changed_thumbnail)
+
+    result = await editor._apply_cover_orientation(PageWithoutGlobalLocator(), "landscape", path)
+
+    assert upload.path == path
+    assert result["orientation"] == "landscape"
+
+
 @pytest.mark.asyncio
 async def test_verify_cover_reads_each_thumbnail_without_reapplying():
     landscape = "https://cdn.test/land.jpg?signature=secret-one"

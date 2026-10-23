@@ -25,9 +25,10 @@ _ISO_WITH_OFFSET = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"
     r"(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})$"
 )
-_COVER_INPUT_SELECTOR = (
-    'input[type="file"][accept="image/png,image/jpeg,image/jpg"]'
+_COVER_UPLOAD_INPUT_SELECTOR = (
+    'input[type="file"][accept*="image/png"][accept*="image/jpeg"]'
 )
+_COVER_MODAL_ACCEPT = "image/png,image/jpeg,image/jpg,image/bmp,image/webp,image/tif"
 
 
 def validate_settings(
@@ -285,7 +286,7 @@ def _safe_source_summary(source: str) -> str:
     return "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-async def _confirm_cover_dialog(page) -> None:
+async def _visible_cover_dialog(page):
     dialogs = page.get_by_role("dialog")
     visible_dialogs = []
     dialog_count = await dialogs.count()
@@ -297,8 +298,33 @@ async def _confirm_cover_dialog(page) -> None:
             visible_dialogs.append(dialog)
     if len(visible_dialogs) != 1:
         raise ValueError("无法唯一定位可见的封面确认弹窗")
+    return visible_dialogs[0]
 
-    dialog = visible_dialogs[0]
+
+async def _cover_upload_input(dialog):
+    anchor = dialog.get_by_text("上传封面", exact=True)
+    anchor = await _unique_visible(anchor, "封面上传区域")
+    scope = anchor
+    for _ in range(5):
+        scope = scope.locator("..")
+        tag = await scope.evaluate("element => element.tagName")
+        if str(tag).upper() in {"BODY", "HTML"}:
+            break
+        inputs = scope.locator(_COVER_UPLOAD_INPUT_SELECTOR)
+        count = await inputs.count()
+        if count > 1:
+            raise ValueError("封面上传区域内图片输入框不唯一")
+        if count == 1:
+            accept = await inputs.get_attribute("accept")
+            if accept != _COVER_MODAL_ACCEPT:
+                raise ValueError("封面弹窗图片输入框 accept 与已观察控件不一致")
+            return inputs
+    raise ValueError("无法在封面上传区域的有限祖先范围内定位唯一图片输入框")
+
+
+async def _confirm_cover_dialog(page) -> None:
+    dialog = await _visible_cover_dialog(page)
+
     confirm = None
     for name in ("完成", "确定"):
         candidate = dialog.get_by_role("button", name=name, exact=True)
@@ -348,9 +374,8 @@ async def _apply_cover_orientation(page, orientation: str, path: Path) -> dict[s
     before = await _image_sources(card)
     await choose_button.click()
 
-    upload = page.locator(_COVER_INPUT_SELECTOR)
-    if await upload.count() != 1:
-        raise ValueError("封面图片输入框未能按唯一 image/png、image/jpeg、image/jpg 控件定位")
+    dialog = await _visible_cover_dialog(page)
+    upload = await _cover_upload_input(dialog)
     await upload.set_input_files(str(path))
     selected_name = await upload.evaluate(
         "element => element.files && element.files.length === 1 ? element.files[0].name : ''"

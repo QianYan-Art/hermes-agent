@@ -672,11 +672,22 @@ class ContentManager:
           const labels = ['关注','粉丝指数','获赞','粉丝总数','总粉丝','获赞总数','总获赞','作品总数','播放量','点赞量','评论量','分享量'];
           const fields = [];
           for (const label of labels) {
-            const node = Array.from(document.querySelectorAll('span,div,p')).find(e=>e.children.length===0 && e.innerText.trim()===label);
-            if (node) {
-              const text = node.parentElement?.innerText?.trim() || '';
-              if (text.length < 160) fields.push({label, value:text});
+            const nodes = Array.from(document.querySelectorAll('span,div,p,a')).filter(e=>
+              (e.offsetWidth||e.offsetHeight)&&e.innerText.trim()===label);
+            const values = new Set();
+            for (const node of nodes) {
+              let scope=node;
+              for(let depth=0;depth<4;depth++){
+                scope=scope.parentElement;
+                if(!scope||['BODY','HTML'].includes(scope.tagName)||scope.innerText.length>100)break;
+                const text=scope.innerText.replace(/\\s+/g,' ').trim();
+                const before=new RegExp('^([0-9]+(?:[.,][0-9]+)*(?:万|亿|[kKwW])?)\\\\s*'+label+'$');
+                const after=new RegExp('^'+label+'\\\\s*([0-9]+(?:[.,][0-9]+)*(?:万|亿|[kKwW])?)$');
+                const match=text.match(before)||text.match(after);
+                if(match){values.add(match[1]);break;}
+              }
             }
+            if(values.size===1)fields.push({label,value:[...values][0]});
           }
           return fields;
         }""")
