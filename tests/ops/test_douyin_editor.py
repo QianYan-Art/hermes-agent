@@ -400,11 +400,17 @@ class FakeImages:
 
 
 class FakeChooseButton:
+    def __init__(self):
+        self.clicked = False
+
     async def count(self):
         return 1
 
     async def is_visible(self):
         return True
+
+    async def click(self):
+        self.clicked = True
 
 
 class FakeCoverCard:
@@ -426,8 +432,8 @@ class FakeCoverCard:
     async def inner_text(self):
         return self.title
 
-    def get_by_role(self, role, *, name, exact):
-        assert (role, name, exact) == ("button", "选择封面", True)
+    def get_by_text(self, text, *, exact):
+        assert (text, exact) == ("选择封面", True)
         return self.button
 
 
@@ -442,6 +448,20 @@ class FakeCoverPage:
         assert exact is True
         card = self.cards.get(text)
         return FakeLabels([card] if card else [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "orientation,title",
+    [("landscape", "横封面4:3"), ("portrait", "竖封面3:4")],
+)
+async def test_orientation_card_uses_unique_exact_choose_text_within_card(orientation, title):
+    page = FakeCoverPage("old-landscape.jpg", "old-portrait.jpg")
+
+    card, choose_text = await editor._orientation_card(page, orientation)
+
+    assert card.title == title
+    assert choose_text is card.button
 
 
 @pytest.mark.asyncio

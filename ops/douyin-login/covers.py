@@ -217,16 +217,18 @@ def _normalize_image(image_bytes: bytes | bytearray | memoryview, *, max_bytes: 
     return _save_jpeg(rgb, quality=95)
 
 
-def _cover_jpeg(source_jpeg: bytes, size: tuple[int, int]) -> bytes:
-    rgb = _decode_rgb(source_jpeg, max_pixels=MAX_PIXELS)
-    padded = ImageOps.pad(
-        rgb,
-        size,
-        method=Image.Resampling.LANCZOS,
-        color=(0, 0, 0),
-        centering=(0.5, 0.5),
-    )
-    return _save_jpeg(padded, quality=90)
+def _cover_jpegs(source: Image.Image) -> dict[str, bytes]:
+    outputs: dict[str, bytes] = {}
+    for name, size in _COVER_SIZES.items():
+        padded = ImageOps.pad(
+            source,
+            size,
+            method=Image.Resampling.LANCZOS,
+            color=(0, 0, 0),
+            centering=(0.5, 0.5),
+        )
+        outputs[name] = _save_jpeg(padded, quality=90)
+    return outputs
 
 
 def _preview_jpeg(cover_jpeg: bytes, name: str) -> bytes:
@@ -378,6 +380,11 @@ class CoverStore:
         source = _decode_rgb(asset_bytes["source.jpg"], max_pixels=MAX_PIXELS)
         if source.size[0] * source.size[1] > MAX_PIXELS:
             raise CoverError("规范化原图像素数超出允许范围")
+        expected_covers = _cover_jpegs(source)
+        # 以规范化原图重算封面字节，不能把清单中的摘要当作派生图真实性证明。
+        for name, expected in expected_covers.items():
+            if asset_bytes[f"{name}.jpg"] != expected:
+                raise CoverError("封面图片与规范化原图导出结果不一致")
         for name, size in _COVER_SIZES.items():
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -434,9 +441,12 @@ class CoverStore:
                 raise CoverError("拒绝覆盖同一身份下的不同封面资产")
             return self._public_dict(existing, source=source, time=time)
 
-        landscape = _cover_jpeg(source_jpeg, _COVER_SIZES["landscape"])
-        portrait = _cover_jpeg(source_jpeg, _COVER_SIZES["portrait"])
-        assets = {"source.jpg": source_jpeg, "landscape.jpg": landscape, "portrait.jpg": portrait}
+        source_image = _decode_rgb(source_jpeg, max_pixels=MAX_PIXELS)
+        covers = _cover_jpegs(source_image)
+        assets = {
+            "source.jpg": source_jpeg,
+            **{f"{name}.jpg": contents for name, contents in covers.items()},
+        }
         manifest = {
             "schema_version": 1,
             "release_id": release_id,

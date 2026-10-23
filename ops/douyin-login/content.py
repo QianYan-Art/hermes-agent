@@ -50,7 +50,7 @@ def validate_request(value):
     action = value["action"]
     allowed = {
         "list": {"action"}, "metrics": {"action"}, "inspect": {"action", "view"},
-        "editor_check": {"action", "release_id", "cover_id", "visibility", "publish_at"},
+        "editor_check": {"action", "release_id", "cover_id", "visibility", "publish_at", "view"},
         "covers": {"action", "release_id", "times"},
         "cover_import": {"action", "release_id", "image_base64"},
         "prepare": {"action", "release_id", "title", "description", "cover_id", "visibility", "publish_at"},
@@ -62,6 +62,8 @@ def validate_request(value):
         raise ValueError("作品请求包含未支持的操作或字段")
     if action == "inspect" and value.get("view", "current") not in {"current", "saved_editor"}:
         raise ValueError("只支持当前页或已有暂存编辑页核查")
+    if action == "editor_check" and value.get("view", "current") not in {"current", "saved_editor"}:
+        raise ValueError("只支持当前页或已有暂存编辑页核查")
     if action in {"prepare", "covers", "cover_import", "editor_check"}:
         if not isinstance(value.get("release_id"), str) or not ID_PATTERN.fullmatch(value["release_id"]):
             raise ValueError("作品编号无效")
@@ -72,7 +74,7 @@ def validate_request(value):
     if action == "covers" and "times" in value:
         times = value["times"]
         import math
-        if not isinstance(times, list) or not 1 <= len(times) <= 5 or any(type(t) not in {int, float} or not math.isfinite(t) or t < 0 for t in times):
+        if not isinstance(times, list) or not 1 <= len(times) <= 5 or any(type(t) not in {int, float} or not 0 <= t <= 1e12 or not math.isfinite(t) for t in times):
             raise ValueError("提帧时刻须为1到5个有限非负秒数")
     if action in {"prepare", "editor_check"}:
         if "cover_id" in value and (not isinstance(value["cover_id"], str) or not COVER_PATTERN.fullmatch(value["cover_id"])):
@@ -220,6 +222,7 @@ class ContentManager:
           labels:Array.from(document.querySelectorAll('label')).map(e=>e.innerText.trim()).filter(Boolean).slice(0,30),
           ai_controls:Array.from(document.querySelectorAll('label')).filter(e=>e.innerText.trim()==='内容由AI生成').map(e=>({visible:!!(e.offsetWidth||e.offsetHeight),controls:Array.from(e.querySelectorAll('input')).map(i=>({type:i.type,checked:i.checked,visible:!!(i.offsetWidth||i.offsetHeight)}))})).slice(0,4),
           controls:Array.from(document.querySelectorAll('label,input,button,[role="dialog"]')).filter(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0).slice(-60).map(e=>({tag:e.tagName,role:e.getAttribute('role')||'',text:e.tagName==='INPUT'?'':e.innerText.trim().slice(0,100),type:e.getAttribute('type')||'',placeholder:e.getAttribute('placeholder')||'',checked:e.matches('input[type=radio],input[type=checkbox]')?e.checked:undefined,parent:e.parentElement?.tagName||'',class_name:typeof e.className==='string'?e.className.slice(0,120):''})),
+          cover_controls:Array.from(document.querySelectorAll('span,div,p')).filter(e=>e.children.length===0&&e.getBoundingClientRect().width>0&&['横封面4:3','竖封面3:4','选择封面','完成','确定','上传封面'].includes(e.innerText.trim())).slice(0,16).map(e=>{const nodes=[];for(let i=0;i<5&&e&&!['BODY','HTML'].includes(e.tagName);i++,e=e.parentElement){if(e.innerText.length>1800)break;nodes.push({tag:e.tagName,role:e.getAttribute('role')||'',text:e.innerText.slice(0,1000),class_name:typeof e.className==='string'?e.className.slice(0,120):''});}return nodes;}),
           text_tail:document.body.innerText.slice(-4000)
         })""")
         expected = self.browser.config.expected_account
@@ -314,7 +317,7 @@ class ContentManager:
     async def _editor_check(self, request):
         # 运维仅核验现有暂存的编辑控件，不保存、不上传视频，也不建立发布证明。
         release = self.store.load(request["release_id"])
-        await self._inspect({"view": "saved_editor"})
+        await self._inspect({"view": request.get("view", "current")})
         page = await self.browser._page()
         await self._verify_metadata(page, release)
         try:

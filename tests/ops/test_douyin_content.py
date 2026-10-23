@@ -30,6 +30,9 @@ def content(monkeypatch):
     {"action": "metrics", "url": "https://example.org"},
     {"action": "prepare", "release_id": "ep00", "title": ""},
     {"action": "prepare", "release_id": "ep00", "description": "x" * 1001},
+    {"action": "covers", "release_id": "ep00", "times": [10 ** 400]},
+    {"action": "covers", "release_id": "ep00", "times": [float("nan")]},
+    {"action": "covers", "release_id": "ep00", "times": [True]},
     [], {"action": "delete"},
 ])
 def test_rejects_expanded_or_invalid_content_protocol(content, payload):
@@ -203,6 +206,45 @@ def test_navigation_invalidates_ready_jobs_and_lease(manager):
     manager.invalidate_editor()
     assert manager.editor_lease_remaining() == 0
     assert job["state"] == "needs_attention"
+
+
+@pytest.mark.asyncio
+async def test_unknown_publish_result_is_not_retried_even_after_restart(manager, content, monkeypatch):
+    prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
+    token = prepared["plan"]["token"]
+    manager._staged[token] = {"deadline": time.monotonic() + 100}
+    attempts = []
+
+    async def execute(job, *_):
+        job["commit_attempted"] = True
+        manager._save_job(job)
+        attempts.append(job["job_id"])
+        raise TimeoutError("模拟点击提交后未收到平台结果")
+
+    monkeypatch.setattr(manager, "_execute", execute)
+    first = await manager.process({"action": "publish", "token": token})
+    await asyncio.gather(*list(manager.tasks.values()))
+    again = await manager.process({"action": "publish", "token": token})
+    assert first["job"]["job_id"] == again["job"]["job_id"]
+    assert len(attempts) == 1 and again["state"] == "needs_attention"
+    resumed = content.ContentManager(manager.browser, asyncio.Lock())
+    again = await resumed.process({"action": "publish", "token": token})
+    assert again["state"] == "needs_attention" and resumed.tasks == {}
+    assert len(attempts) == 1 and len(resumed.jobs) == 1
+
+
+@pytest.mark.asyncio
+async def test_staged_draft_never_uploads_again_when_source_check_fails(manager, monkeypatch):
+    prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
+    token = prepared["plan"]["token"]
+    plan, release = manager._plan(token)
+    manager._staged[token] = {"deadline": 0}
+    monkeypatch.setattr(manager, "_verified_stage", AsyncMock(side_effect=ValueError("视频源已变化")))
+    navigation = AsyncMock()
+    monkeypatch.setattr(manager, "_account_page", navigation)
+    with pytest.raises(ValueError):
+        await manager._execute({"action": "draft"}, plan, release)
+    navigation.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -426,3 +468,5 @@ def test_rpc_envelope_keeps_legacy_login_protocol(content, monkeypatch):
     assert service.parse_request(json.dumps(payload).encode()) == payload["request"]
     with pytest.raises(service.ProtocolError):
         service.parse_request(b'{"action":"content","request":{"action":"publish","confirmed":true}}')
+    with pytest.raises(service.ProtocolError):
+        service.parse_request(json.dumps({"action": "content", "request": {"action": "covers", "release_id": "ep00", "times": [10 ** 400]}}).encode())

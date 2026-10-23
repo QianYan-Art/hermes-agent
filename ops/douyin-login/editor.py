@@ -260,9 +260,9 @@ async def _orientation_card(page, orientation: str):
         text = await scope.inner_text()
         if len(text) > 1000 or title not in text or other_title in text:
             continue
-        button = scope.get_by_role("button", name="选择封面", exact=True)
-        if await button.count() == 1 and await button.is_visible():
-            return scope, button
+        choose_text = scope.get_by_text("选择封面", exact=True)
+        if await choose_text.count() == 1 and await choose_text.is_visible():
+            return scope, choose_text
     raise ValueError(f"无法在短祖先范围内唯一定位“{title}”的选择封面按钮")
 
 

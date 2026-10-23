@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from PIL import Image, PngImagePlugin
+from PIL import Image, ImageOps, PngImagePlugin
 
 
 OPS_DIR = Path(__file__).parents[2] / "ops" / "douyin-login"
@@ -268,6 +268,55 @@ def test_existing_id_with_tampered_file_fails_closed_without_replacing_it(tmp_pa
     with pytest.raises(covers.CoverError, match="摘要不一致"):
         store.import_image("ep00", image)
     assert tampered.read_bytes() == b"changed"
+
+
+def test_unchanged_legacy_cover_derivatives_remain_loadable(tmp_path):
+    _data_dir, _video_path, store = _store(tmp_path)
+    public = store.import_image("ep00", _image_bytes("PNG", size=(77, 31)))
+    private = store.load("ep00", public["cover_id"])
+    with Image.open(private["source_path"]) as source_image:
+        source = source_image.convert("RGB")
+
+    for name, size in (("landscape", (1200, 900)), ("portrait", (900, 1200))):
+        padded = ImageOps.pad(
+            source,
+            size,
+            method=Image.Resampling.LANCZOS,
+            color=(0, 0, 0),
+            centering=(0.5, 0.5),
+        )
+        legacy = io.BytesIO()
+        padded.save(
+            legacy,
+            format="JPEG",
+            quality=90,
+            optimize=True,
+            progressive=False,
+            subsampling=0,
+        )
+        assert legacy.getvalue() == private[f"{name}_path"].read_bytes()
+
+    assert store.load("ep00", public["cover_id"])["cover_id"] == public["cover_id"]
+
+
+def test_load_rejects_cover_bytes_with_coordinated_manifest_digest(tmp_path):
+    _data_dir, _video_path, store = _store(tmp_path)
+    public = store.import_image("ep00", _image_bytes("PNG"))
+    cover_dir = tmp_path / "state" / "covers" / "ep00" / public["cover_id"]
+    landscape = cover_dir / "landscape.jpg"
+    changed_bytes = _image_bytes("JPEG", color=(0, 190, 40), size=(1200, 900))
+    landscape.write_bytes(changed_bytes)
+
+    manifest_path = cover_dir / "cover.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["landscape.jpg"] = hashlib.sha256(changed_bytes).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(covers.CoverError, match="与规范化原图导出结果不一致"):
+        store.load("ep00", public["cover_id"])
+    with pytest.raises(covers.CoverError, match="与规范化原图导出结果不一致"):
+        store.import_image("ep00", _image_bytes("PNG"))
+    assert landscape.read_bytes() == changed_bytes
 
 
 def test_load_rejects_symlinked_cover_assets(tmp_path, monkeypatch):
