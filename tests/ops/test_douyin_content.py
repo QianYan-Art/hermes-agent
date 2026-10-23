@@ -209,6 +209,39 @@ def test_navigation_invalidates_ready_jobs_and_lease(manager):
 
 
 @pytest.mark.asyncio
+async def test_stage_source_activates_video_tab_but_verification_never_recreates_it(manager):
+    actions = []
+
+    class Tab:
+        def and_(self, _):
+            return self
+
+        async def count(self):
+            return 1
+
+        async def click(self):
+            actions.append("只切视频预览")
+
+    page = SimpleNamespace(url="https://creator.douyin.com/creator-micro/content/post/video",
+                           get_by_text=lambda *_, **__: Tab(), locator=lambda *_: object(),
+                           evaluate=AsyncMock(side_effect=[[], ["blob:owned-upload"]]))
+    assert await manager._video_source(page, activate=True) == "blob:owned-upload"
+    assert actions == ["只切视频预览"]
+    page.evaluate = AsyncMock(return_value=[])
+    with pytest.raises(ValueError, match="不恢复或猜测"):
+        await manager._video_source(page)
+    assert actions == ["只切视频预览"]
+
+
+@pytest.mark.asyncio
+async def test_multiple_visible_video_sources_are_never_guessed(manager):
+    page = SimpleNamespace(url="https://creator.douyin.com/creator-micro/content/post/video",
+                           evaluate=AsyncMock(return_value=["blob:one", "blob:two"]))
+    with pytest.raises(ValueError, match="唯一确认"):
+        await manager._video_source(page)
+
+
+@pytest.mark.asyncio
 async def test_unknown_publish_result_is_not_retried_even_after_restart(manager, content, monkeypatch):
     prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
     token = prepared["plan"]["token"]

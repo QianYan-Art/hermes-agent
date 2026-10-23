@@ -225,6 +225,7 @@ class ContentManager:
           cover_controls:Array.from(document.querySelectorAll('span,div,p')).filter(e=>e.children.length===0&&e.getBoundingClientRect().width>0&&['横封面4:3','竖封面3:4','选择封面','完成','确定','上传封面'].includes(e.innerText.trim())).slice(0,16).map(e=>{const nodes=[];for(let i=0;i<5&&e&&!['BODY','HTML'].includes(e.tagName);i++,e=e.parentElement){if(e.innerText.length>1800)break;nodes.push({tag:e.tagName,role:e.getAttribute('role')||'',text:e.innerText.slice(0,1000),class_name:typeof e.className==='string'?e.className.slice(0,120):''});}return nodes;}),
           cover_inputs:Array.from(document.querySelectorAll('[role="dialog"]')).filter(d=>d.getBoundingClientRect().width>0&&d.innerText.includes('封面')).flatMap(d=>Array.from(d.querySelectorAll('input[type=file]')).slice(0,6).map(e=>{const input={accept:e.accept,id:e.id,class_name:e.className,parents:[]};for(let i=0;i<6&&e&&e!==d;i++,e=e.parentElement){const r=e.getBoundingClientRect();input.parents.push({tag:e.tagName,class_name:typeof e.className==='string'?e.className.slice(0,100):'',text:(e.innerText||'').slice(0,150),visible:!!(r.width&&r.height)});}return input;})),
           cover_clicks:Array.from(document.querySelectorAll('[role="dialog"]')).filter(d=>d.getBoundingClientRect().width>0&&d.innerText.includes('封面')).flatMap(d=>Array.from(d.querySelectorAll('span,div,a,button')).filter(e=>!e.children.length&&e.getBoundingClientRect().width>0&&/上传|拖拽/.test(e.innerText)).slice(0,16).map(e=>({tag:e.tagName,text:e.innerText.slice(0,100),class_name:typeof e.className==='string'?e.className.slice(0,100):'',parent_class:typeof e.parentElement?.className==='string'?e.parentElement.className.slice(0,100):''}))),
+          video_previews:Array.from(document.querySelectorAll('video')).slice(0,10).map(e=>({visible:!!(e.offsetWidth&&e.offsetHeight),has_src:!!(e.currentSrc||e.src),ready_state:e.readyState})),
           text_tail:document.body.innerText.slice(-4000)
         })""")
         expected = self.browser.config.expected_account
@@ -583,9 +584,10 @@ class ContentManager:
         if job["action"] == "stage":
             if not job["ai_declaration_verified"]:
                 raise ValueError("平台AI声明未确认，不能形成发布预览")
+            source = await self._video_source(page, activate=True)
+            await self._verify_metadata(page, plan)
             marker = secrets.token_hex(32)
             await page.evaluate("marker => { window.__hermesEditorProof = marker; }", marker)
-            source = await self._video_source(page)
             self._staged[plan["token"]] = {"page": page, "context": self.browser._context,
                 "marker": marker, "video_source": source, "cover": cover_evidence,
                 "deadline": time.monotonic() + min(PLAN_TTL, max(0, plan["expires_unix"] - time.time()))}
@@ -663,12 +665,30 @@ class ContentManager:
         job.update(state="published", phase="已提交发布", message="页面已确认提交发布；后续审核状态以平台为准。")
         self._save_job(job)
 
-    async def _video_source(self, page):
-        sources = await page.evaluate("""() => [...new Set(Array.from(document.querySelectorAll('video'))
-          .map(e=>e.currentSrc||e.src).filter(Boolean))]""")
-        if not isinstance(sources, list) or len(sources) != 1 or not isinstance(sources[0], str) or len(sources[0]) > 4096:
-            raise ValueError("不能唯一确认本次上传视频的预览源")
-        return sources[0]
+    async def _video_source(self, page, *, activate=False):
+        if not _safe_editor_url(page.url):
+            raise ValueError("视频预览不在允许的编辑页")
+        if activate:
+            preview = page.get_by_text("预览视频", exact=True).and_(page.locator(":visible"))
+            if await preview.count() != 1:
+                raise ValueError("无法唯一定位视频预览页签")
+            await preview.click()
+        deadline = time.monotonic() + (5 if activate else 0)
+        while True:
+            sources = await page.evaluate("""() => {
+              const videos=Array.from(document.querySelectorAll('video')).filter(e=>e.offsetWidth&&e.offsetHeight);
+              if(videos.length>10)return null;
+              return [...new Set(videos.map(e=>e.currentSrc||e.src).filter(Boolean))];
+            }""")
+            if not isinstance(sources, list) or len(sources) > 1:
+                raise ValueError("不能唯一确认本次上传视频的预览源")
+            if len(sources) == 1:
+                if not isinstance(sources[0], str) or not 1 <= len(sources[0]) <= 4096 or not _safe_editor_url(page.url):
+                    raise ValueError("视频预览源或编辑页发生变化")
+                return sources[0]
+            if time.monotonic() >= deadline:
+                raise ValueError("当前没有可核实的视频预览源，不恢复或猜测旧视频")
+            await asyncio.sleep(0.1)
 
     async def _metrics(self):
         page = await self._account_page()

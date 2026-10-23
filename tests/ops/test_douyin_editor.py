@@ -1057,6 +1057,7 @@ async def test_verify_cover_reads_each_thumbnail_without_reapplying():
     assert result["verified"] is True
     assert result["covers"] == evidence["covers"]
     assert "secret" not in str(result)
+    assert not any(card.hovered for card in page.cards.values())
 
 
 @pytest.mark.asyncio

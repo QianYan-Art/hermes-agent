@@ -243,7 +243,7 @@ async def verify_settings(page, settings: dict) -> dict[str, str | None]:
     return normalized
 
 
-async def _orientation_card(page, orientation: str):
+async def _orientation_card(page, orientation: str, *, require_action: bool = True):
     title = "横封面4:3" if orientation == "landscape" else "竖封面3:4"
     other_title = "竖封面3:4" if orientation == "landscape" else "横封面4:3"
     action_pattern = re.compile(r"^(?:选择封面|编辑封面)$")
@@ -272,6 +272,11 @@ async def _orientation_card(page, orientation: str):
             break
         text = await scope.inner_text()
         if len(text) > 1000 or title not in text or other_title in text:
+            continue
+
+        if not require_action:
+            if await _image_sources(scope):
+                return scope, None
             continue
 
         action = await unique_visible_action(scope)
@@ -637,7 +642,7 @@ async def verify_cover(page, asset_or_evidence: dict) -> dict[str, object]:
 
     verified_covers = []
     for orientation in ("landscape", "portrait"):
-        card, _ = await _orientation_card(page, orientation)
+        card, _ = await _orientation_card(page, orientation, require_action=False)
         current = {
             _safe_source_summary(source) for source in await _image_sources(card)
         }
