@@ -685,6 +685,8 @@ class FakeCoverCard:
             list(descendant_nodes) if descendant_nodes is not None else [self.image]
         )
         self.button = FakeChooseButton()
+        self.button_label = "选择封面"
+        self.extra_buttons = []
         self.visible = True
         self.hovered = False
 
@@ -713,9 +715,17 @@ class FakeCoverCard:
     async def inner_text(self):
         return self.title
 
-    def get_by_text(self, text, *, exact):
-        assert (text, exact) == ("选择封面", True)
-        return self.button
+    def get_by_text(self, text, *, exact=None):
+        assert exact is None
+        assert isinstance(text, re.Pattern)
+        assert text.pattern == r"^(?:选择封面|编辑封面)$"
+        buttons = []
+        if text.fullmatch(self.button_label):
+            buttons.append(self.button)
+        buttons.extend(
+            button for label, button in self.extra_buttons if text.fullmatch(label)
+        )
+        return FakeLabels(buttons)
 
 
 class FakeCoverPage:
@@ -746,7 +756,7 @@ async def test_orientation_card_uses_unique_exact_choose_text_within_card(orient
 
 
 @pytest.mark.asyncio
-async def test_orientation_card_hovers_before_waiting_for_choose_text():
+async def test_orientation_card_hovers_before_waiting_for_edit_text():
     class ChooseTextAfterHover(FakeChooseButton):
         def __init__(self, card):
             super().__init__()
@@ -760,6 +770,7 @@ async def test_orientation_card_hovers_before_waiting_for_choose_text():
 
     page = FakeCoverPage("old-landscape.jpg", "old-portrait.jpg")
     card = page.cards["横封面4:3"]
+    card.button_label = "编辑封面"
     card.button = ChooseTextAfterHover(card)
 
     selected_card, choose_text = await editor._orientation_card(page, "landscape")
@@ -767,6 +778,18 @@ async def test_orientation_card_hovers_before_waiting_for_choose_text():
     assert selected_card is card
     assert card.hovered
     assert choose_text is card.button
+
+
+@pytest.mark.asyncio
+async def test_orientation_card_rejects_two_visible_cover_actions():
+    page = FakeCoverPage("old-landscape.jpg", "old-portrait.jpg")
+    card = page.cards["横封面4:3"]
+    card.extra_buttons = [("编辑封面", FakeChooseButton())]
+
+    with pytest.raises(ValueError, match="操作不唯一"):
+        await editor._orientation_card(page, "landscape")
+
+    assert not card.hovered
 
 
 @pytest.mark.asyncio

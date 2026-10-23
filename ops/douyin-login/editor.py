@@ -246,8 +246,23 @@ async def verify_settings(page, settings: dict) -> dict[str, str | None]:
 async def _orientation_card(page, orientation: str):
     title = "横封面4:3" if orientation == "landscape" else "竖封面3:4"
     other_title = "竖封面3:4" if orientation == "landscape" else "横封面4:3"
+    action_pattern = re.compile(r"^(?:选择封面|编辑封面)$")
     anchor = page.get_by_text(title, exact=True)
     anchor = await _unique_visible(anchor, f"封面卡片标签“{title}”")
+
+    async def unique_visible_action(scope):
+        candidates = scope.get_by_text(action_pattern)
+        count = await candidates.count()
+        if count > 20:
+            raise ValueError(f"“{title}”封面卡片操作候选过多")
+        visible = []
+        for index in range(count):
+            candidate = candidates.nth(index)
+            if await candidate.is_visible():
+                visible.append(candidate)
+        if len(visible) > 1:
+            raise ValueError(f"“{title}”封面卡片的选择/编辑操作不唯一")
+        return visible[0] if visible else None
 
     scope = anchor
     for _ in range(3):
@@ -259,22 +274,16 @@ async def _orientation_card(page, orientation: str):
         if len(text) > 1000 or title not in text or other_title in text:
             continue
 
-        choose_text = scope.get_by_text("选择封面", exact=True)
-        count = await choose_text.count()
-        if count > 1:
-            raise ValueError(f"无法在“{title}”卡片中唯一定位“选择封面”")
-        if count == 1 and await choose_text.is_visible():
-            return scope, choose_text
+        action = await unique_visible_action(scope)
+        if action is not None:
+            return scope, action
 
         await scope.hover()
         deadline = monotonic() + 1
         while True:
-            choose_text = scope.get_by_text("选择封面", exact=True)
-            count = await choose_text.count()
-            if count > 1:
-                raise ValueError(f"悬停后“{title}”卡片中的“选择封面”不唯一")
-            if count == 1 and await choose_text.is_visible():
-                return scope, choose_text
+            action = await unique_visible_action(scope)
+            if action is not None:
+                return scope, action
             remaining = deadline - monotonic()
             if remaining <= 0:
                 break

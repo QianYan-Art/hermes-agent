@@ -246,14 +246,14 @@ class ContentManager:
                 return self._job_response(job)
             if action == "covers":
                 covers = await asyncio.to_thread(self.covers.frames, request["release_id"], request.get("times"))
-                return response("ready", "候选封面已生成，请由本人选择后准备作品。", covers=covers)
+                return response("ready", "候选封面已生成，请由本人选择后准备作品。双比例图保留完整画面并加黑边；平台可能提示边框过大，请核对预览或提供专用封面。", covers=covers)
             if action == "cover_import":
                 try:
                     image = base64.b64decode(request["image_base64"], validate=True)
                 except ValueError as exc:
                     raise ValueError("封面图片编码无效") from exc
                 cover = await asyncio.to_thread(self.covers.import_image, request["release_id"], image)
-                return response("ready", "本人图片已转换为双比例候选封面，尚未应用到作品。", cover=cover)
+                return response("ready", "本人图片已转换为双比例候选封面，尚未应用。图像保留完整画面并加黑边；请核对预览或提供合适比例的专用封面。", cover=cover)
             if action in {"stage", "draft", "publish"}:
                 return await self._start_job(action, request["token"])
             if self.browser_lock.locked():
