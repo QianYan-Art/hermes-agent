@@ -346,14 +346,23 @@ async def _wait_for_unique_thumbnail_change(
 
 
 async def _choose_cover_file(page, dialog, path: Path) -> None:
-    anchor = dialog.get_by_text("上传封面", exact=True)
-    anchor = await _unique_visible(anchor, "封面上传区域")
+    anchor = None
+    for text in ("点击上传文件", "点击上传文件或拖拽文件到这里"):
+        candidate = dialog.get_by_text(text, exact=True)
+        try:
+            anchor = await _unique_visible(candidate, "封面上传操作区")
+        except ValueError:
+            continue
+        break
+    if anchor is None:
+        raise ValueError("无法唯一定位封面弹窗内的上传操作区")
+
     try:
         async with page.expect_file_chooser(timeout=10000) as pending:
             await anchor.click()
         chooser = await pending.value
     except Exception as exc:
-        raise ValueError("点击封面上传区域后未能可靠触发文件选择器") from exc
+        raise ValueError("点击封面上传操作区后未能可靠触发文件选择器") from exc
 
     input_element = chooser.element
     input_type = await input_element.get_attribute("type")

@@ -160,12 +160,12 @@ def _content_payload(args):
             raise ValueError("release_id 无效")
         if "times" in args and (
             not isinstance(args["times"], list)
-            or len(args["times"]) > 5
+            or not 1 <= len(args["times"]) <= 5
             or any(
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))
+                or not 0 <= value <= 1e12
                 or not math.isfinite(value)
-                or value < 0
                 for value in args["times"]
             )
         ):
@@ -921,7 +921,7 @@ def register(ctx):
                     "action": {"type": "string", "enum": ["list", "metrics", "covers", "cover_sources", "cover_import", "prepare", "stage", "draft", "job", "publish"]},
                     "release_id": {"type": "string"},
                     "image_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
-                    "times": {"type": "array", "maxItems": 5, "items": {"type": "number", "minimum": 0}},
+                    "times": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "number", "minimum": 0, "maximum": 1e12}},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "cover_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

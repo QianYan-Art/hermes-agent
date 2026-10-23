@@ -525,19 +525,26 @@ class FakeFileChooserExpectation:
 
 
 class FakeUploadDialog:
-    def __init__(self):
-        self.upload_anchor = FakeUploadAnchor()
+    def __init__(self, short_anchors=None, full_anchors=None):
+        self.short_anchors = short_anchors if short_anchors is not None else [FakeUploadAnchor()]
+        self.full_anchors = full_anchors if full_anchors is not None else []
+        self.requested_texts = []
         self.visible = True
 
     async def is_visible(self):
         return self.visible
 
     async def inner_text(self):
-        return "封面 上传封面"
+        return "封面 点击上传文件或拖拽文件到这里"
 
     def get_by_text(self, text, *, exact):
-        assert (text, exact) == ("上传封面", True)
-        return FakeLabels([self.upload_anchor])
+        assert exact is True
+        self.requested_texts.append(text)
+        anchors = {
+            "点击上传文件": self.short_anchors,
+            "点击上传文件或拖拽文件到这里": self.full_anchors,
+        }.get(text, [])
+        return FakeLabels(anchors)
 
 
 @pytest.mark.asyncio
@@ -545,16 +552,50 @@ async def test_choose_cover_file_uses_unique_dialog_anchor_and_filechooser(tmp_p
     path = _jpeg(tmp_path / "cover.jpg")
     dialog = FakeUploadDialog()
     chooser = FakeFileChooser()
+    anchor = dialog.short_anchors[0]
 
     class Page:
         def expect_file_chooser(self, *, timeout):
             assert timeout == 10000
-            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
+            return FakeFileChooserExpectation(chooser, anchor)
 
     await editor._choose_cover_file(Page(), dialog, path)
 
-    assert dialog.upload_anchor.click_count == 1
+    assert anchor.click_count == 1
+    assert dialog.requested_texts == ["点击上传文件"]
     assert chooser.element.path == path
+
+
+@pytest.mark.asyncio
+async def test_choose_cover_file_falls_back_to_exact_full_upload_instruction(tmp_path):
+    path = _jpeg(tmp_path / "cover.jpg")
+    anchor = FakeUploadAnchor()
+    dialog = FakeUploadDialog(short_anchors=[], full_anchors=[anchor])
+    chooser = FakeFileChooser()
+
+    class Page:
+        def expect_file_chooser(self, *, timeout):
+            assert timeout == 10000
+            return FakeFileChooserExpectation(chooser, anchor)
+
+    await editor._choose_cover_file(Page(), dialog, path)
+
+    assert dialog.requested_texts == ["点击上传文件", "点击上传文件或拖拽文件到这里"]
+    assert anchor.click_count == 1
+    assert chooser.element.path == path
+
+
+@pytest.mark.asyncio
+async def test_choose_cover_file_fails_closed_when_upload_target_is_not_unique(tmp_path):
+    path = _jpeg(tmp_path / "cover.jpg")
+    dialog = FakeUploadDialog(short_anchors=[FakeUploadAnchor(), FakeUploadAnchor()])
+
+    class Page:
+        def expect_file_chooser(self, *, timeout):
+            pytest.fail("不唯一操作目标时不应等待文件选择器")
+
+    with pytest.raises(ValueError, match="无法唯一定位"):
+        await editor._choose_cover_file(Page(), dialog, path)
 
 
 @pytest.mark.asyncio
@@ -562,11 +603,12 @@ async def test_choose_cover_file_rejects_unobserved_accept(tmp_path):
     path = _jpeg(tmp_path / "cover.jpg")
     dialog = FakeUploadDialog()
     chooser = FakeFileChooser(accept="image/png,image/jpeg")
+    anchor = dialog.short_anchors[0]
 
     class Page:
         def expect_file_chooser(self, *, timeout):
             assert timeout == 10000
-            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
+            return FakeFileChooserExpectation(chooser, anchor)
 
     with pytest.raises(ValueError, match="控件与已观察"):
         await editor._choose_cover_file(Page(), dialog, path)
@@ -578,11 +620,12 @@ async def test_choose_cover_file_rejects_unobserved_accept(tmp_path):
 async def test_choose_cover_file_fails_closed_without_filechooser_event(tmp_path):
     path = _jpeg(tmp_path / "cover.jpg")
     dialog = FakeUploadDialog()
+    anchor = dialog.short_anchors[0]
 
     class Page:
         def expect_file_chooser(self, *, timeout):
             assert timeout == 10000
-            return FakeFileChooserExpectation(None, dialog.upload_anchor)
+            return FakeFileChooserExpectation(None, anchor)
 
     with pytest.raises(ValueError, match="未能可靠触发"):
         await editor._choose_cover_file(Page(), dialog, path)
@@ -593,6 +636,7 @@ async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkey
     path = _jpeg(tmp_path / "landscape.jpg")
     dialog = FakeUploadDialog()
     chooser = FakeFileChooser()
+    anchor = dialog.short_anchors[0]
     card = FakeCoverCard("横封面4:3", "old.jpg")
 
     class PageWithoutGlobalLocator:
@@ -602,7 +646,7 @@ async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkey
 
         def expect_file_chooser(self, *, timeout):
             assert timeout == 10000
-            return FakeFileChooserExpectation(chooser, dialog.upload_anchor)
+            return FakeFileChooserExpectation(chooser, anchor)
 
     async def orientation_card(*_args):
         return card, card.button
@@ -623,7 +667,7 @@ async def test_apply_cover_orientation_does_not_use_page_wide_file_inputs(monkey
 
     result = await editor._apply_cover_orientation(PageWithoutGlobalLocator(), "landscape", path)
 
-    assert dialog.upload_anchor.click_count == 1
+    assert anchor.click_count == 1
     assert chooser.element.path == path
     assert result["orientation"] == "landscape"
 

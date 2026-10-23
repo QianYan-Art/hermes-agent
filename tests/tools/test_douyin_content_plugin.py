@@ -20,6 +20,12 @@ TOKEN = "a" * 32
 OTHER_TOKEN = "b" * 32
 
 
+@pytest.mark.parametrize("times", [[], [10 ** 400], [float("inf")], [True]])
+def test_cover_times_reject_huge_or_empty_values(times):
+    with pytest.raises(ValueError):
+        plugin._content_payload({"action": "covers", "release_id": "ep00", "times": times})
+
+
 @pytest.fixture(autouse=True)
 def clear_confirmation_state():
     with plugin._CONFIRMATION_LOCK:
