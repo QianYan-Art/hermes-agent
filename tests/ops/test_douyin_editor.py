@@ -366,13 +366,15 @@ async def test_apply_cover_rejects_missing_orientation_label_before_click(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_cover_confirmation_fails_closed_without_unique_cover_dialog():
+async def test_cover_confirmation_fails_closed_without_unique_cover_dialog(monkeypatch):
     class PageWithoutDialog:
         def get_by_role(self, role):
             assert role == "dialog"
             return FakeLabels([])
 
-    with pytest.raises(ValueError, match="无法唯一定位可见的封面确认弹窗"):
+    ticks = iter([0, 11])
+    monkeypatch.setattr(editor, "monotonic", lambda: next(ticks))
+    with pytest.raises(ValueError, match="等待封面确认弹窗超时"):
         await editor._confirm_cover_dialog(PageWithoutDialog())
 
 
