@@ -8,6 +8,8 @@ import socket
 import struct
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -22,6 +24,46 @@ SPEC.loader.exec_module(douyin_login)
 def test_parse_request_accepts_only_the_two_single_field_actions():
     assert douyin_login.parse_request(b'{"action":"status"}\n') == "status"
     assert douyin_login.parse_request(b'{"action":"login"}') == "login"
+
+
+def test_auto_recovery_protocol_is_explicit_and_cannot_expand_actions():
+    assert douyin_login.parse_request(b'{"action":"login","recover":true}') == "recover_login"
+    for payload in [b'{"action":"login","recover":false}', b'{"action":"login","recover":1}',
+                    b'{"action":"status","recover":true}', b'{"action":"recover_login"}']:
+        with pytest.raises(douyin_login.ProtocolError):
+            douyin_login.parse_request(payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tasks,lease", [({"upload": object()}, 0), ({}, 20)])
+async def test_auto_login_cannot_interrupt_active_upload_or_preview(tasks, lease):
+    browser = SimpleNamespace(handle=AsyncMock())
+    service = douyin_login.LoginService(browser)
+    service._content = SimpleNamespace(tasks=tasks, editor_lease_remaining=lambda: lease,
+                                       invalidate_editor=lambda: pytest.fail("不得失效活动预览"))
+    result = await service.process("recover_login")
+    assert result["state"] == "unavailable"
+    browser.handle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_login_busy_guard_never_waits_then_navigates():
+    browser = SimpleNamespace(handle=AsyncMock())
+    service = douyin_login.LoginService(browser)
+    async with service._browser_lock:
+        result = await asyncio.wait_for(service.process("recover_login"), timeout=0.1)
+    assert result["state"] == "unavailable"
+    browser.handle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_idle_auto_login_reuses_existing_login_safety_checks():
+    browser = SimpleNamespace(handle=AsyncMock(return_value=douyin_login.make_response("logged_in")))
+    service = douyin_login.LoginService(browser)
+    service._content = SimpleNamespace(tasks={}, editor_lease_remaining=lambda: 0,
+                                       invalidate_editor=lambda: pytest.fail("自动检查不失效预览"))
+    assert (await service.process("recover_login"))["state"] == "logged_in"
+    browser.handle.assert_awaited_once_with("login")
 
 
 @pytest.mark.parametrize(

@@ -224,6 +224,10 @@ def parse_request(payload: bytes) -> str | dict:
             raise ProtocolError(str(exc)) from exc
     if len(payload) > MAX_REQUEST_BYTES:
         raise ProtocolError("请求超过 4096 字节限制")
+    if isinstance(value, dict) and set(value) == {"action", "recover"}:
+        if value["action"] == "login" and value["recover"] is True:
+            return "recover_login"
+        raise ProtocolError("自动恢复仅支持明确的 login 请求")
     if not isinstance(value, dict) or set(value) != {"action"}:
         raise ProtocolError("请求只能包含 action 字段")
     action = value["action"]
@@ -678,12 +682,19 @@ class LoginService:
             except (ImportError, ValueError, OSError) as exc:
                 LOGGER.warning("作品服务初始化失败，异常类型：%s", type(exc).__name__)
                 return make_response("unavailable", "作品服务状态无效，请人工检查；登录目录未被清空。")
+        recovering = action == "recover_login"
+        if recovering and self._browser_lock.locked():
+            return make_response("unavailable", "浏览器正在处理作品，未自动切换登录页；请先查询当前任务。")
         async with self._browser_lock:
-            if self._content is not None:
+            if recovering and self._content is not None and (
+                self._content.tasks or self._content.editor_lease_remaining() > 0
+            ):
+                return make_response("unavailable", "仍有活动作品或有效编辑预览，未自动切换登录页。")
+            if self._content is not None and not recovering:
                 self._content.invalidate_editor()
             try:
                 return await asyncio.wait_for(
-                    self.browser.handle(action), timeout=self.operation_timeout
+                    self.browser.handle("login" if recovering else action), timeout=self.operation_timeout
                 )
             except asyncio.TimeoutError:
                 return make_response("page_error", "页面操作超时，请稍后重试。")
