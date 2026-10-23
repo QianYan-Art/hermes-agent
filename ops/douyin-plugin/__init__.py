@@ -33,7 +33,7 @@ CONTENT_STATES = {
 }
 _CONTENT_ROOT_FIELDS = {
     "ok", "state", "message", "releases", "plan", "job", "metrics", "ui",
-    "covers", "cover_sources", "cover",
+    "covers", "cover_sources", "cover", "recovery",
 }
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -487,6 +487,15 @@ def _validate_content_response(result, *, action=None):
         or not isinstance(result.get("message"), str)
     ):
         raise ValueError("无效内容响应结构")
+    if "recovery" in result and (
+        not isinstance(result["recovery"], dict)
+        or set(result["recovery"]) != {"action"}
+        or not isinstance(result["recovery"]["action"], str)
+        or result["recovery"]["action"] not in {
+            "login", "manual_verification", "check_account", "check_status", "maintenance", "inspect_result"
+        }
+    ):
+        raise ValueError("无效恢复指引")
     if "releases" in result and (
         not isinstance(result["releases"], list)
         or any(not isinstance(item, dict) for item in result["releases"])

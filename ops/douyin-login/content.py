@@ -33,6 +33,21 @@ COVER_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
 PLAN_TTL = 15 * 60
 JOB_TIMEOUT = 10 * 60
 PAGE_OPERATION_TIMEOUT = 40
+ACCOUNT_RECOVERY = {
+    "login_required": ("login", "抖音登录已失效，需要扫码后重新准备作品。"),
+    "verification_required": ("manual_verification", "抖音要求本人完成设备或身份验证，不能自动绕过。"),
+    "account_mismatch": ("check_account", "当前抖音账号不匹配，不能自动切号或继续发布。"),
+    "unknown": ("check_status", "当前登录状态尚不明确，请先核查状态，不视为已经退出。"),
+    "page_error": ("maintenance", "创作者页面暂不可用，请先核查页面，不重复提交。"),
+}
+
+
+class AccountStateError(ValueError):
+    def __init__(self, state):
+        action, message = ACCOUNT_RECOVERY[state]
+        super().__init__(message)
+        self.state = state
+        self.recovery = {"action": action}
 
 
 def utc_now():
@@ -187,7 +202,12 @@ class ContentManager:
             self.invalidate_editor()
         public = {key: job[key] for key in ("job_id", "action", "release_id", "state", "phase", "updated_at", "message")}
         extra = {"ui": job["ui"]} if job.get("state") == "needs_attention" and "ui" in job else {}
-        return response(job["state"], job["message"], job=public, **extra)
+        state = job["state"]
+        if state == "needs_attention":
+            if "recovery" in job:
+                extra["recovery"] = job["recovery"]
+            state = job.get("error_state", state)
+        return response(state, job["message"], job=public, **extra)
 
     def _plan(self, token):
         plan = _read_json(self.plan_dir / (token + ".json"))
@@ -211,7 +231,7 @@ class ContentManager:
         import service
         state = service.classify_page(snapshot, self.browser.config.expected_account)
         if state != "logged_in":
-            raise ValueError("账号未确认或需要人工验证，停止作品操作：" + state)
+            raise AccountStateError(state)
         return page
 
     async def _ui(self, page):
@@ -267,6 +287,8 @@ class ContentManager:
                 if action == "prepare":
                     return await asyncio.wait_for(self._prepare(request), timeout=PAGE_OPERATION_TIMEOUT)
                 return await asyncio.wait_for(self._metrics(), timeout=PAGE_OPERATION_TIMEOUT)
+        except AccountStateError as exc:
+            return response(exc.state, str(exc), recovery=exc.recovery)
         except FileNotFoundError:
             return response("needs_attention", "作品、任务或准备令牌不存在，请先列出并准备作品。")
         except (ValueError, ReleaseError) as exc:
@@ -385,6 +407,23 @@ class ContentManager:
             LOGGER.warning("作品任务停止，异常类型：%s，执行模块：%s，行号：%s", type(exc).__name__, module, location)
             phase = job.get("phase", "未知步骤")
             job.update(state="needs_attention", phase=phase + "：结果待核实", message="操作未确认完成；请人工核查草稿或作品，不要自动重复提交。")
+            job.pop("error_state", None)
+            job["recovery"] = {"action": "inspect_result" if job.get("commit_attempted") else "maintenance"}
+            account_error = exc if isinstance(exc, AccountStateError) else None
+            if not job.get("commit_attempted") and not isinstance(exc, asyncio.CancelledError):
+                try:
+                    context = self.browser._context
+                    if account_error is None and context is not None and context.pages:
+                        import service
+                        snapshot = await asyncio.wait_for(self.browser._snapshot(context.pages[0]), timeout=2)
+                        state = service.classify_page(snapshot, self.browser.config.expected_account)
+                        if state in {"login_required", "verification_required", "account_mismatch"}:
+                            account_error = AccountStateError(state)
+                except Exception:
+                    LOGGER.info("未能补充账号故障分类，不据此触发登录恢复。")
+                if account_error is not None:
+                    job.update(error_state=account_error.state, recovery=account_error.recovery,
+                               message=str(account_error))
             if not isinstance(exc, asyncio.CancelledError):
                 try:
                     context = self.browser._context

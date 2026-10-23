@@ -84,6 +84,36 @@ async def test_prepare_binds_metadata_content_and_account_without_starting_job(m
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("state,action", [
+    ("login_required", "login"), ("verification_required", "manual_verification"),
+    ("account_mismatch", "check_account"), ("unknown", "check_status"),
+])
+async def test_prepare_returns_typed_account_recovery(manager, content, monkeypatch, state, action):
+    async def failed():
+        raise content.AccountStateError(state)
+    monkeypatch.setattr(manager, "_account_page", failed)
+    result = await manager.process({"action": "prepare", "release_id": "ep00"})
+    assert result["state"] == state and result["ok"] is False
+    assert result["recovery"] == {"action": action}
+    assert not manager.jobs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("committed", [False, True])
+async def test_job_account_recovery_never_reopens_unknown_commit(manager, content, monkeypatch, committed):
+    async def execute(*_):
+        raise content.AccountStateError("login_required")
+    monkeypatch.setattr(manager, "_execute", execute)
+    job = {"job_id": "a" * 32, "action": "draft", "release_id": "ep00",
+           "state": "in_progress", "phase": "测试", "message": "测试", "commit_attempted": committed}
+    await manager._run(job, {}, {})
+    result = manager._job_response(job)
+    assert job["state"] == "needs_attention"
+    assert result["state"] == ("needs_attention" if committed else "login_required")
+    assert result["recovery"]["action"] == ("inspect_result" if committed else "login")
+
+
+@pytest.mark.asyncio
 async def test_publish_requires_saved_draft_even_with_valid_token(manager):
     prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
     result = await manager.process({"action": "publish", "token": prepared["plan"]["token"]})
