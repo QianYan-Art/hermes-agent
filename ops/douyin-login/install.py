@@ -150,7 +150,7 @@ def prepare(expected):
     version = re.match(r"systemd (\d+)", subprocess.check_output(["systemctl", "--version"], text=True))
     if version is None or int(version.group(1)) < 254:
         raise RuntimeError("独立登录服务要求 systemd 254 或更新版本")
-    run("apt-get", "install", "--no-install-recommends", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk")
+    run("apt-get", "install", "--no-install-recommends", "-y", "python3-venv", "chromium", "chromium-sandbox", "xvfb", "xauth", "fonts-noto-cjk", "ffmpeg")
     try:
         grp.getgrnam("hermes-douyin")
     except KeyError:
@@ -167,7 +167,7 @@ def prepare(expected):
     STATE.mkdir(mode=0o700, exist_ok=True)
     os.chown(STATE, runner.pw_uid, group.gr_gid)
     os.chmod(STATE, 0o700)
-    for name in ("service.py", "requirements.txt", "content.py", "releases.py", "stage_release.py"):
+    for name in ("service.py", "requirements.txt", "content.py", "releases.py", "stage_release.py", "covers.py", "editor.py"):
         shutil.copyfile(ROOT / "ops/douyin-login" / name, DEST / name)
         os.chmod(DEST / name, 0o644)
     if not (DEST / "venv/bin/python").exists():

@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 LOGIN_URL = "https://creator.douyin.com/creator-micro/home"
 MAX_REQUEST_BYTES = 4096
+MAX_COVER_REQUEST_BYTES = 12 * 1024 * 1024
 MAX_QR_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 30
 LOGIN_WAIT_SECONDS = 8
@@ -179,8 +180,8 @@ class ServiceConfig:
 
 def parse_request(payload: bytes) -> str | dict:
     """校验单行协议，区分登录操作与严格受限的作品请求。"""
-    if len(payload) > MAX_REQUEST_BYTES:
-        raise ProtocolError("请求超过 4096 字节限制")
+    if len(payload) > MAX_COVER_REQUEST_BYTES:
+        raise ProtocolError("请求超过封面上传限制")
     line = payload[:-1] if payload.endswith(b"\n") else payload
     if line.endswith(b"\r"):
         line = line[:-1]
@@ -208,13 +209,21 @@ def parse_request(payload: bytes) -> str | dict:
     except ProtocolError:
         raise
     except (json.JSONDecodeError, TypeError) as exc:
+        if len(payload) > MAX_REQUEST_BYTES:
+            raise ProtocolError("普通请求超过 4096 字节限制") from exc
         raise ProtocolError("请求 JSON 无效") from exc
     if isinstance(value, dict) and value.get("action") == "content" and set(value) == {"action", "request"}:
+        request = value["request"]
+        is_cover = isinstance(request, dict) and request.get("action") == "cover_import"
+        if not is_cover and len(payload) > MAX_REQUEST_BYTES:
+            raise ProtocolError("请求超过 4096 字节限制")
         from content import validate_request
         try:
             return validate_request(value["request"])
         except ValueError as exc:
             raise ProtocolError(str(exc)) from exc
+    if len(payload) > MAX_REQUEST_BYTES:
+        raise ProtocolError("请求超过 4096 字节限制")
     if not isinstance(value, dict) or set(value) != {"action"}:
         raise ProtocolError("请求只能包含 action 字段")
     action = value["action"]
@@ -596,7 +605,7 @@ class LoginService:
                 return False
             if self._clock() - last_activity < BROWSER_IDLE_SECONDS:
                 return False
-            if self._manual_window_remaining() is not None:
+            if self._manual_window_remaining() is not None or (self._content is not None and self._content.editor_lease_remaining() > 0):
                 return False
             close_task = asyncio.create_task(self.browser.close())
             try:
@@ -629,6 +638,8 @@ class LoginService:
                 continue
 
             manual_remaining = self._manual_window_remaining()
+            if manual_remaining is None and self._content is not None:
+                manual_remaining = self._content.editor_lease_remaining() or None
             if manual_remaining is not None:
                 await self._wait_for_activity(
                     min(MANUAL_WINDOW_RECHECK_SECONDS, manual_remaining)
@@ -668,6 +679,8 @@ class LoginService:
                 LOGGER.warning("作品服务初始化失败，异常类型：%s", type(exc).__name__)
                 return make_response("unavailable", "作品服务状态无效，请人工检查；登录目录未被清空。")
         async with self._browser_lock:
+            if self._content is not None:
+                self._content.invalidate_editor()
             try:
                 return await asyncio.wait_for(
                     self.browser.handle(action), timeout=self.operation_timeout
@@ -783,7 +796,7 @@ async def run_server(config: ServiceConfig) -> None:
         server = await asyncio.start_unix_server(
             client_connected,
             path=str(config.socket_path),
-            limit=MAX_REQUEST_BYTES,
+            limit=MAX_COVER_REQUEST_BYTES,
         )
         socket_info = config.socket_path.lstat()
         if not stat.S_ISSOCK(socket_info.st_mode):

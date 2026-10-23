@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+import time
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -141,6 +143,69 @@ async def test_restart_does_not_repeat_in_progress_side_effect(manager, content)
 
 
 @pytest.mark.asyncio
+async def test_restart_invalidates_editor_proof(manager, content):
+    job = {"job_id": "c" * 32, "action": "stage", "release_id": "ep00", "state": "editor_ready", "phase": "预览", "message": "待确认"}
+    manager._save_job(job)
+    resumed = content.ContentManager(manager.browser, asyncio.Lock())
+    assert resumed.jobs[job["job_id"]]["state"] == "needs_attention"
+    assert resumed._staged == {}
+
+
+@pytest.mark.asyncio
+async def test_stage_requires_chosen_cover_and_never_starts_without_it(manager):
+    prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
+    result = await manager.process({"action": "stage", "token": prepared["plan"]["token"]})
+    assert result["state"] == "needs_attention"
+    assert manager.jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_cover_and_settings_are_bound_to_fingerprint(manager, monkeypatch):
+    monkeypatch.setattr(manager.covers, "load", lambda *_: {"cover_sha256": "b" * 64})
+    first = await manager.process({"action": "prepare", "release_id": "ep00", "cover_id": "b" * 64})
+    second = await manager.process({"action": "prepare", "release_id": "ep00", "cover_id": "c" * 64, "visibility": "private"})
+    a, _ = manager._plan(first["plan"]["token"])
+    b, _ = manager._plan(second["plan"]["token"])
+    assert a["fingerprint"] != b["fingerprint"]
+    assert b["settings"]["visibility"] == "private"
+    monkeypatch.setattr(manager.covers, "load", lambda *_: {"cover_sha256": "d" * 64})
+    with pytest.raises(ValueError, match="封面发生变化"):
+        manager._plan(second["plan"]["token"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["expired", "context", "document", "video", "closed", "origin"])
+async def test_publish_refuses_changed_staged_source_before_any_click(manager, monkeypatch, change):
+    token = "a" * 32
+    context = object()
+    manager.browser._context = context
+    page = SimpleNamespace(url="https://creator.douyin.com/creator-micro/content/post/video",
+                           is_closed=lambda: change == "closed", evaluate=AsyncMock(return_value="marker"))
+    manager._staged[token] = {"page": page, "context": context, "marker": "marker", "video_source": "source", "cover": {}, "deadline": time.monotonic() + 100}
+    monkeypatch.setattr(manager, "_video_source", AsyncMock(return_value="other" if change == "video" else "source"))
+    if change == "expired":
+        manager._staged[token]["deadline"] = 0
+    elif change == "context":
+        manager.browser._context = object()
+    elif change == "document":
+        page.evaluate.return_value = "other"
+    elif change == "origin":
+        page.url = "https://example.org/creator-micro/content/post/video"
+    with pytest.raises(ValueError):
+        await manager._publish(None, {}, {"token": token})
+
+
+def test_navigation_invalidates_ready_jobs_and_lease(manager):
+    job = {"job_id": "d" * 32, "action": "stage", "release_id": "ep00", "state": "editor_ready", "phase": "预览", "message": "待确认"}
+    manager._save_job(job)
+    manager._staged["a" * 32] = {"deadline": time.monotonic() + 99999}
+    assert manager.editor_lease_remaining() == 900
+    manager.invalidate_editor()
+    assert manager.editor_lease_remaining() == 0
+    assert job["state"] == "needs_attention"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("commit_attempted", [False, True])
 async def test_only_root_authorized_precommit_draft_can_resume(manager, content, monkeypatch, commit_attempted):
     prepared = await manager.process({"action": "prepare", "release_id": "ep00"})
@@ -214,7 +279,7 @@ async def test_ai_gate_requires_visible_exact_control(manager, visible, expected
         def locator(self, selector):
             return Target(False)
 
-    page = SimpleNamespace(get_by_role=lambda role, **kwargs: Target(role == "checkbox"), locator=lambda selector: Target(False))
+    page = SimpleNamespace(get_by_role=lambda role, **kwargs: Target(role == "checkbox"), locator=lambda selector: Target(False), evaluate=AsyncMock(return_value=False))
     assert await manager._ai_is_selected(page) is expected
 
 
