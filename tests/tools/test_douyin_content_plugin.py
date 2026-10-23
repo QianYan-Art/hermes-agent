@@ -21,6 +21,31 @@ OTHER_TOKEN = "b" * 32
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("action,expected", [("list", 2), ("job", 2), ("prepare", 1), ("stage", 1), ("draft", 1), ("publish", 1)])
+async def test_transport_retry_never_replays_mutating_content_requests(monkeypatch, action, expected):
+    from unittest.mock import AsyncMock
+    request = AsyncMock(side_effect=[OSError("连接暂断"), {"ok": True}])
+    monkeypatch.setattr(plugin, "_request_content_once", request)
+    monkeypatch.setattr(plugin.asyncio, "sleep", AsyncMock())
+    if expected == 1:
+        with pytest.raises(OSError):
+            await plugin._request_content({"action": action})
+    else:
+        assert await plugin._request_content({"action": action}) == {"ok": True}
+    assert request.await_count == expected
+
+
+@pytest.mark.asyncio
+async def test_invalid_transport_response_is_not_retried(monkeypatch):
+    from unittest.mock import AsyncMock
+    request = AsyncMock(side_effect=ValueError("非法响应"))
+    monkeypatch.setattr(plugin, "_request_content_once", request)
+    with pytest.raises(ValueError):
+        await plugin._request_content({"action": "job"})
+    assert request.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_fixture_login_recovery_pipeline_attaches_qr_without_model_echo(tmp_path, monkeypatch, owner_context):
     import hermes_constants
     from gateway import run

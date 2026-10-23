@@ -84,6 +84,32 @@ async def test_prepare_binds_metadata_content_and_account_without_starting_job(m
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error,retries", [(TimeoutError(), 2), (ConnectionError(), 2), (ValueError("页面不匹配"), 1)])
+async def test_navigation_retries_only_transient_errors_before_upload(manager, content, monkeypatch, error, retries):
+    monkeypatch.setattr(content.asyncio, "sleep", AsyncMock())
+    page = SimpleNamespace(goto=AsyncMock(side_effect=[error, None]))
+    if retries == 1:
+        with pytest.raises(ValueError):
+            await manager._navigate_entry(page, content.UPLOAD_URL)
+    else:
+        await manager._navigate_entry(page, content.UPLOAD_URL)
+    assert page.goto.await_count == retries
+    page.goto.reset_mock()
+    with pytest.raises(ValueError, match="固定创作者入口"):
+        await manager._navigate_entry(page, "https://example.com")
+    page.goto.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_persistent_navigation_failure_has_only_two_attempts(manager, content, monkeypatch):
+    monkeypatch.setattr(content.asyncio, "sleep", AsyncMock())
+    page = SimpleNamespace(goto=AsyncMock(side_effect=TimeoutError()))
+    with pytest.raises(TimeoutError):
+        await manager._navigate_entry(page, content.HOME_URL)
+    assert page.goto.await_count == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("state,action", [
     ("login_required", "login"), ("verification_required", "manual_verification"),
     ("account_mismatch", "check_account"), ("unknown", "check_status"),

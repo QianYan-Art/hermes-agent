@@ -15,6 +15,23 @@ plugin = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(plugin)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persistent", [False, True])
+async def test_login_socket_failure_retries_once_with_same_recovery_guard(monkeypatch, persistent):
+    from unittest.mock import AsyncMock
+    expected = {"ok": False, "state": "unknown", "message": "未知"}
+    request = AsyncMock(side_effect=OSError() if persistent else [OSError(), expected])
+    monkeypatch.setattr(plugin, "_request_once", request)
+    monkeypatch.setattr(plugin.asyncio, "sleep", AsyncMock())
+    if persistent:
+        with pytest.raises(OSError):
+            await plugin._request("login", recovery=True)
+    else:
+        assert await plugin._request("login", recovery=True) == expected
+    assert request.await_count == 2
+    request.assert_awaited_with("login", recovery=True)
+
+
 @pytest.mark.parametrize("platform,user,chat,owner,allowed", [
     ("qqbot", "owner", "owner", "owner", True),
     ("qqbot", "owner", "group", "owner", False),

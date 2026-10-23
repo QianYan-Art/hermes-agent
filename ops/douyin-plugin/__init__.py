@@ -99,6 +99,17 @@ def _owner_qq_dm_scope():
 
 
 async def _request(action, *, recovery=False):
+    async with asyncio.timeout(50):
+        for attempt in range(2):
+            try:
+                return await _request_once(action, recovery=recovery)
+            except OSError:
+                if attempt:
+                    raise
+                await asyncio.sleep(0.5)
+
+
+async def _request_once(action, *, recovery=False):
     writer = None
     try:
         async with asyncio.timeout(50):
@@ -583,6 +594,19 @@ def _validate_content_response(result, *, action=None):
 
 
 async def _request_content(payload):
+    if payload.get("action") not in {"list", "job"}:
+        return await _request_content_once(payload)
+    async with asyncio.timeout(50):
+        for attempt in range(2):
+            try:
+                return await _request_content_once(payload)
+            except OSError:
+                if attempt:
+                    raise
+                await asyncio.sleep(0.5)
+
+
+async def _request_content_once(payload):
     writer = None
     try:
         body = json.dumps({"action": "content", "request": payload}, ensure_ascii=False).encode("utf-8") + b"\n"

@@ -50,6 +50,21 @@ class AccountStateError(ValueError):
         self.recovery = {"action": action}
 
 
+def _transient_navigation_error(exc):
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    try:
+        from playwright.async_api import Error, TimeoutError as NavigationTimeout
+    except ImportError:
+        return False
+    return isinstance(exc, NavigationTimeout) or (
+        isinstance(exc, Error) and any(code in str(exc) for code in (
+            "net::ERR_CONNECTION_RESET", "net::ERR_CONNECTION_CLOSED", "net::ERR_NETWORK_CHANGED",
+            "net::ERR_TIMED_OUT", "net::ERR_CONNECTION_TIMED_OUT", "net::ERR_INTERNET_DISCONNECTED",
+        ))
+    )
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -222,10 +237,23 @@ class ContentManager:
                 raise ValueError("封面发生变化，请重新准备")
         return plan, release
 
+    async def _navigate_entry(self, page, url):
+        if url not in {HOME_URL, UPLOAD_URL}:
+            raise ValueError("只允许导航固定创作者入口")
+        for attempt in range(2):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=12000)
+                return
+            except Exception as exc:
+                if attempt or not _transient_navigation_error(exc):
+                    raise
+                LOGGER.info("固定入口发生瞬时网络错误，将在上传前重试一次。")
+                await asyncio.sleep(0.5)
+
     async def _account_page(self):
         self.invalidate_editor()
         page = await self.browser._page()
-        await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+        await self._navigate_entry(page, HOME_URL)
         snapshot = await self.browser._wait_for_login_ui(page, wait_for_qr=False)
         # 复用登录服务现有的账号与挑战判别，不将 Cookie 存在视为授权。
         import service
@@ -319,7 +347,7 @@ class ContentManager:
         title = request.get("title", release["title"]).strip()
         description = request.get("description", release["description"])
         page = await self._account_page()
-        await page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=30000)
+        await self._navigate_entry(page, UPLOAD_URL)
         await page.wait_for_timeout(1500)
         ui = await self._ui(page)
         token = secrets.token_urlsafe(24)
@@ -589,7 +617,7 @@ class ContentManager:
             return
         page = await self._account_page()
         self._phase(job, "打开上传页")
-        await page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=30000)
+        await self._navigate_entry(page, UPLOAD_URL)
         upload = page.locator('input[type="file"][accept*="video"], input[type="file"][accept*=".mp4"]')
         await upload.first.wait_for(state="attached", timeout=15000)
         if await upload.count() != 1:
