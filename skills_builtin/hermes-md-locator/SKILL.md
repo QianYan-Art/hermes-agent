@@ -29,6 +29,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - 服务器状态与维护：`docs/tangyuge-hermes/07-server-operations.md`
 - 邮件 VPS 集成：`docs/tangyuge-hermes/08-mail-vps.md`
 - 抖音服务器登录：`docs/tangyuge-hermes/09-douyin-login.md`
+- 抖音作品与草稿：`docs/tangyuge-hermes/10-douyin-publishing.md`
 
 本地 KBase 保存人工运维记录；bot 的文档定位源是上述仓库路径。
 
@@ -38,7 +39,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 | 用户常用说法 | 读取文档 |
 | --- | --- |
-| "抖音", "抖音登录", "抖音扫码", "抖音账号状态", "服务器抖音", "douyin_login", "OpenFilm 发布" | `docs/tangyuge-hermes/09-douyin-login.md`；当前仅登录和状态，不上传、不发布，不自动开通数据中心 |
+| "抖音", "抖音登录", "抖音扫码", "抖音账号状态", "服务器抖音", "douyin_login" | `docs/tangyuge-hermes/09-douyin-login.md`；登录工具本身不上传、不发布，不自动开通数据中心 |
+| "OpenFilm 发布", "抖音发布", "抖音草稿", "保存草稿", "序栞", "作品包", "douyin_content", "抖音后台数据", "确认发布" | `docs/tangyuge-hermes/10-douyin-publishing.md`；区分暂存、后台任务、草稿和公开发布，真实用户逐次确认不可由模型代填 |
 | "流量日报", "Komari", "VPS 流量", "近24小时流量", "komari_traffic_daily" | `docs/tangyuge-hermes/07-server-operations.md` 的“Komari 流量日报”；只运行固定读取命令，不改 Komari/Kuma 或 Telegram |
 | "auxmodel", "/auxmodel", "auxmodel 状态", "辅助模型状态", "Tavily 状态", "联网后端", "搜索后端", "提取后端", "TAVILY_API_KEY", "TAVILY_BASE_URL" | 先读 `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；实现变更再读 `docs/tangyuge-hermes/05-patches-and-rtk.md` |
 | "ollama-vision", "ollama_vision", "providers.ollama_vision", "AUXILIARY_VISION_API_KEY", "minimax-cn", "MINIMAX_CN_API_KEY", "退役配置", "旧视觉key", "模型发现机制" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”和 `docs/tangyuge-hermes/05-patches-and-rtk.md`；这些标识是退役索引，不是当前配置入口 |
