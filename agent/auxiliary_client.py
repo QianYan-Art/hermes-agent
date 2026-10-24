@@ -2951,6 +2951,7 @@ async def _retry_same_provider_async(
     effective_timeout: float,
     effective_extra_body: dict,
     kimi_request_options: Optional[Dict[str, Any]] = None,
+    main_runtime: Optional[Dict[str, Any]] = None,
 ) -> Any:
     if task == "vision":
         _, retry_client, retry_model = resolve_vision_provider_client(
@@ -2968,6 +2969,7 @@ async def _retry_same_provider_async(
             base_url=resolved_base_url,
             api_key=resolved_api_key,
             api_mode=resolved_api_mode,
+            main_runtime=main_runtime,
         )
     if retry_client is None:
         raise RuntimeError(
@@ -3107,6 +3109,8 @@ def _try_main_agent_model_fallback(
     failed_provider: str,
     task: str = None,
     reason: str = "error",
+    *,
+    main_runtime: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Optional[Any], Optional[str], str]:
     """Last-resort fallback to the user's main agent provider + model.
 
@@ -3121,8 +3125,9 @@ def _try_main_agent_model_fallback(
     Returns:
         (client, model, provider_label) or (None, None, "") if no fallback.
     """
-    main_provider = (_read_main_provider() or "").strip()
-    main_model = (_read_main_model() or "").strip()
+    runtime = _normalize_main_runtime(main_runtime)
+    main_provider = (runtime.get("provider") or _read_main_provider() or "").strip()
+    main_model = (runtime.get("model") or _read_main_model() or "").strip()
     if not main_provider or not main_model or main_provider.lower() in {"auto", ""}:
         return None, None, ""
 
@@ -3135,8 +3140,20 @@ def _try_main_agent_model_fallback(
         return None, None, ""
 
     try:
+        runtime_options = {}
+        resolved_provider = main_provider
+        if runtime:
+            # 兜底仍属于当前会话，不能重新从全局配置选端点或凭据。
+            runtime_options = {
+                "explicit_base_url": runtime.get("base_url"),
+                "explicit_api_key": runtime.get("api_key"),
+                "api_mode": runtime.get("api_mode"),
+            }
+            if runtime.get("base_url") and main_provider.startswith("custom:"):
+                resolved_provider = "custom"
         client, resolved_model = resolve_provider_client(
-            provider=main_provider, model=main_model,
+            provider=resolved_provider, model=main_model,
+            **runtime_options,
         )
     except Exception:
         client, resolved_model = None, None
@@ -5097,7 +5114,7 @@ def _build_call_kwargs(
     # Provider-specific extra_body
     merged_extra = dict(extra_body or {})
     if provider == "nous" or auxiliary_is_nous:
-        merged_extra.setdefault("tags", []).extend(_nous_portal_tags())
+        merged_extra["tags"] = list(merged_extra.get("tags", [])) + _nous_portal_tags()
     if merged_extra:
         kwargs["extra_body"] = merged_extra
 
@@ -5557,7 +5574,7 @@ def call_llm(
                     task, resolved_provider or "auto", reason=reason)
                 if fb_client is None:
                     fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
-                        resolved_provider, task, reason=reason)
+                        resolved_provider, task, reason=reason, main_runtime=main_runtime)
 
             if fb_client is not None:
                 fb_kwargs = _build_call_kwargs(
@@ -5704,6 +5721,7 @@ async def async_call_llm(
             base_url=resolved_base_url,
             api_key=resolved_api_key,
             api_mode=resolved_api_mode,
+            main_runtime=main_runtime,
         )
         if client is None:
             _explicit = (resolved_provider or "").strip().lower()
@@ -5716,7 +5734,9 @@ async def async_call_llm(
             if not resolved_base_url:
                 logger.info("Auxiliary %s: provider %s unavailable, trying auto-detection chain",
                             task or "call", resolved_provider)
-                client, final_model = _get_cached_client("auto", async_mode=True)
+                client, final_model = _get_cached_client(
+                    "auto", async_mode=True, main_runtime=main_runtime,
+                )
         if client is None:
             raise RuntimeError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
@@ -5836,6 +5856,7 @@ async def async_call_llm(
                 base_url=resolved_base_url,
                 api_key=resolved_api_key,
                 api_mode=resolved_api_mode,
+                main_runtime=main_runtime,
                 is_vision=(task == "vision"),
             )
             if refreshed_client is not None:
@@ -5866,6 +5887,7 @@ async def async_call_llm(
                 base_url=resolved_base_url,
                 api_key=resolved_api_key,
                 api_mode=resolved_api_mode,
+                main_runtime=main_runtime,
                 is_vision=(task == "vision"),
             )
             if refreshed_client is not None:
@@ -5892,6 +5914,7 @@ async def async_call_llm(
                     resolved_base_url=resolved_base_url,
                     resolved_api_key=resolved_api_key,
                     resolved_api_mode=resolved_api_mode,
+                    main_runtime=main_runtime,
                     final_model=final_model,
                     messages=messages,
                     temperature=temperature,
@@ -5930,6 +5953,7 @@ async def async_call_llm(
                         resolved_base_url=resolved_base_url,
                         resolved_api_key=resolved_api_key,
                         resolved_api_mode=resolved_api_mode,
+                        main_runtime=main_runtime,
                         final_model=final_model,
                         messages=messages,
                         temperature=temperature,
@@ -5962,7 +5986,7 @@ async def async_call_llm(
             if _is_payment_error(first_err):
                 reason = "payment error"
                 _mark_provider_unhealthy(
-                    _recoverable_pool_provider(resolved_provider, client) or resolved_provider
+                    _recoverable_pool_provider(resolved_provider, client, main_runtime=main_runtime) or resolved_provider
                 )
             elif _is_rate_limit_error(first_err):
                 reason = "rate limit"
@@ -5985,7 +6009,7 @@ async def async_call_llm(
                     task, resolved_provider or "auto", reason=reason)
                 if fb_client is None:
                     fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
-                        resolved_provider, task, reason=reason)
+                        resolved_provider, task, reason=reason, main_runtime=main_runtime)
 
             if fb_client is not None:
                 fb_kwargs = _build_call_kwargs(

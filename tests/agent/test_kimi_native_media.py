@@ -67,11 +67,14 @@ def test_named_per_model_override_applies_after_session_model_switch(kimi_config
         "http://api.kimi.com/coding/v1",
         "https://api.kimi.com:9443/coding/v1",
         "https://api.kimi.com/coding/v1?key=secret",
+        "https://@api.kimi.com/coding/v1",
+        "https://:@api.kimi.com/coding/v1",
     ],
 )
 def test_non_official_endpoint_does_not_enable_native(kimi_config, endpoint):
     kimi_config["providers"]["kimi-code"]["base_url"] = endpoint
     assert decide_image_input_mode("custom", "kimi-for-coding", kimi_config) == "text"
+    assert not supports_native_video_input("custom", "kimi-for-coding", endpoint)
 
 
 def test_explicit_false_still_wins_for_kimi(kimi_config):

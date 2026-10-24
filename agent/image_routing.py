@@ -41,7 +41,8 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlsplit
+
+from agent.kimi_code import is_kimi_code_endpoint as _is_kimi_code_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -472,28 +473,6 @@ _KIMI_VIDEO_MODELS = frozenset({
     "kimi-for-coding-highspeed",
 })
 _KIMI_IMAGE_MODELS = _KIMI_VIDEO_MODELS | {"k3-256k"}
-
-
-def _is_kimi_code_endpoint(base_url: str) -> bool:
-    """精确识别 Kimi Code 官方端点，避免相似主机名误命中。
-
-    与 ``plugins/model-providers/custom`` 中判断思考参数时用的是同一组端点
-    特征；两处用途不同（一个决定 ``thinking``/``reasoning_effort``，一个决定
-    能否内联视频），各自独立判断。
-    """
-    if not base_url:
-        return False
-    try:
-        parsed = urlsplit(str(base_url).strip())
-        return (
-            parsed.scheme.lower() == "https"
-            and (parsed.hostname or "").lower() in {"api.kimi.com", "api.kimi.ai"}
-            and parsed.port in {None, 443}
-            and not (parsed.username or parsed.password or parsed.query or parsed.fragment)
-            and parsed.path.rstrip("/") in {"/coding", "/coding/v1"}
-        )
-    except ValueError:
-        return False
 
 
 def supports_native_video_input(provider: str, model: str, base_url: str = "") -> bool:

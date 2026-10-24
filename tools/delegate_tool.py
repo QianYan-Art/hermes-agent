@@ -52,6 +52,17 @@ DELEGATE_BLOCKED_TOOLS = frozenset(
     ]
 )
 
+_DELEGATE_BLOCKED_TOOLSETS = frozenset(
+    {
+        "delegation",
+        "clarify",
+        "memory",
+        "skills",
+        "code_execution",
+        "messaging",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Subagent approval callbacks
@@ -700,15 +711,8 @@ def _resolve_workspace_hint(parent_agent) -> Optional[str]:
 
 
 def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
-    """Remove toolsets that contain only blocked tools."""
-    blocked_toolset_names = {
-        "delegation",
-        "clarify",
-        "memory",
-        "skills",
-        "code_execution",
-    }
-    return [t for t in toolsets if t not in blocked_toolset_names]
+    """移除委派子代理不得使用的工具集。"""
+    return [t for t in toolsets if t not in _DELEGATE_BLOCKED_TOOLSETS]
 
 
 def _build_child_progress_callback(
@@ -998,6 +1002,16 @@ def _build_child_agent(
     if effective_role == "orchestrator" and "delegation" not in child_toolsets:
         child_toolsets.append("delegation")
 
+    # 复合工具集可能重新引入已从 child_toolsets 过滤掉的工具。
+    # 因此也将父级最终减法门禁传入 AIAgent，并在同一最终阶段应用委派限制。
+    child_disabled_toolsets = set(
+        getattr(parent_agent, "disabled_toolsets", None) or ()
+    )
+    child_disabled_toolsets.update(_DELEGATE_BLOCKED_TOOLSETS)
+    if effective_role == "orchestrator":
+        # orchestrator 角色独立授予 delegation，不受父级工具集与禁用配置限制。
+        child_disabled_toolsets.discard("delegation")
+
     workspace_hint = _resolve_workspace_hint(parent_agent)
     child_prompt = _build_child_system_prompt(
         goal,
@@ -1147,6 +1161,7 @@ def _build_child_agent(
         prefill_messages=getattr(parent_agent, "prefill_messages", None),
         fallback_model=parent_fallback,
         enabled_toolsets=child_toolsets,
+        disabled_toolsets=sorted(child_disabled_toolsets),
         quiet_mode=True,
         ephemeral_system_prompt=child_prompt,
         log_prefix=f"[subagent-{task_index}]",
