@@ -46,7 +46,7 @@ Default model provider:
   不自动扩大配置窗口，旧模型的独立窗口配置仍保留。
   注意窗口只认 per-model 的 `models.<model>.context_length`，
   **不认** provider 顶层的 `context_length`。
-- `agent.reasoning_effort` 全局为 `high`（2026-10-23 现场核对并保留，不沿用旧记录的 low）。Kimi 的思考参数由
+- `agent.reasoning_effort` 全局为 `low`（2026-10-23 按本人最新要求设置；切换前现场为 high）。Kimi 的思考参数由
   `plugins/model-providers/custom/` 的 Kimi Code 分支发出：
   `extra_body.thinking.type` 为 `enabled`/`disabled`，并映射
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
@@ -648,7 +648,7 @@ on the server, then checkout `main`.
 - Kimi Code 只有 `low/high/max` 三档。网关把 `minimal|low` 归到 `low`、
   `medium|high` 归到 `high`、`xhigh|max` 归到 `max`。旧模型 `none` 或显式关闭思考时
   发 `thinking.disabled` 且不带 `reasoning_effort`；K3.1 Pro 系列则明确拒绝关闭思考。
-  当前全局是 `high`。
+  当前全局是 `low`，思考仍开启，窗口保持 262144。
 - 切换模型前先核对接口支持的等级；实现与兼容映射见 `05-patches-and-rtk.md`。
 
 ## 模型与上下文命令的作用域
@@ -734,8 +734,9 @@ on the server, then checkout `main`.
   <https://www.kimi.com/code/docs/third-party-tools/hermes.html>。
 - 使用现有订阅 Key 直连 `/coding/v1/chat/completions`，沿用
   `Authorization: Bearer ...`、JSON 请求体、真实 `Tangyuge-Hermes/<版本>` 标识及
-  哈希任务缓存键。实际主对话请求为 `model=k3.1-pro`、`thinking.type=enabled`、
-  `reasoning_effort=high`，返回同名模型；不伪装其他软件或增加未经要求的签名。
+  哈希任务缓存键。初次验收的实际主对话请求为 `model=k3.1-pro`、`thinking.type=enabled`、
+  `reasoning_effort=high`，返回同名模型；随后按本人最新要求将全局档位改为 `low`，
+  窗口仍为 262144。不伪装其他软件或增加未经要求的签名。
 - 真实合成图片正确识别绿色圆形与蓝色方形；四秒合成 MP4 经 `video_url` base64
   直接上传，正确识别红色到蓝色的时序，不是预先抽帧生成文字摘要。
   `tool_choice=auto` 的工具调用与带 reasoning 历史的续轮均返回 200。
@@ -749,7 +750,7 @@ on the server, then checkout `main`.
   被上游以“仅支持温度 1”返回 400。这是真实辅助兼容缺口，现已将两个新 ID 纳入
   原有温度省略规则；主对话与辅助调用均由上游使用合法默认温度，不改全局配置。
   部署修复后以同一真实辅助调用复测成功，现场无温度覆写配置。该辅助请求未显式发送
-  `thinking` / `reasoning_effort`，由上游使用模型默认思考，不能说成辅助也显式发送了 high。
+  `thinking` / `reasoning_effort`，由上游使用模型默认思考，不能说成辅助也显式跟随主对话档位。
   不能把这条实际缺陷与前面的强制工具负向探针混为一谈。
 - 响应签名是另一项真实性校验能力，不是 Bearer 鉴权的替代。本轮通过
   `X-Msh-Request-Nonce` 携带随机 nonce，

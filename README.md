@@ -145,7 +145,7 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   and `minimax-oauth`; DeepSeek remains available as fallback.
   81 runtime 的默认主模型是命名自定义 provider `kimi-code` 的
   `k3.1-pro`（解析为内部 `custom`，transport `chat_completions`，
-  窗口 262144，`agent.reasoning_effort: high`），国际 MiniMax 保留可选支持。
+  窗口 262144，`agent.reasoning_effort: low`），国际 MiniMax 保留可选支持。
   K3.1 Pro 系列必须开启思考；关闭思考会在请求构建时明确报错，不自动换成其他模型。
   白名单未新增完整内置 provider。
 - `/auxmodel` 显示本会话主模型的图片、视频能力，生图、TTS 和联网后端。
