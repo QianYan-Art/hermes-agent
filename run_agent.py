@@ -4610,6 +4610,7 @@ class AIAgent:
         return (
             self.provider in {"kimi-coding", "kimi-coding-cn"}
             or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "api.kimi.ai")
             or base_url_host_matches(self.base_url, "moonshot.ai")
             or base_url_host_matches(self.base_url, "moonshot.cn")
         )

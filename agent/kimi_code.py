@@ -14,7 +14,7 @@ def is_kimi_code_endpoint(base_url: str | None) -> bool:
         parsed = urlsplit(str(base_url).strip())
         return (
             parsed.scheme == "https"
-            and parsed.hostname == "api.kimi.com"
+            and parsed.hostname in {"api.kimi.com", "api.kimi.ai"}
             and parsed.port in (None, 443)
             and parsed.username is None
             and parsed.password is None

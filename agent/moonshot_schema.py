@@ -223,6 +223,8 @@ def is_moonshot_model(model: str | None) -> bool:
     bare = model.strip().lower()
     # Last path segment (covers aggregator-prefixed slugs)
     tail = bare.rsplit("/", 1)[-1]
+    if tail in {"k3.1-pro", "k3.1-pro-highspeed"}:
+        return True
     if tail.startswith("kimi-") or tail == "kimi":
         return True
     # Vendor-prefixed forms commonly used on aggregators

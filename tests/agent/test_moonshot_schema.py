@@ -34,6 +34,9 @@ class TestMoonshotModelDetection:
             "nous/moonshotai/kimi-k2.6",
             "openrouter/moonshotai/kimi-k2-thinking",
             "MOONSHOTAI/KIMI-K2.6",
+            "k3.1-pro",
+            "k3.1-pro-highspeed",
+            "provider/k3.1-pro",
         ],
     )
     def test_positive_matches(self, model):
@@ -48,6 +51,7 @@ class TestMoonshotModelDetection:
             "openai/gpt-5.4",
             "google/gemini-3-flash-preview",
             "deepseek-chat",
+            "k3.1-pro-unknown",
         ],
     )
     def test_negative_matches(self, model):

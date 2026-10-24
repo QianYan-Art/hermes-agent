@@ -18,9 +18,9 @@ def custom_profile():
     return get_provider_profile("custom")
 
 
-def _build(transport, custom_profile, base_url, reasoning_config=None):
+def _build(transport, custom_profile, base_url, reasoning_config=None, model="kimi-for-coding"):
     return transport.build_kwargs(
-        model="kimi-for-coding",
+        model=model,
         messages=[{"role": "user", "content": "Hi"}],
         provider_profile=custom_profile,
         base_url=base_url,
@@ -201,3 +201,36 @@ def test_kimi_sdk_wire_headers_and_body(transport, custom_profile):
     assert sent["thinking"]["type"] == "enabled"
     assert sent["messages"][2]["reasoning_content"] == "一次已完成的计算"
     assert history[2]["reasoning_content"] == "一次已完成的计算"
+
+
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+@pytest.mark.parametrize("host", ["api.kimi.com", "api.kimi.ai"])
+@pytest.mark.parametrize("effort", ["low", "high", "max"])
+def test_kimi31_uses_native_thinking_protocol(transport, custom_profile, model, host, effort):
+    kwargs = _build(transport, custom_profile, f"https://{host}/coding/v1", {"effort": effort}, model)
+    assert kwargs["model"] == model
+    assert kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert kwargs["reasoning_effort"] == effort
+    assert kwargs["extra_headers"]["User-Agent"].startswith("Tangyuge-Hermes/")
+    assert kwargs["prompt_cache_key"].startswith("hermes-")
+
+
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+@pytest.mark.parametrize("config", [{"enabled": False}, {"effort": "none"}, {"effort": "off"}, {"effort": "disabled"}])
+def test_kimi31_rejects_disabled_thinking_before_request(transport, custom_profile, model, config):
+    with pytest.raises(ValueError, match="仅支持思考模式"):
+        _build(transport, custom_profile, "https://api.kimi.com/coding/v1", config, model)
+
+
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+def test_kimi31_retains_tool_schema_compatibility(transport, custom_profile, model):
+    schema = {"type": "function", "function": {"name": "example", "parameters": {
+        "type": "object", "properties": {"query": {"description": "待查询内容"}},
+    }}}
+    kwargs = transport.build_kwargs(
+        model=model, messages=[{"role": "user", "content": "查询"}], tools=[schema],
+        provider_profile=custom_profile, base_url="https://api.kimi.com/coding/v1",
+        reasoning_config={"effort": "high"},
+    )
+    assert kwargs["tools"][0]["function"]["parameters"]["properties"]["query"]["type"] == "string"
+    assert "type" not in schema["function"]["parameters"]["properties"]["query"]

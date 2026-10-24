@@ -46,6 +46,12 @@ class TestSupportsNativeVideoInput:
             "custom", "k3", "https://api.kimi.com/coding/v1"
         )
 
+    @pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+    def test_kimi31_supported(self, model):
+        assert supports_native_video_input(
+            "custom", model, "https://api.kimi.com/coding/v1"
+        )
+
     def test_k3_256k_not_supported(self):
         """官方模型对比表里 k3-256k 是唯一不支持视频的变体。"""
         assert not supports_native_video_input(
@@ -119,6 +125,18 @@ class TestReadMainBaseUrl:
             lambda: {"model": {"provider": "minimax", "default": "minimax-m3"}},
         )
         assert aux._read_main_base_url() == ""
+
+
+def test_gateway_uses_session_kimi31_runtime_for_video(monkeypatch):
+    from gateway.run import GatewayRunner
+
+    runner = object.__new__(GatewayRunner)
+    endpoint = {"provider": "custom", "base_url": "https://api.kimi.com/coding/v1"}
+    monkeypatch.setattr(runner, "_resolve_session_agent_runtime", lambda *, session_key: (
+        "k3-256k" if session_key == "legacy" else "k3.1-pro", endpoint,
+    ))
+    assert runner._supports_native_video_input(session_key="new")
+    assert not runner._supports_native_video_input(session_key="legacy")
 
 
 # ---------------------------------------------------------------------------

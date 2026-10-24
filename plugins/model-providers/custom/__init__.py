@@ -35,6 +35,11 @@ class CustomProfile(ProviderProfile):
             options = build_kimi_request_options(ctx.get("session_id"))
             config = reasoning_config if isinstance(reasoning_config, dict) else {}
             effort = str(config.get("effort") or "").strip().lower()
+            model = str(ctx.get("model") or "").strip().lower()
+            if model in {"k3.1-pro", "k3.1-pro-highspeed"} and (
+                config.get("enabled", True) is False or effort in {"none", "off", "disabled"}
+            ):
+                raise ValueError(f"Kimi Code 的 {model} 仅支持思考模式，请使用 low、high 或 max。")
             if config.get("enabled", True) is False or effort == "none":
                 return {"thinking": {"type": "disabled"}}, options
 

@@ -465,6 +465,8 @@ def _file_to_data_url(path: Path) -> Optional[str]:
 # Kimi Code 上支持视频理解的模型。按官方模型对比表，k3-256k 是唯一不支持
 # 视频的变体，因此这里逐个列出而不是前缀匹配。
 _KIMI_VIDEO_MODELS = frozenset({
+    "k3.1-pro",
+    "k3.1-pro-highspeed",
     "k3",
     "kimi-for-coding",
     "kimi-for-coding-highspeed",

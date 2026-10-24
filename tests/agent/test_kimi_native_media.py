@@ -26,7 +26,7 @@ def kimi_config(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "model", ["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"]
+    "model", ["k3.1-pro", "k3.1-pro-highspeed", "k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"]
 )
 def test_named_kimi_model_is_native_without_catalog(kimi_config, model):
     assert decide_image_input_mode("custom", model, kimi_config) == "native"
@@ -97,7 +97,8 @@ def test_agent_keeps_kimi_pixels_with_actual_endpoint(kimi_config, monkeypatch):
     assert agent._model_supports_vision() is False
 
 
-def test_mixed_image_video_survives_chat_transport(tmp_path):
+@pytest.mark.parametrize("model", ["kimi-for-coding", "k3.1-pro", "k3.1-pro-highspeed"])
+def test_mixed_image_video_survives_chat_transport(tmp_path, model):
     image = tmp_path / "sample.png"
     image.write_bytes(base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBg"
@@ -111,7 +112,7 @@ def test_mixed_image_video_survives_chat_transport(tmp_path):
     assert skipped == []
     message = {"role": "user", "content": content, "_internal": True}
     result = ChatCompletionsTransport().convert_messages(
-        [message], model="kimi-for-coding",
+        [message], model=model,
     )
     assert [part["type"] for part in result[0]["content"]] == [
         "text", "image_url", "video_url",
@@ -139,3 +140,22 @@ def test_official_international_endpoint(kimi_config):
         "custom", "kimi-for-coding", kimi_config, base_url=endpoint,
     ) == "native"
     assert supports_native_video_input("custom", "kimi-for-coding", endpoint)
+
+
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+@pytest.mark.parametrize("host", ["api.kimi.com", "api.kimi.ai"])
+def test_kimi31_native_video_and_reasoning_replay(model, host):
+    from run_agent import AIAgent
+
+    endpoint = f"https://{host}/coding/v1"
+    assert supports_native_video_input("custom", model, endpoint)
+    agent = object.__new__(AIAgent)
+    agent.provider = "custom"
+    agent.model = model
+    agent.base_url = endpoint
+    assert agent._needs_kimi_tool_reasoning()
+
+
+@pytest.mark.parametrize("model", ["k3.1-pro-preview", "kimi-k3.1-pro", "k3.1-pro-unknown"])
+def test_unknown_kimi31_alias_does_not_enable_native_video(model):
+    assert not supports_native_video_input("custom", model, "https://api.kimi.com/coding/v1")
