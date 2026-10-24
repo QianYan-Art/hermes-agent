@@ -170,9 +170,14 @@ def _write_json(path, value):
         temporary.unlink(missing_ok=True)
 
 
+def _safe_creator_origin(value):
+    url = urlsplit(value)
+    return url.scheme == "https" and url.netloc == "creator.douyin.com"
+
+
 def _safe_editor_url(value):
     url = urlsplit(value)
-    return url.scheme == "https" and url.netloc == "creator.douyin.com" and url.path.startswith("/creator-micro/content/")
+    return _safe_creator_origin(value) and url.path.startswith("/creator-micro/content/")
 
 
 class ContentManager:
@@ -187,7 +192,7 @@ class ContentManager:
         self.tasks = {}
         self.state_lock = asyncio.Lock()
         self._staged = {}
-        for path in sorted(self.job_dir.glob("*.json"))[-1000:]:
+        for path in sorted(self.job_dir.glob("*.json")):
             if not JOB_PATTERN.fullmatch(path.stem):
                 continue
             job = _read_json(path)
@@ -243,6 +248,8 @@ class ContentManager:
         for attempt in range(2):
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=12000)
+                if not _safe_creator_origin(page.url):
+                    raise ValueError("固定入口最终页面不在允许范围")
                 return
             except Exception as exc:
                 if attempt or not _transient_navigation_error(exc):
@@ -623,6 +630,8 @@ class ContentManager:
         if await upload.count() != 1:
             raise ValueError("视频上传控件不唯一或未加载")
         self._phase(job, "上传视频")
+        if not _safe_editor_url(page.url):
+            raise ValueError("作品上传页不在允许的编辑范围")
         await upload.set_input_files(str(current["video_path"]))
         await self._fill_metadata(page, plan)
         self._phase(job, "核对AI生成声明")

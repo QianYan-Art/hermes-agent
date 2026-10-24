@@ -50,8 +50,11 @@ def manager(content, tmp_path, monkeypatch):
     result = content.ContentManager(browser, asyncio.Lock())
 
     class Page:
+        def __init__(self):
+            self.url = "https://creator.douyin.com/creator-micro/home"
+
         async def goto(self, *args, **kwargs):
-            pass
+            self.url = args[0]
 
         async def wait_for_timeout(self, milliseconds):
             pass
@@ -87,7 +90,10 @@ async def test_prepare_binds_metadata_content_and_account_without_starting_job(m
 @pytest.mark.parametrize("error,retries", [(TimeoutError(), 2), (ConnectionError(), 2), (ValueError("页面不匹配"), 1)])
 async def test_navigation_retries_only_transient_errors_before_upload(manager, content, monkeypatch, error, retries):
     monkeypatch.setattr(content.asyncio, "sleep", AsyncMock())
-    page = SimpleNamespace(goto=AsyncMock(side_effect=[error, None]))
+    page = SimpleNamespace(
+        url="https://creator.douyin.com/creator-micro/content/upload",
+        goto=AsyncMock(side_effect=[error, None]),
+    )
     if retries == 1:
         with pytest.raises(ValueError):
             await manager._navigate_entry(page, content.UPLOAD_URL)
@@ -107,6 +113,72 @@ async def test_persistent_navigation_failure_has_only_two_attempts(manager, cont
     with pytest.raises(TimeoutError):
         await manager._navigate_entry(page, content.HOME_URL)
     assert page.goto.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("redirect_at", ["navigation", "file_input_wait"])
+async def test_upload_rejects_off_origin_redirect_before_reading_video(
+    manager, content, monkeypatch, redirect_at
+):
+    uploaded = []
+    page = SimpleNamespace(url="https://creator.douyin.com/creator-micro/home")
+
+    async def navigate(url, **kwargs):
+        page.url = (
+            "https://outside.example/upload"
+            if redirect_at == "navigation"
+            else url
+        )
+
+    page.goto = AsyncMock(side_effect=navigate)
+
+    class Upload:
+        def __init__(self):
+            self.first = self
+
+        async def wait_for(self, **kwargs):
+            if redirect_at == "file_input_wait":
+                page.url = "https://outside.example/upload"
+
+        async def count(self):
+            return 1
+
+        async def set_input_files(self, path):
+            uploaded.append(path)
+
+    upload = Upload()
+
+    class TextField:
+        async def wait_for(self, **kwargs):
+            pass
+
+        async def count(self):
+            return 1
+
+        async def fill(self, value):
+            raise ValueError("测试在上传后停止")
+
+    page.locator = lambda selector: (
+        upload if 'input[type="file"]' in selector else TextField()
+    )
+
+    async def account_page():
+        return page
+
+    monkeypatch.setattr(manager, "_account_page", account_page)
+    job = {"job_id": "d" * 32, "action": "stage", "release_id": "ep00", "phase": "排队"}
+    plan = {
+        "release_id": "ep00",
+        "video_sha256": "a" * 64,
+        "title": "测试标题",
+        "description": "测试简介",
+    }
+    release = dict(manager.test_release)
+
+    with pytest.raises(ValueError):
+        await manager._execute(job, plan, release)
+
+    assert uploaded == []
 
 
 @pytest.mark.asyncio
@@ -326,6 +398,61 @@ async def test_unknown_publish_result_is_not_retried_even_after_restart(manager,
     result = await manager.process({"action": "publish", "token": changed_token})
     assert result["state"] == "needs_attention" and len(manager.jobs) == 1
     assert "换文案" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_restart_keeps_old_unknown_publish_with_more_than_1000_jobs(
+    manager, content, monkeypatch
+):
+    old_plan = await manager.process(
+        {"action": "prepare", "release_id": "ep00", "title": "旧文案"}
+    )
+    new_plan = await manager.process(
+        {"action": "prepare", "release_id": "ep00", "title": "新文案"}
+    )
+    old_token = old_plan["plan"]["token"]
+    new_token = new_plan["plan"]["token"]
+    old, _release = manager._plan(old_token)
+    new, _release = manager._plan(new_token)
+    assert old["fingerprint"] != new["fingerprint"]
+
+    unknown_id = "0" * 32
+    manager._save_job({
+        "job_id": unknown_id,
+        "action": "publish",
+        "release_id": "ep00",
+        "state": "needs_attention",
+        "phase": "发布结果待核查",
+        "message": "不要重提",
+        "fingerprint": old["fingerprint"],
+        "token": old_token,
+        "commit_attempted": True,
+    })
+    for number in range(1, 1001):
+        job_id = f"{number:032x}"
+        manager._save_job({
+            "job_id": job_id,
+            "action": "draft",
+            "release_id": "ep00",
+            "state": "draft_saved",
+            "phase": "草稿已保存",
+            "message": "已完成",
+        })
+
+    resumed = content.ContentManager(manager.browser, asyncio.Lock())
+    assert unknown_id in resumed.jobs
+    assert resumed.jobs[unknown_id]["state"] == "needs_attention"
+    resumed._staged[new_token] = {"deadline": time.monotonic() + 100}
+
+    async def idle_run(*_args):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(resumed, "_run", idle_run)
+    result = await resumed.process({"action": "publish", "token": new_token})
+
+    assert result["state"] == "needs_attention"
+    assert "结果未知" in result["message"]
+    assert resumed.tasks == {}
 
 
 @pytest.mark.asyncio

@@ -115,7 +115,11 @@ def test_store_rejects_video_hash_and_size_mismatch(tmp_path):
     [
         ("title", "x" * 31),
         ("title", "  "),
+        ("title", "标题\n换行"),
+        ("title", "标题\r换行"),
+        ("title", "标题\0空字符"),
         ("description", "x" * 1001),
+        ("description", "简介\0空字符"),
         ("ai_generated", False),
         ("video_sha256", "z" * 64),
         ("video_bytes", True),

@@ -815,6 +815,49 @@ async def test_recent_manual_window_temporarily_prevents_idle_close(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("through_service", [False, True])
+async def test_browser_start_cancellation_closes_partial_driver(tmp_path, monkeypatch, through_service):
+    """启动被取消或服务超时时回收已启动的驱动，下次调用可正常重建。"""
+    launch_started = asyncio.Event()
+
+    async def blocked_launch(**kwargs):
+        launch_started.set()
+        await asyncio.Event().wait()
+
+    driver = SimpleNamespace(
+        chromium=SimpleNamespace(launch_persistent_context=AsyncMock(side_effect=blocked_launch)),
+        stop=AsyncMock(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright.async_api", SimpleNamespace(
+        async_playwright=lambda: SimpleNamespace(start=AsyncMock(return_value=driver)),
+    ))
+    browser = douyin_login.PlaywrightBrowser(SimpleNamespace(
+        data_dir=tmp_path / "data", profile_dir=tmp_path / "profile",
+    ))
+    if through_service:
+        service = douyin_login.LoginService(browser, operation_timeout=0.02)
+        result = await service.process("status")
+        assert result["state"] == "page_error"
+        assert not service._browser_lock.locked()
+    else:
+        task = asyncio.create_task(browser._ensure_context())
+        await asyncio.wait_for(launch_started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    driver.stop.assert_awaited_once()
+    assert browser._playwright is None
+    assert browser._context is None
+
+    context = SimpleNamespace(close=AsyncMock())
+    driver.chromium.launch_persistent_context = AsyncMock(return_value=context)
+    assert await browser._ensure_context() is context
+    await browser.close()
+    context.close.assert_awaited_once()
+    assert driver.stop.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_timeout_and_browser_errors_are_safe_responses(caplog):
     slow = ConcurrentBrowser()
     service = douyin_login.LoginService(slow, operation_timeout=0.001)

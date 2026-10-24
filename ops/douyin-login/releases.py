@@ -53,11 +53,20 @@ def validate_manifest(value: object) -> dict[str, object]:
     validate_release_id(value["release_id"])
 
     title = value["title"]
-    if not isinstance(title, str) or not title.strip() or len(title) > 30:
-        raise ReleaseError("title 必须非空且不超过 30 个字符")
+    if (
+        not isinstance(title, str)
+        or not title.strip()
+        or len(title) > 30
+        or any(char in title for char in "\r\n\0")
+    ):
+        raise ReleaseError("标题须为 1 到 30 个字符，且不能包含换行或空字符")
     description = value["description"]
-    if not isinstance(description, str) or len(description) > 1000:
-        raise ReleaseError("description 必须是最多 1000 个字符的字符串")
+    if (
+        not isinstance(description, str)
+        or len(description) > 1000
+        or "\0" in description
+    ):
+        raise ReleaseError("简介不能超过 1000 个字符或包含空字符")
     if value["ai_generated"] is not True:
         raise ReleaseError("ai_generated 必须为 true")
 

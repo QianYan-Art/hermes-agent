@@ -408,6 +408,10 @@ class PlaywrightBrowser:
                 chromium_sandbox=True,
             )
             return self._context
+        except asyncio.CancelledError:
+            # wait_for 超时也通过取消中断启动，须回收已创建的驱动再传播取消。
+            await self.close()
+            raise
         except Exception as exc:
             await self.close()
             raise BrowserUnavailable from exc
