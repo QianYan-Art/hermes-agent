@@ -50,6 +50,56 @@ def _assert_kimi_request(request, payload):
     assert payload["prompt_cache_key"].startswith("hermes-")
 
 
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+def test_kimi31_auxiliary_omits_caller_temperature(model):
+    kwargs = aux._build_call_kwargs(
+        "custom", model, [{"role": "user", "content": "hello"}],
+        temperature=0.2, base_url=KIMI_BASE_URL,
+    )
+    assert "temperature" not in kwargs
+    assert aux._fixed_temperature_for_model(model, KIMI_BASE_URL) is aux.OMIT_TEMPERATURE
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("model", ["k3.1-pro", "k3.1-pro-highspeed"])
+def test_kimi31_auxiliary_sdk_omits_temperature(monkeypatch, model, asynchronous):
+    import asyncio
+
+    records = []
+    transport = httpx.MockTransport(_recording_handler(records))
+    if asynchronous:
+        client = aux._AsyncKimiAuxiliaryClient(AsyncOpenAI(
+            api_key="test-key", base_url=KIMI_BASE_URL,
+            http_client=httpx.AsyncClient(transport=transport),
+        ))
+    else:
+        client = aux._KimiAuxiliaryClient(OpenAI(
+            api_key="test-key", base_url=KIMI_BASE_URL,
+            http_client=httpx.Client(transport=transport),
+        ))
+    monkeypatch.setattr(aux, "_resolve_task_provider_model", lambda *a, **kw: (
+        "custom", model, KIMI_BASE_URL, "test-key", None,
+    ))
+    monkeypatch.setattr(aux, "_get_cached_client", lambda *a, **kw: (client, model))
+    kwargs = dict(provider="custom", model=model, base_url=KIMI_BASE_URL,
+                  api_key="test-key", messages=[{"role": "user", "content": "check"}], temperature=0.2)
+    if asynchronous:
+        async def run():
+            try:
+                await aux.async_call_llm(**kwargs)
+            finally:
+                await client.close()
+        asyncio.run(run())
+    else:
+        try:
+            aux.call_llm(**kwargs)
+        finally:
+            client.close()
+    assert len(records) == 1
+    _assert_kimi_request(*records[0])
+    assert "temperature" not in records[0][1]
+
+
 def test_direct_sync_kimi_client_injects_request_metadata_and_isolates_calls():
     records = []
     transport = httpx.MockTransport(_recording_handler(records))

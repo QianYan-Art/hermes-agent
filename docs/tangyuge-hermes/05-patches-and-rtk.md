@@ -147,6 +147,9 @@ external patch files to replay:
   整理路径；assistant 的 `reasoning_content` 在工具续轮保留。
   官方国内与海外 coding 端点都使用真实客户端标识、任务缓存键和思考参数，
   不伪装 Kimi CLI 或 OpenCode，不添加自行生成的鉴权签名。
+  两个新裸模型 ID 同样进入 `agent/auxiliary_client.py` 的温度省略规则，
+  避免标题、摘要等辅助调用传入低温度后被新模型以“仅支持温度 1”拒绝；
+  不修改全局温度配置，由上游选择合法默认值，旧模型与其他 provider 行为不变。
 - Context compression refreshes the active todo snapshot using
   `TODO_INJECTION_HEADER`. A real trailing user turn absorbs the current
   snapshot after any stale copy is removed; summary/scaffolding tails keep a

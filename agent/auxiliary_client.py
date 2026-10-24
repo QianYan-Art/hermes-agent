@@ -215,7 +215,7 @@ OMIT_TEMPERATURE: object = object()
 def _is_kimi_model(model: Optional[str]) -> bool:
     """True for any Kimi / Moonshot model that manages temperature server-side."""
     bare = (model or "").strip().lower().rsplit("/", 1)[-1]
-    return bare.startswith("kimi-") or bare == "kimi"
+    return bare.startswith("kimi-") or bare in {"kimi", "k3.1-pro", "k3.1-pro-highspeed"}
 
 
 def _is_arcee_trinity_thinking(model: Optional[str]) -> bool:
