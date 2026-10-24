@@ -734,7 +734,7 @@ on the server, then checkout `main`.
   <https://www.kimi.com/code/docs/third-party-tools/hermes.html>。
 - 使用现有订阅 Key 直连 `/coding/v1/chat/completions`，沿用
   `Authorization: Bearer ...`、JSON 请求体、真实 `Tangyuge-Hermes/<版本>` 标识及
-  哈希任务缓存键。实际线上请求为 `model=k3.1-pro`、`thinking.type=enabled`、
+  哈希任务缓存键。实际主对话请求为 `model=k3.1-pro`、`thinking.type=enabled`、
   `reasoning_effort=high`，返回同名模型；不伪装其他软件或增加未经要求的签名。
 - 真实合成图片正确识别绿色圆形与蓝色方形；四秒合成 MP4 经 `video_url` base64
   直接上传，正确识别红色到蓝色的时序，不是预先抽帧生成文字摘要。
@@ -748,6 +748,8 @@ on the server, then checkout `main`.
 - 补查真实辅助 `call_llm` 时发现新裸 ID 未命中 Kimi 温度规则，调用方的 `0.2`
   被上游以“仅支持温度 1”返回 400。这是真实辅助兼容缺口，现已将两个新 ID 纳入
   原有温度省略规则；主对话与辅助调用均由上游使用合法默认温度，不改全局配置。
+  部署修复后以同一真实辅助调用复测成功，现场无温度覆写配置。该辅助请求未显式发送
+  `thinking` / `reasoning_effort`，由上游使用模型默认思考，不能说成辅助也显式发送了 high。
   不能把这条实际缺陷与前面的强制工具负向探针混为一谈。
 - 响应签名是另一项真实性校验能力，不是 Bearer 鉴权的替代。本轮通过
   `X-Msh-Request-Nonce` 携带随机 nonce，
@@ -757,7 +759,8 @@ on the server, then checkout `main`.
   本轮不删除或自动重置会话。`/new` 由本人决定执行，不能默默清空聊天记录。
 - 本轮未发送真实 QQ 测试消息，也未逐一测试高速版、超长上下文或大型视频；
   45 MiB 内联预算与原有文件上传分类保持不变，超预算仍回落文本路径。
-- 项目正式精简测试集为 1688 项通过、14 项跳过。额外调用保留范围以外的上游
+- 辅助温度补丁后的最终正式精简测试集为 1694 项通过、14 项跳过；补丁定向回归
+  为 96 项通过，Ruff 通过。额外调用保留范围以外的上游
   provider 测试曾出现 28 项失败；在独立测试进程中将本轮修改模块换回原 HEAD 源码后，
   同一批 28 项仍失败，不能说成新增回归，也不宣称整个上游测试库全绿。
 
