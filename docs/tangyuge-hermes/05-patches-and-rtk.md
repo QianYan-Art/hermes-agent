@@ -55,7 +55,7 @@ external patch files to replay:
   model/provider filtering are retained as source behavior around gateway
   command handling, runtime provider resolution, and auxiliary client routing.
   The 81 deployment now uses the named custom provider `kimi-code` for the main
-  model (`kimi-for-coding`, transport `chat_completions`); the built-in
+  model (`k3.1-pro`, transport `chat_completions`); the built-in
   `minimax-cn` CN API-key provider 已退役，其 `MINIMAX_CN_API_KEY`、
   认证、专属不自动发现机制和配置入口不再保留。The older
   main-model custom providers `openrouter`, `siliconflow`, `deepseek-direct`,
@@ -80,7 +80,7 @@ external patch files to replay:
   两条路径：国际 MiniMax（`minimax` + `minimax-m3` 前缀，
   Anthropic 原生 `video` block）和 Kimi Code（`api.kimi.com` 或
   `api.kimi.ai` HTTPS 官方端点的 `/coding`
-  或 `/coding/v1` + `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，
+  或 `/coding/v1` + `k3.1-pro` / `k3.1-pro-highspeed` / `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，
   OpenAI 的 `video_url` base64）。`k3-256k` 官方不支持视频，排除在外。
   `build_native_content_parts()` 原本产出的就是 OpenAI 风格的 `video_url`，
   Anthropic 侧由 `agent/anthropic_adapter.py` 转成 `video` block，所以两条
@@ -135,12 +135,18 @@ external patch files to replay:
   只在 YAML 里配 `reasoning_effort` 并不会发给 Kimi。现在
   `agent/transports/chat_completions.py` 把 `base_url` 一并传给
   `build_api_kwargs_extras()`，CustomProfile 据此**精确匹配**主机
-  `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，输出
+  `api.kimi.com` 或 `api.kimi.ai` 且路径为 `/coding` 或 `/coding/v1`，输出
   `extra_body.thinking.type = enabled|disabled` 并映射
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`；
-  关闭思考或 `effort=none` 时不发 `reasoning_effort`。相似主机名不会误命中，
+  `k3.1-pro` / `k3.1-pro-highspeed` 必须开启思考，显式关闭时在构建请求前报错；
+  旧模型关闭思考或 `effort=none` 时不发 `reasoning_effort`。相似主机名不会误命中，
   其他 custom provider 与 Ollama 路径行为不变，也没有恢复被裁剪的内置 Kimi
   provider。
+- K3.1 Pro 的订阅请求模型 ID 是 `k3.1-pro`，不是开放平台的
+  `kimi-k3.1-pro`。裸订阅 ID 同样进入 `agent/moonshot_schema.py` 的工具参数
+  整理路径；assistant 的 `reasoning_content` 在工具续轮保留。
+  官方国内与海外 coding 端点都使用真实客户端标识、任务缓存键和思考参数，
+  不伪装 Kimi CLI 或 OpenCode，不添加自行生成的鉴权签名。
 - Context compression refreshes the active todo snapshot using
   `TODO_INJECTION_HEADER`. A real trailing user turn absorbs the current
   snapshot after any stale copy is removed; summary/scaffolding tails keep a

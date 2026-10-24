@@ -120,13 +120,13 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   credentials; the tool call returns the provider/auth error directly instead
   of encouraging manual curl/Python/heredoc workarounds.
 - QQ 图片、视频按当前会话的实际模型与端点路由，不读取其他会话留下的全局状态。
-  Kimi Code 官方兼容端点上的 `kimi-for-coding` 支持原生图片和视频，图片使用
+  Kimi Code 官方兼容端点上的 `k3.1-pro` 支持原生图片和视频，图片使用
   `image_url`，视频使用 `video_url`，内容都是 base64 data URL。默认 `auto`
   无独立视觉覆盖时直接交给主模型，不再配置辅助视觉服务。
   显式 `supports_vision: false`、文字输入模式或独立视觉覆盖仍受尊重。
   视频内联上传支持两条路径：
   MiniMax（`minimax-m3`，Anthropic 原生 `video` block）和 Kimi Code
-  （`kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，OpenAI `video_url`
+  （`k3.1-pro` / `k3.1-pro-highspeed` / `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3`，OpenAI `video_url`
   base64；`k3-256k` 官方不支持视频）。其他模型回落到缓存路径文本标记，图片
   能力判断独立。单文件和单轮视频内联预算均为 45 MiB。QQ 的 `video/*` 附件存入独立的 `cache/videos/` 并按 24 小时
   清理，与普通文件上传分开。
@@ -144,8 +144,9 @@ exist on that host. QQ 普通文件进入 `cache/documents/`，入站视频进�
   `deepseek`, and `custom`. The MiniMax plugin exposes `minimax`,
   and `minimax-oauth`; DeepSeek remains available as fallback.
   81 runtime 的默认主模型是命名自定义 provider `kimi-code` 的
-  `kimi-for-coding`（解析为内部 `custom`，transport `chat_completions`，
-  窗口 262144，`agent.reasoning_effort: low`），国际 MiniMax 保留可选支持。
+  `k3.1-pro`（解析为内部 `custom`，transport `chat_completions`，
+  窗口 262144，`agent.reasoning_effort: high`），国际 MiniMax 保留可选支持。
+  K3.1 Pro 系列必须开启思考；关闭思考会在请求构建时明确报错，不自动换成其他模型。
   白名单未新增完整内置 provider。
 - `/auxmodel` 显示本会话主模型的图片、视频能力，生图、TTS 和联网后端。
   Tavily 使用 `TAVILY_API_KEY`，支持逗号或换行分隔的多个 key；状态查询只检查

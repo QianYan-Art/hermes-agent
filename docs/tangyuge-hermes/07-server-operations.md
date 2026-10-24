@@ -35,21 +35,23 @@ Default model provider:
   解析出的内部 provider 名是 `custom`）
 - Display name: `kimi-code`
 - Base URL: `https://api.kimi.com/coding/v1`
-- Default model: `kimi-for-coding`
+- Default model: `k3.1-pro`（2026-10-23 从 `kimi-for-coding` 切换）
 - Key env: `KIMI_CODE_API_KEY`（值只存 runtime `.env`，不入仓库和文档）
 - Transport: 显式 `chat_completions`。必须显式写，否则 URL 自动检测会把
   `/coding` 当成 Anthropic 协议。
 - Context length: 全局 `model.context_length` 为 `262144`。
   `k3-256k` 的官方 `/models` 在 2026-09-16 返回 `262144`，即二进制 `256K`。
-  `providers.kimi-code.models.kimi-for-coding.context_length` 单独设为
-  `262144`，约束的是 `kimi-for-coding`；该模型接口自报 1048576。
+  `providers.kimi-code.models.k3.1-pro.context_length` 单独设为
+  `262144`，保留原运行窗口；本轮 `/models` 对 `k3.1-pro` 自报 1048576，
+  不自动扩大配置窗口，旧模型的独立窗口配置仍保留。
   注意窗口只认 per-model 的 `models.<model>.context_length`，
   **不认** provider 顶层的 `context_length`。
-- `agent.reasoning_effort` 全局为 `low`（2026-10-15 现场核对并保留）。Kimi 的思考参数由
+- `agent.reasoning_effort` 全局为 `high`（2026-10-23 现场核对并保留，不沿用旧记录的 low）。Kimi 的思考参数由
   `plugins/model-providers/custom/` 的 Kimi Code 分支发出：
   `extra_body.thinking.type` 为 `enabled`/`disabled`，并映射
   `minimal|low -> low`、`medium|high -> high`、`xhigh|max -> max`。
-  该分支只匹配主机 `api.kimi.com` 且路径为 `/coding` 或 `/coding/v1`，
+  `k3.1-pro` / `k3.1-pro-highspeed` 仅支持思考模式，显式关闭时本地拒绝请求。
+  该分支只匹配主机 `api.kimi.com` 或 `api.kimi.ai` 且路径为 `/coding` 或 `/coding/v1`，
   其他自定义 provider 行为不变。
 - `minimax-cn` CN API-key provider 已退役：配置、`MINIMAX_CN_API_KEY`、
   认证入口、模型目录和专属“不自动发现模型”逻辑已移除。
@@ -85,14 +87,14 @@ Default model provider:
     开头，视频作为 Anthropic 兼容的原生 `video` block 上传。
   - Kimi Code：HTTPS 官方端点为 `api.kimi.com` 或 `api.kimi.ai` 的
     `/coding` 或 `/coding/v1`，且模型是
-    `kimi-for-coding`、`kimi-for-coding-highspeed` 或 `k3`，视频作为
+    `k3.1-pro`、`k3.1-pro-highspeed`、`kimi-for-coding`、`kimi-for-coding-highspeed` 或 `k3`，视频作为
     OpenAI 兼容的 `video_url` base64 data URL 上传，与图片同形。
     **`k3-256k` 按官方模型对比表不支持视频**，不在名单内。
   命名自定义 provider 运行时解析成 `custom`，所以 Kimi 这条靠 base_url 识别，
   相似主机名不会误命中。不在名单内的模型回落到缓存路径文本标记。
   内联预算两条路径共用：单文件 45 MiB、单轮合计 45 MiB，超出即回落。
-  本轮真实 Kimi 媒体 HTTP 验收仅使用 `kimi-for-coding`；名单中的其他 Kimi
-  模型属于能力判定范围，不代表已逐一执行真实请求或 QQ 投递验收。
+  2026-10-23 已对 `k3.1-pro` 执行真实文本、图片、原生视频与自动工具续轮 HTTP 验收。
+  高速版及名单中其他模型没有在这轮逐一实测；HTTP 验收不代表真实 QQ 投递通过。
 - Kimi 官方能力依据：`https://www.kimi.com/code/docs/kimi-code/models.html`；
   请求内容类型对应官方 kimi-cli 的 `ImageURLPart` / `VideoURLPart` 适配器。
 - `/auxmodel` 显示本会话主模型媒体能力、生图与 TTS 配置，以及搜索和提取实际
@@ -644,8 +646,9 @@ on the server, then checkout `main`.
   路径使用 `output_config.effort=max`。具体效果以目标模型与接口能力为准，
   不要把命令接受枚举理解成所有模型都支持同名等级。
 - Kimi Code 只有 `low/high/max` 三档。网关把 `minimal|low` 归到 `low`、
-  `medium|high` 归到 `high`、`xhigh|max` 归到 `max`；`none` 或显式关闭思考时
-  发 `thinking.disabled` 且不带 `reasoning_effort`。当前全局是 `low`。
+  `medium|high` 归到 `high`、`xhigh|max` 归到 `max`。旧模型 `none` 或显式关闭思考时
+  发 `thinking.disabled` 且不带 `reasoning_effort`；K3.1 Pro 系列则明确拒绝关闭思考。
+  当前全局是 `high`。
 - 切换模型前先核对接口支持的等级；实现与兼容映射见 `05-patches-and-rtk.md`。
 
 ## 模型与上下文命令的作用域
@@ -653,7 +656,7 @@ on the server, then checkout `main`.
 - `/model <name>` 只对当前 QQ 会话生效；`/model <name> --global` 才把
   `model.default`、`model.provider` 写进 `config.yaml`。
 - 切换 Kimi Code 的完整写法是
-  `/model kimi-for-coding --provider kimi-code`，provider 直接写
+  `/model k3.1-pro --provider kimi-code`，provider 直接写
   `kimi-code`，**不要**加 `custom:` 前缀。
 - 上下文窗口跟随同一作用域：会话级 `/model` 保存会话覆盖，
   缓存驱逐后的新 agent、压缩预算与 `/context` 查询使用同一窗口；
@@ -679,7 +682,7 @@ on the server, then checkout `main`.
   `262144` 显示为 `256K (262,144 tokens; ...)`。无法整除单位的数值直接
   显示精确 token 数。`/reset` 回显保留的会话覆盖，`/new` 回显全局配置。
 - `/context auto` 绕过全局 `model.context_length`，但仍遵守
-  `providers.kimi-code.models.kimi-for-coding.context_length` 的 262144。
+  `providers.kimi-code.models.k3.1-pro.context_length` 的 262144。
 - 会自动改写 `config.yaml` 的路径只有 `/model` 与 `/context` 的持久化分支，两者现在都只在 `--global` 时落盘。`model_catalog`（默认开启，每 24 小时拉一次上游清单）只写磁盘缓存
   `~/.hermes/cache/model_catalog.json`，不会改动 `config.yaml`，因此不会影响主模型、13 个 `auxiliary` 槽位、`image_gen`、`tts`、`stt`、`x_search` 或 `grok-search` 的既有配置。
 - QQ 的 `/model` 不带参数时列表是**空的**，这是有意保留的行为：
@@ -693,8 +696,9 @@ on the server, then checkout `main`.
 
 ## Kimi Code 请求与缓存
 
-核验日期：2026-09-16。实际端点为 `https://api.kimi.com/coding/v1`，
-采用 OpenAI Chat Completions 协议。
+原始核验日期：2026-09-16；新版复核日期：2026-10-23。实际端点为
+`https://api.kimi.com/coding/v1`，采用原生 OpenAI Chat Completions 协议。
+下方旧模型请求参数保留为原日期快照；当前配置以前面的运行形态及本节新版验证为准。
 
 ### 身份与会话
 
@@ -709,7 +713,7 @@ on the server, then checkout `main`.
 
 ### 请求体与验证边界
 
-- 主模型使用 `k3-256k`、`reasoning_effort: low` 与
+- 2026-09-16 快照：主模型使用 `k3-256k`、`reasoning_effort: low` 与
   `thinking.type: enabled`；全局窗口为 262144，模型专属配置按前面的运行形态维护。
   辅助任务的参数按自身调用链解析，不能从主模型配置推断其实际发出的思考参数。
 - assistant 历史中的 `reasoning_content` 与工具调用消息按现有回传链路保留。
@@ -722,6 +726,32 @@ on the server, then checkout `main`.
   HTTP 200 证明该次请求被接受；缓存命中、QQ 投递和人物表现分别验收。
 - Kimi Code 订阅面向编程场景。其他用途的许可应以账号条款及官方确认为准；
   协议适配与真实客户端标识不构成账户风控或订阅使用范围的保证。
+
+### K3.1 Pro 新版验证
+
+- 官方订阅模型 ID 是 `k3.1-pro`；开放平台的 `kimi-k3.1-pro` 不是本部署使用的 ID。
+  官方依据：<https://www.kimi.com/code/docs/kimi-code/models.html> 与
+  <https://www.kimi.com/code/docs/third-party-tools/hermes.html>。
+- 使用现有订阅 Key 直连 `/coding/v1/chat/completions`，沿用
+  `Authorization: Bearer ...`、JSON 请求体、真实 `Tangyuge-Hermes/<版本>` 标识及
+  哈希任务缓存键。实际线上请求为 `model=k3.1-pro`、`thinking.type=enabled`、
+  `reasoning_effort=high`，返回同名模型；不伪装其他软件或增加未经要求的签名。
+- 真实合成图片正确识别绿色圆形与蓝色方形；四秒合成 MP4 经 `video_url` base64
+  直接上传，正确识别红色到蓝色的时序，不是预先抽帧生成文字摘要。
+  `tool_choice=auto` 的工具调用与带 reasoning 历史的续轮均返回 200。
+- 强制指定函数的协议探针返回 400，提示与思考模式不兼容；正常主对话不使用该探针。
+  不能通过关闭 K3.1 思考来规避，也不能把此探针报错当作正常 QQ 生产错误。
+- 响应签名是另一项真实性校验能力，不是 Bearer 鉴权的替代。本轮通过
+  `X-Msh-Request-Nonce` 携带随机 nonce，
+  coding 端点没有返回 `Msh-Request-Signature` / `Msh-Request-Timestamp`，因此未完成
+  密码学验签，不将响应的 `model` 字段说成签名证明。
+- 默认模型变更不等于历史会话迁移。官方建议换代后新建会话，避免混用旧模型思考历史；
+  本轮不删除或自动重置会话。`/new` 由本人决定执行，不能默默清空聊天记录。
+- 本轮未发送真实 QQ 测试消息，也未逐一测试高速版、超长上下文或大型视频；
+  45 MiB 内联预算与原有文件上传分类保持不变，超预算仍回落文本路径。
+- 项目正式精简测试集为 1688 项通过、14 项跳过。额外调用保留范围以外的上游
+  provider 测试曾出现 28 项失败；在独立测试进程中将本轮修改模块换回原 HEAD 源码后，
+  同一批 28 项仍失败，不能说成新增回归，也不宣称整个上游测试库全绿。
 
 ### 维护资料
 
