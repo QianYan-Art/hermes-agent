@@ -59,6 +59,7 @@ The bot-facing documentation source is this repository directory:
 - `docs/tangyuge-hermes/08-mail-vps.md`
 - `docs/tangyuge-hermes/09-douyin-login.md`
 - `docs/tangyuge-hermes/10-douyin-publishing.md`
+- `docs/tangyuge-hermes/11-source-maintenance.md`（源码架构、审查修复与待确认的维护风险）
 
 `hermes-md-locator` 仅定位这些仓库开发文档。KBase 保存人工记录，不是 Hermes
 运行时文档的同步源；经阿颜当次授权可以发布为博客文章。服务器不另行维护 home

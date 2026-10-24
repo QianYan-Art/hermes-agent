@@ -1,6 +1,6 @@
 ---
 name: hermes-md-locator
-description: 定位二开文档、人格、模型、媒体、会话与辅助服务状态.
+description: 定位二开文档、源码架构、维护风险、人格、模型、媒体与辅助服务状态.
 ---
 
 # Tangyuge-Hermes 文档入口
@@ -30,6 +30,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - 邮件 VPS 集成：`docs/tangyuge-hermes/08-mail-vps.md`
 - 抖音服务器登录：`docs/tangyuge-hermes/09-douyin-login.md`
 - 抖音作品与草稿：`docs/tangyuge-hermes/10-douyin-publishing.md`
+- 源码架构与维护风险：`docs/tangyuge-hermes/11-source-maintenance.md`
 
 本地 KBase 保存人工运维记录；bot 的文档定位源是上述仓库路径。
 
@@ -39,6 +40,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 
 | 用户常用说法 | 读取文档 |
 | --- | --- |
+| "源码梳理", "架构地图", "模块职责", "关键调用链", "耦合", "重复逻辑", "源码审查", "维护风险", "旧审批按钮", "辅助路由串线", "插件加载回滚" | `docs/tangyuge-hermes/11-source-maintenance.md`；区分已修复、静态风险与待确认的协议/架构调整，不把本地回归说成已部署或真实平台验收 |
 | "抖音", "抖音登录", "抖音扫码", "抖音账号状态", "服务器抖音", "douyin_login", "抖音登录失效", "抖音二维码", "抖音错误恢复" | `docs/tangyuge-hermes/09-douyin-login.md`；明确失效可向本人私聊自动附二维码，活动上传与有效预览不被自动登录打断；验证须本人处理，不清 profile 或自动切号；登录工具不上传、不发布 |
 | "OpenFilm 发布", "抖音发布", "抖音草稿", "保存草稿", "序栞", "作品包", "douyin_content", "抖音后台数据", "确认发布", "自动传片", "封面", "发布向导", "定时发布" | `docs/tangyuge-hermes/10-douyin-publishing.md`；制作端自动交付；主动收集文案、封面、可见范围和时间，用户选择后 prepare，再 stage 核对实时预览；暂存不等于发布，失效预览不能沿用确认，不能承诺旧槽持久或手机可见 |
 | "流量日报", "Komari", "VPS 流量", "近24小时流量", "komari_traffic_daily" | `docs/tangyuge-hermes/07-server-operations.md` 的“Komari 流量日报”；只运行固定读取命令，不改 Komari/Kuma 或 Telegram |
@@ -47,6 +49,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "MiMo 覆盖", "旧小米模型", "MiniMax 配置清理", "gateway_session_model_overrides.json", "模型配置删了仍在用" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；区分旧文件、实际读取链与进程内覆盖，不凭历史文件断言当前路由 |
 | "TTS", "语音风格", "profile", "reference", "scene", "工作站离线", "metadata_path", "参考音频" | `docs/tangyuge-hermes/07-server-operations.md` 的“工作站 TTS 参数” |
 | "Kimi 请求头", "User-Agent", "prompt_cache_key", "缓存命中", "cached_tokens", "官方订阅", "OpenCode Go", "x-opencode-session" | `docs/tangyuge-hermes/07-server-operations.md` 的“Kimi Code 请求与缓存” |
+| "缓存时间", "缓存多久", "缓存TTL", "prompt_cache_options", "5m", "1h", "5h限额", "额度重置", "68%", "130%" | `docs/tangyuge-hermes/07-server-operations.md` 的“缓存时长与额度窗口”；通用 API 的 TTL 设置不等于 Coding Plan 支持保证，额度倍率不是客户端请求头选项 |
+| "自动压缩", "压缩阈值", "90%", "95%", "compression.threshold", "235929" | `docs/tangyuge-hermes/07-server-operations.md` 的“Current Runtime Shape”；区分 token 阈值、独立消息卫生整理条件与上游缓存过期 |
 | "k3-256k", "250K还是256K", "探测失败", "retained", "fallback", "切换后窗口不一致" | `docs/tangyuge-hermes/07-server-operations.md` 的模型与上下文命令；实现边界读 `05-patches-and-rtk.md` |
 | "memory 路径", "USER 语音参数", "运行记忆对齐", "TTS schema", "262k还是256k", "二进制回显" | `docs/tangyuge-hermes/07-server-operations.md` 的“运行记忆维护”与模型命令说明；身份边界读 `03-identity-prompt.md` |
 | "总览", "项目总览", "整体情况", "二开项目", "tangyuge-hermes 是什么", "文档目录" | `docs/tangyuge-hermes/00-overview.md` |
@@ -77,6 +81,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 | "邮件文档", "邮箱文档", "邮件VPS文档", "邮件集成文档", "邮箱列表", "有哪些邮箱", "列出全部邮箱", "多域名邮箱", "新域名邮箱漏列", "mail.qianyan.me", "sru.edu.kg", "读邮件", "验证码", "验证链接", "附件", "发信", "回复邮件", "转发邮件", "删除邮件" | `docs/tangyuge-hermes/08-mail-vps.md` |
 
 ## 组合路由
+
+- “源码梳理、架构地图、职责混杂、维护风险、旧审批按钮、辅助路由串线、插件加载回滚”：先读 `11-source-maintenance.md`；需要行为历史再按模块转 `05-patches-and-rtk.md` 或抖音专题，不把待确认方案当作已实施。
 
 - "流量日报、Komari、VPS 流量、近24小时流量"：读 `07-server-operations.md` 的“Komari 流量日报”，固定脚本返回 `report` 后用 QQ 文字回复；仅汇总公开可见节点，不操作原有 Telegram 日报或告警。
 
@@ -117,6 +123,8 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 ## 触发语义
 
 用户说以下内容时，优先使用本技能：
+
+- “源码梳理”“架构地图”“模块职责”“关键调用链”“耦合”“重复逻辑”“源码审查”“维护风险”“旧审批按钮”“辅助路由串线”“插件加载回滚”
 
 - “流量日报”“Komari”“VPS 流量”“近24小时流量”“komari_traffic_daily”
 

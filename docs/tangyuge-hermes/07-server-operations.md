@@ -75,6 +75,10 @@ Default model provider:
 - `prompt_caching.cache_ttl` is `5m`。该缓存语义是 Anthropic 兼容路径
   （`cache_control` 标记 + 5 分钟续期）的行为；Kimi Code 走
   `chat_completions`，不适用这条 Anthropic 缓存路径。
+- 自动 token 压缩阈值按本轮要求从 `compression.threshold: 0.95` 调整为
+  `0.90`；主模型仍为 `k3.1-pro`、`low`、262144。触发线为
+  `int(262144 * 0.90) = 235929`，不是只计算用户正文；压缩目标比例 `0.15`、
+  首尾保护 3/12 条、400 条消息的卫生整理上限保持不变，后者是独立触发条件。
 - `agent.image_input_mode` 为 `auto`，没有独立辅助视觉配置，QQ 图片直接交给
   本会话的 Kimi 主模型。图片使用 OpenAI 兼容 `image_url` base64 data URL。
   路由基于 `_resolve_session_agent_runtime()` 的模型、provider 和真实端点，
@@ -696,7 +700,7 @@ on the server, then checkout `main`.
 
 ## Kimi Code 请求与缓存
 
-原始核验日期：2026-09-16；新版复核日期：2026-10-23。实际端点为
+原始核验日期：2026-09-16；新版复核日期：2026-10-23，缓存与配置收尾复核至 2026-10-24。实际端点为
 `https://api.kimi.com/coding/v1`，采用原生 OpenAI Chat Completions 协议。
 下方旧模型请求参数保留为原日期快照；当前配置以前面的运行形态及本节新版验证为准。
 
@@ -764,6 +768,26 @@ on the server, then checkout `main`.
   为 96 项通过，Ruff 通过。额外调用保留范围以外的上游
   provider 测试曾出现 28 项失败；在独立测试进程中将本轮修改模块换回原 HEAD 源码后，
   同一批 28 项仍失败，不能说成新增回归，也不宣称整个上游测试库全绿。
+
+### 缓存时长与额度窗口
+
+- 2026-10-24 只读复核实际 K3.1 会话的累计 `cache_read_tokens` 非零，已有缓存命中；
+  不需要再发送合成重复请求来证明同一事实。数据库的 `input_tokens` 是归一化后的
+  未缓存输入，不能直接用缓存读取量除以它计算命中率。
+- 通用 Kimi API 官方文档支持
+  `prompt_cache_options: {"mode": "implicit", "ttl": "5m" | "1h"}`；这是开放平台
+  Chat Completions / Responses 的显式写入设置，不等于 Coding Plan 订阅端点的承诺。
+  当前查阅的 Code 模型、会员、FAQ 与更新文档没有明确公开同一参数的订阅支持保证；
+  不声称订阅一定支持或一定不支持，不盲目向订阅请求添加 TTL。
+- 本项目现有 `prompt_caching.cache_ttl: 5m` 只属于 Anthropic 路径，
+  `prompt_cache_key` 只提供会话路由线索，两者都不能代替订阅服务端的 TTL 设置。
+  保持模型、思考档位与稳定前缀一致有助复用；改模型、改思考、压缩或改写前缀可能降低命中。
+- 5 小时频率窗口、缓存保留时间、上下文压缩阈值是三个不同概念。计费倍率及官方额度
+  重置由上游处理，不靠修改模型请求头、伪装客户端或自行传入折扣比例实现。
+  本轮未独立取得后台重置和特定倍率调整的账号级证据，不把用户告知的调整包装成验签结论。
+- TTL 的官方作用域依据：
+  <https://www.kimi.com/academy/best-practices-for-context-caching>；
+  订阅额度窗口依据：<https://www.kimi.com/code/docs/kimi-code/membership.html>。
 
 ### 维护资料
 

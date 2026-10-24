@@ -195,6 +195,9 @@ repo docs.
 - `docs/tangyuge-hermes/06-upgrade-freeze.md`
 - `docs/tangyuge-hermes/07-server-operations.md`
 - `docs/tangyuge-hermes/08-mail-vps.md`
+- `docs/tangyuge-hermes/09-douyin-login.md`
+- `docs/tangyuge-hermes/10-douyin-publishing.md`
+- `docs/tangyuge-hermes/11-source-maintenance.md`（架构地图、局部修复与待确认的维护风险）
 
 Windows KBase 保存人工记录，不是 Hermes 运行时文档的同步源，也不作为 bot 查阅入口。
 经阿颜当次明确授权，可以提交、推送 KBase 或发布博客文章；这不等于把记录安装到
