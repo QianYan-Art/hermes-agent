@@ -169,7 +169,7 @@ def _validate_video_path(value: str | os.PathLike[str], projects_root: Path) -> 
         raise SyncError("--video 必须指向单个 MP4 文件")
     state = _file_state(video_path)
     if not 1 <= state[2] <= releases.MAX_VIDEO_BYTES:
-        raise SyncError("视频大小必须在 1 到 512 MiB 之间")
+        raise SyncError("视频大小必须在 1 字节到 2 GiB 之间")
     return video_path, state
 
 
@@ -229,7 +229,7 @@ def _ssh(config: SyncConfig, remote_command: str, *, timeout: int = 60) -> subpr
     return _run(arguments, timeout=timeout)
 
 
-def _scp(config: SyncConfig, local_path: Path, remote_path: str) -> None:
+def _scp(config: SyncConfig, local_path: Path, remote_path: str, *, timeout: int = 7200) -> None:
     arguments = [
         "scp",
         "-P",
@@ -245,7 +245,7 @@ def _scp(config: SyncConfig, local_path: Path, remote_path: str) -> None:
         str(local_path),
         f"{config.destination}:{remote_path}",
     ]
-    _run(arguments, timeout=1800)
+    _run(arguments, timeout=timeout)
 
 
 def _create_remote_directory(config: SyncConfig) -> str:

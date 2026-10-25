@@ -60,6 +60,17 @@ def _write_package(directory: Path, release_id: str, video: bytes, **overrides) 
     return package
 
 
+@pytest.mark.parametrize("size", [513 * 1024 * 1024, 689392111, 2 * 1024 * 1024 * 1024])
+def test_manifest_accepts_openfilm_large_exports_without_allocating_video(size):
+    """用元数据检验新上限，不创建大体积测试视频。"""
+    assert releases.validate_manifest(_manifest("ep01", b"fixture", video_bytes=size))["video_bytes"] == size
+
+
+def test_manifest_rejects_more_than_two_gib():
+    with pytest.raises(releases.ReleaseError, match="video_bytes"):
+        releases.validate_manifest(_manifest("ep01", b"fixture", video_bytes=2 * 1024 * 1024 * 1024 + 1))
+
+
 def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
     try:
         link.symlink_to(target, target_is_directory=target_is_directory)

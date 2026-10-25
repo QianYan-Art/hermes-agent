@@ -110,7 +110,7 @@ def probe_video(video_path: str | os.PathLike[str]) -> dict[str, int | float]:
     if info is None or not stat.S_ISREG(info.st_mode):
         raise ReleaseError("视频必须是普通文件")
     if not 1 <= info.st_size <= MAX_VIDEO_BYTES:
-        raise ReleaseError("视频大小必须在 1 到 512 MiB 之间")
+        raise ReleaseError("视频大小必须在 1 字节到 2 GiB 之间")
     command = [
         "ffprobe",
         "-v",
@@ -191,7 +191,7 @@ def prepare_release(
     if info is None or not stat.S_ISREG(info.st_mode):
         raise ReleaseError("视频必须是普通文件")
     if not 1 <= info.st_size <= MAX_VIDEO_BYTES:
-        raise ReleaseError("视频大小必须在 1 到 512 MiB 之间")
+        raise ReleaseError("视频大小必须在 1 字节到 2 GiB 之间")
 
     metadata = probe_video(video_path)
     after_probe = _path_info(video_path)

@@ -58,6 +58,20 @@ def _stub_probe(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("size", [689392111, 2 * 1024 * 1024 * 1024, 2 * 1024 * 1024 * 1024 + 1])
+def test_sync_video_size_matches_two_gib_server_limit(tmp_path, monkeypatch, size):
+    """仅替换文件大小元数据，路径校验仍走真实小文件。"""
+    config = _config(tmp_path)
+    video = config.projects_root / "episode.mp4"
+    video.write_bytes(b"fixture")
+    monkeypatch.setattr(sync, "_file_state", lambda _path: (1, 2, size, 4))
+    if size > 2 * 1024 * 1024 * 1024:
+        with pytest.raises(sync.SyncError, match="2 GiB"):
+            sync._validate_video_path(video, config.projects_root)
+    else:
+        assert sync._validate_video_path(video, config.projects_root)[1][2] == size
+
+
 def _subprocess_success(monkeypatch, digest: str, size: int, *, initial_state: str = "missing", mutate_video=None):
     remote_directory = "/tmp/hermes-douyin-upload.AbCdEf1234"
     calls: list[list[str]] = []

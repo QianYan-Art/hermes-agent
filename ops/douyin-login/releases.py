@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-MAX_VIDEO_BYTES = 512 * 1024 * 1024
+MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
 RELEASE_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,63}", re.ASCII)
 
@@ -207,7 +207,7 @@ def _hash_video(path: Path, max_bytes: int) -> tuple[str, int]:
             while chunk := stream.read(1024 * 1024):
                 size += len(chunk)
                 if size > max_bytes:
-                    raise ReleaseError("视频超过 512 MiB 限制")
+                    raise ReleaseError("视频超过 2 GiB 限制")
                 digest.update(chunk)
     except OSError as exc:
         raise ReleaseError("无法读取视频文件") from exc
