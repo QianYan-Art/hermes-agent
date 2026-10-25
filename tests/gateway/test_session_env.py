@@ -322,3 +322,29 @@ async def test_run_in_executor_with_context_propagates_exceptions():
 
     with pytest.raises(ValueError, match="boom"):
         await runner._run_in_executor_with_context(blow_up)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message_id", ["queued-message", ""])
+async def test_executor_message_id_override_is_local_to_each_turn(message_id):
+    """排队轮次替换消息ID，成功或异常均不污染父协程及其他轮次。"""
+    from gateway.session_context import clear_session_vars, set_session_vars
+
+    runner = object.__new__(GatewayRunner)
+    tokens = set_session_vars(message_id="original-message", session_key="same-session")
+    try:
+        def read_context():
+            return (get_session_env("HERMES_SESSION_MESSAGE_ID"), get_session_env("HERMES_SESSION_KEY"))
+
+        assert await runner._run_in_executor_with_context(read_context, message_id=message_id) == (message_id, "same-session")
+        assert get_session_env("HERMES_SESSION_MESSAGE_ID") == "original-message"
+
+        def fail():
+            assert read_context() == (message_id, "same-session")
+            raise ValueError("本轮失败")
+
+        with pytest.raises(ValueError, match="本轮失败"):
+            await runner._run_in_executor_with_context(fail, message_id=message_id)
+        assert await runner._run_in_executor_with_context(read_context) == ("original-message", "same-session")
+    finally:
+        clear_session_vars(tokens)

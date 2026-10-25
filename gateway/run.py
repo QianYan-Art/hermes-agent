@@ -8977,7 +8977,7 @@ class GatewayRunner:
         context = build_session_context(source, self.config, session_entry)
         
         # Set session context variables for tools (task-local, concurrency-safe)
-        _session_env_tokens = self._set_session_env(context)
+        _session_env_tokens = self._set_session_env(context, message_id=event.message_id)
         
         # Read privacy.redact_pii from config (re-read per message)
         _redact_pii = False
@@ -16494,7 +16494,7 @@ class GatewayRunner:
 
         return delivered
 
-    def _set_session_env(self, context: SessionContext) -> list:
+    def _set_session_env(self, context: SessionContext, *, message_id=None) -> list:
         """Set session context variables for the current async task.
 
         Uses ``contextvars`` instead of ``os.environ`` so that concurrent
@@ -16512,7 +16512,9 @@ class GatewayRunner:
             user_id=str(context.source.user_id) if context.source.user_id else "",
             user_name=str(context.source.user_name) if context.source.user_name else "",
             session_key=context.session_key,
-            message_id=str(context.source.message_id) if context.source.message_id else "",
+            # QQ 等适配器把真实入站ID放在事件中，不一定复制到 SessionSource。
+            message_id=(str(message_id) if message_id is not None
+                        else str(context.source.message_id) if context.source.message_id else ""),
         )
 
     def _clear_session_env(self, tokens: list) -> None:
@@ -16520,10 +16522,14 @@ class GatewayRunner:
         from gateway.session_context import clear_session_vars
         clear_session_vars(tokens)
 
-    async def _run_in_executor_with_context(self, func, *args):
+    async def _run_in_executor_with_context(self, func, *args, message_id=None):
         """Run blocking work in the thread pool while preserving session contextvars."""
         loop = asyncio.get_running_loop()
         ctx = copy_context()
+        if message_id is not None:
+            from gateway.session_context import set_current_message_id
+            # 排队追问沿用父协程，但工具必须看到本轮事件ID。只修改工作线程副本。
+            ctx.run(set_current_message_id, str(message_id))
         return await loop.run_in_executor(None, ctx.run, func, *args)
 
     def _decide_image_input_mode(self, *, session_key: Optional[str] = None) -> str:
@@ -19698,7 +19704,7 @@ class GatewayRunner:
             _agent_warning = _agent_warning_raw if _agent_warning_raw > 0 else None
             _warning_fired = False
             _executor_task = asyncio.ensure_future(
-                self._run_in_executor_with_context(run_sync)
+                self._run_in_executor_with_context(run_sync, message_id=event_message_id or "")
             )
 
             _inactivity_timeout = False

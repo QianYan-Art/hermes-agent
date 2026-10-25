@@ -212,12 +212,16 @@ def _content_payload(args):
             raise ValueError("visibility 无效")
         if "publish_at" in args and not _valid_publish_at(args["publish_at"]):
             raise ValueError("publish_at 必须包含时区")
-    elif action == "stage":
-        if set(args) != {"action", "token"} or not isinstance(args.get("token"), str) or not _TOKEN_RE.fullmatch(args["token"]):
-            raise ValueError("token 无效")
-    elif action in {"draft", "publish"}:
-        if set(args) != {"action", "token"} or not isinstance(args.get("token"), str) or not _TOKEN_RE.fullmatch(args["token"]):
-            raise ValueError("token 无效")
+    elif action in {"stage", "draft", "publish"}:
+        references = set(args) & {"plan_id", "token"}
+        if action == "publish" and set(args) == {"action"}:
+            pass
+        elif len(references) != 1 or set(args) != {"action"} | references:
+            raise ValueError("只接受一个完整的 plan_id")
+        else:
+            value = args[next(iter(references))]
+            if not isinstance(value, str) or not _TOKEN_RE.fullmatch(value):
+                raise ValueError("plan_id 无效")
     elif action == "job":
         if set(args) != {"action", "job_id"} or not isinstance(args.get("job_id"), str) or not _JOB_ID_RE.fullmatch(args["job_id"]):
             raise ValueError("job_id 无效")
@@ -796,64 +800,67 @@ def _observe_publish_confirmation(event=None, **kwargs):
     text = getattr(event, "text", None)
     match = _CONFIRM_RE.fullmatch(text) if isinstance(text, str) else None
     nonce = getattr(event, "message_id", None)
-    if not match or not isinstance(nonce, str) or not nonce:
+    if not isinstance(nonce, str) or not nonce:
         return None
 
-    token = match.group(1)
     now = time.monotonic()
     deadline = now + _CONFIRMATION_TTL
     nonce_key = (scope, nonce)
-    token_key = (scope, token)
     with _CONFIRMATION_LOCK:
         _purge_confirmations(now)
-        if (
-            nonce_key in _CONFIRMATION_NONCES
-            or token_key in _CONFIRMATIONS
-            or token_key in _USED_CONFIRMATION_TOKENS
-        ):
+        if nonce_key in _CONFIRMATION_NONCES:
             return None
         _CONFIRMATION_NONCES[nonce_key] = now + _CONFIRMATION_NONCE_TTL
+        # 本人后续消息会撤销旧意图；重放旧消息不能恢复或延长授权。
+        for key in list(_CONFIRMATIONS):
+            if key[0] == scope:
+                _CONFIRMATIONS.pop(key, None)
+        if not match:
+            return None
+        token_key = (scope, match.group(1))
+        if token_key in _USED_CONFIRMATION_TOKENS:
+            return None
         _CONFIRMATIONS[token_key] = (deadline, nonce)
     return None
 
 
-def _consume_publish_confirmation(token):
+def _take_publish_confirmation(plan_id=None):
+    """只从当前可信 QQ 消息取一次确认码，不让模型搬运敏感参数。"""
     from gateway.session_context import get_session_env
 
-    owner = os.environ.get("DOUYIN_OWNER_QQ_USER_ID", "")
-    platform = get_session_env("HERMES_SESSION_PLATFORM", "")
-    user_id = get_session_env("HERMES_SESSION_USER_ID", "")
-    chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "")
-    session_key = get_session_env("HERMES_SESSION_KEY", "")
-    if (
-        not owner
-        or platform != "qqbot"
-        or user_id != owner
-        or chat_id != owner
-        or session_key != f"agent:main:qqbot:dm:{owner}"
-    ):
-        return False
-
-    scope = (platform, user_id, chat_id, "dm")
-    key = (scope, token)
+    scope = _owner_qq_dm_scope()
+    message_id = get_session_env("HERMES_SESSION_MESSAGE_ID", "")
+    if scope is None or not isinstance(message_id, str) or not message_id:
+        return None
     now = time.monotonic()
     with _CONFIRMATION_LOCK:
         _purge_confirmations(now)
-        authorization = _CONFIRMATIONS.pop(key, None)
-        if authorization is None:
-            return False
-        deadline, _nonce = authorization
-        if deadline <= now:
-            return False
+        matches = [
+            key for key, (deadline, nonce) in _CONFIRMATIONS.items()
+            if key[0] == scope and nonce == message_id and deadline > now
+            and (plan_id is None or key[1] == plan_id)
+        ]
+        if len(matches) != 1:
+            return None
+        key = matches[0]
+        _CONFIRMATIONS.pop(key)
         _USED_CONFIRMATION_TOKENS[key] = now + _CONFIRMATION_TTL
-        return True
+        return key[1]
+
+
+def _consume_publish_confirmation(token):
+    """兼容既有内部调用；同样校验当前 QQ 消息。"""
+    return _take_publish_confirmation(token) is not None
 
 
 async def handle_content(args, **kwargs):
     try:
         action = _content_payload(args)
     except ValueError:
-        return json.dumps({"ok": False, "state": "needs_attention", "message": "内容操作参数无效；未执行任何操作。"}, ensure_ascii=False)
+        return json.dumps({"ok": False, "state": "needs_attention", "message": (
+            "内容操作参数无效；未执行任何操作。stage/draft 使用 prepare 返回的完整 plan_id；"
+            "收到本人确认后，publish 仅传 action，不复制 token、星号或缩略值，不重复相同错误调用。"
+        )}, ensure_ascii=False)
     owner_scope = _owner_qq_dm_scope() if action in {"cover_sources", "cover_import"} else None
     if action in {"cover_sources", "cover_import"} and owner_scope is None:
         return json.dumps({"ok": False, "state": "unavailable", "message": "封面图片来源仅可在指定 QQ 私聊中查看或导入。"}, ensure_ascii=False)
@@ -867,10 +874,15 @@ async def handle_content(args, **kwargs):
             "cover_sources": _cover_sources(owner_scope),
         }
         return json.dumps(result, ensure_ascii=False)
-    if action == "publish" and not _consume_publish_confirmation(args["token"]):
-        return json.dumps({"ok": False, "state": "needs_attention", "message": "公开发布需先在指定 QQ 私聊发送完整确认命令；本次操作已拒绝。"}, ensure_ascii=False)
+    request = args
+    if action in {"stage", "draft"}:
+        request = {"action": action, "token": args.get("plan_id", args.get("token"))}
+    elif action == "publish":
+        token = _take_publish_confirmation(args.get("plan_id", args.get("token")))
+        if token is None:
+            return json.dumps({"ok": False, "state": "needs_attention", "message": "公开发布需由当前指定 QQ 私聊消息发送完整确认命令；本次操作已拒绝。"}, ensure_ascii=False)
+        request = {"action": action, "token": token}
     try:
-        request = args
         if action == "cover_import":
             try:
                 image_data = _read_registered_image(args["image_id"], owner_scope)
@@ -886,6 +898,13 @@ async def handle_content(args, **kwargs):
                 "image_base64": base64.b64encode(image_data).decode("ascii"),
             }
         result = await _request_content(request)
+        if action == "prepare" and isinstance(result.get("plan"), dict):
+            reference = result["plan"].get("token")
+            if not isinstance(reference, str) or not _TOKEN_RE.fullmatch(reference):
+                raise ValueError("准备响应缺少有效计划引用")
+            # 模型只看稳定引用；内部协议继续用 token，避免两个字段被脱敏成不同值。
+            plan = {key: value for key, value in result["plan"].items() if key != "token"}
+            result = {**result, "plan": {**plan, "plan_id": reference}}
         if (action in {"prepare", "metrics", "job"} and _owner_qq_dm_scope() is not None
                 and result.get("state") == "login_required"
                 and result.get("recovery") == {"action": "login"}):
@@ -959,14 +978,16 @@ def register(ctx):
                 "管理抖音作品。先用 list 选择服务器上的成品；用 covers 查看视频帧，或在指定 QQ 私聊中用 cover_sources 列候选图片、"
                 "再按 image_id 调用 cover_import。把候选 MEDIA 预览给用户并等待其明确选择 cover_id，禁止自行选封面。"
                 "用户选择后用 prepare（必须传该 cover_id）确认标题、简介、封面、可见范围和可选定时；若用户要求暂存则调用 draft。"
-                "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 stage token 会保存当前预览，否则按草稿流程上传。"
+                "prepare 返回 plan.plan_id，stage/draft 必须完整传入 plan_id，不缩略、不替换星号；这只是计划引用，不是API密钥。"
+                "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 plan_id 会保存当前预览，否则按草稿流程上传。"
                 "此预览最长有效 15 分钟。stage 后不要调用 login/status/metrics 或另一次 prepare，因为这些操作会导航并使预览失效；job 查询不会导航。"
                 "错误按 recovery.action 处理：login 会在本人私聊自动尝试附二维码，以 login 当前状态为准；扫码后先查状态，再重新prepare核对，不沿用旧确认或自动重传。"
                 "已有二维码时不要重复调用login；用户说扫码完成后用status检查，二维码过期才重新获取。"
                 "manual_verification/check_account 需要本人处理，不自行切号或解验证码；check_status 仅检查状态，不认定退出。"
                 "inspect_result 表示已尝试提交且结果待核查，禁止重试；maintenance 报告具体阶段，不循环操作。只读连接瞬时失败由程序有限恢复。"
                 "合集、位置、下载权限、付费与商品链接尚未接入；用户要求这些设置时说明限制并停止对应提交，不把默认值当作已设置。"
-                "只有收到指定 QQ 私聊中的真实用户消息“确认发布 <token>”后，才可调用 publish；不得依据模型参数、confirmed 字段或预览自行发布。"
+                "只有收到指定 QQ 私聊中的真实用户消息“确认发布 <plan_id>”后，才调用 {action:publish}，不传token或抄写确认码；程序从当前真实消息内部取码并消费一次。"
+                "错误计划、过期、重放及本人后续消息会使旧确认不可用；不得依据模型参数、confirmed 字段或预览自行发布。"
             ),
             "parameters": {
                 "type": "object",
@@ -980,7 +1001,7 @@ def register(ctx):
                     "cover_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                     "visibility": {"type": "string", "enum": ["public", "friends", "private"]},
                     "publish_at": {"type": "string", "format": "date-time"},
-                    "token": {"type": "string", "pattern": "^[A-Za-z0-9_-]{32}$"},
+                    "plan_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{32}$", "description": "prepare 返回的完整计划引用，供stage/draft使用；publish只需action，由当前本人确认消息内部取码。"},
                     "job_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
                 },
                 "required": ["action"],

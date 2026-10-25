@@ -83,6 +83,11 @@ _VAR_MAP = {
 }
 
 
+def set_current_message_id(message_id: str) -> None:
+    """在当前上下文绑定真实入站消息ID；空值阻止继承旧消息或环境变量。"""
+    _SESSION_MESSAGE_ID.set(message_id)
+
+
 def set_current_session_id(session_id: str) -> None:
     """Synchronize ``HERMES_SESSION_ID`` across ContextVar and ``os.environ``.
 

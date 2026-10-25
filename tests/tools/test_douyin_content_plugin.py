@@ -148,6 +148,7 @@ def owner_context(monkeypatch):
         user_id=owner,
         chat_id=owner,
         session_key=f"agent:main:qqbot:dm:{owner}",
+        message_id="msg-1",
     )
     try:
         yield owner
@@ -472,6 +473,138 @@ def test_only_original_user_confirmation_allows_publish_rpc(owner_context, monke
 
     assert json.loads(output)["state"] == "published"
     assert calls == [{"action": "publish", "token": TOKEN}]
+
+
+@pytest.mark.parametrize("action", ["stage", "draft"])
+def test_plan_reference_survives_history_redaction(owner_context, monkeypatch, action):
+    """模型侧稳定引用经过真实脱敏后仍可用于内部请求。"""
+    from agent.redact import redact_sensitive_text
+
+    calls = []
+
+    async def request(payload):
+        calls.append(payload)
+        if payload["action"] == "prepare":
+            return {"ok": True, "state": "ready", "message": "准备完成", "plan": {"token": TOKEN}}
+        return _success_response("in_progress")
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    prepared = json.loads(asyncio.run(plugin.handle_content({
+        "action": "prepare", "release_id": "ep00", "cover_id": "f" * 64,
+    })))
+    history = json.loads(redact_sensitive_text(json.dumps(prepared), force=True))
+    assert "token" not in history["plan"]
+    args = json.loads(redact_sensitive_text(json.dumps({
+        "action": action, "plan_id": history["plan"]["plan_id"],
+    }), force=True))
+    assert json.loads(asyncio.run(plugin.handle_content(args)))["state"] == "in_progress"
+    assert calls[-1] == {"action": action, "token": TOKEN}
+
+
+def test_publish_uses_trusted_confirmation_without_model_copying_token(owner_context, monkeypatch):
+    calls = []
+
+    async def request(payload):
+        calls.append(payload)
+        return _success_response()
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    plugin._observe_publish_confirmation(event=_message(f"确认发布 {TOKEN}"))
+    first = json.loads(asyncio.run(plugin.handle_content({"action": "publish"})))
+    repeated = json.loads(asyncio.run(plugin.handle_content({"action": "publish"})))
+    assert first["state"] == "published"
+    assert repeated["state"] == "needs_attention"
+    assert calls == [{"action": "publish", "token": TOKEN}]
+
+
+def test_concurrent_publish_uses_internal_service_protocol_once(owner_context, monkeypatch):
+    """实际协议校验接收完整码；并发模型调用也只能消费一次授权。"""
+    monkeypatch.syspath_prepend(str(ROOT / "ops/douyin-login"))
+    spec = importlib.util.spec_from_file_location("douyin_confirmation_contract", ROOT / "ops/douyin-login/content.py")
+    service = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(service)
+    calls = []
+
+    async def request(payload):
+        calls.append(service.validate_request(payload))
+        await asyncio.sleep(0)
+        raise OSError("模拟提交结果未知")
+
+    async def invoke():
+        return await asyncio.gather(*(plugin.handle_content({"action": "publish"}) for _ in range(2)))
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    plugin._observe_publish_confirmation(event=_message(f"确认发布 {TOKEN}"))
+    states = {json.loads(result)["state"] for result in asyncio.run(invoke())}
+    assert states == {"unavailable", "needs_attention"}
+    assert calls == [{"action": "publish", "token": TOKEN}]
+
+
+@pytest.mark.parametrize("change", [{"message_id": "other-message"}, {"message_id": ""}, {"user_id": "other"}])
+def test_publish_cannot_use_another_message_or_user_confirmation(owner_context, monkeypatch, change):
+    from gateway.session_context import clear_session_vars, set_session_vars
+
+    async def forbidden(_):
+        pytest.fail("错误消息或用户不能进入发布服务")
+
+    monkeypatch.setattr(plugin, "_request_content", forbidden)
+    plugin._observe_publish_confirmation(event=_message(f"确认发布 {TOKEN}"))
+    reset = set_session_vars(**change)
+    try:
+        result = json.loads(asyncio.run(plugin.handle_content({"action": "publish"})))
+        assert result["state"] == "needs_attention"
+    finally:
+        clear_session_vars(reset)
+
+
+def test_new_user_message_revokes_pending_confirmation_and_replay_cannot_restore_it(owner_context, monkeypatch):
+    async def forbidden(_):
+        pytest.fail("后续消息已撤销旧确认，不能提交")
+
+    monkeypatch.setattr(plugin, "_request_content", forbidden)
+    confirmation = _message(f"确认发布 {TOKEN}")
+    plugin._observe_publish_confirmation(event=confirmation)
+    plugin._observe_publish_confirmation(event=_message("先别发布，修改一下", nonce="msg-2"))
+    plugin._observe_publish_confirmation(event=confirmation)
+    assert not plugin._consume_publish_confirmation(TOKEN)
+
+
+def test_invalid_placeholder_can_be_corrected_without_consuming_confirmation(owner_context, monkeypatch):
+    calls = []
+
+    async def request(payload):
+        calls.append(payload)
+        return _success_response()
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    plugin._observe_publish_confirmation(event=_message(f"确认发布 {TOKEN}"))
+    assert json.loads(asyncio.run(plugin.handle_content({"action": "publish", "token": "***"})))["state"] == "needs_attention"
+    assert json.loads(asyncio.run(plugin.handle_content({"action": "publish"})))["state"] == "published"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("args", [
+    {"action": "stage", "plan_id": TOKEN, "token": TOKEN},
+    {"action": "draft", "plan_id": "***"},
+    {"action": "publish", "plan_id": TOKEN, "token": OTHER_TOKEN},
+])
+def test_plan_reference_rejects_conflicting_or_masked_aliases(args):
+    with pytest.raises(ValueError):
+        plugin._content_payload(args)
+
+
+def test_gateway_passes_actual_inbound_message_id_for_confirmation():
+    from types import SimpleNamespace
+    from gateway.run import GatewayRunner
+    from gateway.session_context import clear_session_vars, get_session_env
+
+    event = _message(f"确认发布 {TOKEN}", nonce="qq-actual-message")
+    context = SimpleNamespace(source=event.source, session_key="agent:main:qqbot:dm:owner")
+    reset = GatewayRunner._set_session_env(None, context, message_id=event.message_id)
+    try:
+        assert get_session_env("HERMES_SESSION_MESSAGE_ID") == "qq-actual-message"
+    finally:
+        clear_session_vars(reset)
 
 
 def _configure_image_cache(monkeypatch, tmp_path):
