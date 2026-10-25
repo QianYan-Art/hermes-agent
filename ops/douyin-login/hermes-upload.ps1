@@ -140,7 +140,18 @@ if (-not (Test-Path -LiteralPath $HermesPython)) {
     throw "找不到 Hermes Python 环境: $HermesPython"
 }
 
-$cfg          = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+# 复用 Python 入库入口的配置校验，防止主机、用户和远端路径进入 shell 前未经约束。
+$configCode = @'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from sync_openfilm import load_config
+c = load_config(sys.argv[2])
+print(json.dumps(dict(host=c.host, user=c.user, port=c.port,
+    identity_file=str(c.identity_file), projects_root=str(c.projects_root), server_source=c.server_source)))
+'@
+$configOut = & $HermesPython -B -X utf8 -c $configCode $OpsDir $ConfigPath
+if ($LASTEXITCODE -ne 0) { throw '发布配置校验失败；未连接服务器。' }
+$cfg          = $configOut | ConvertFrom-Json
 $ProjectsRoot = (Resolve-Path -LiteralPath $cfg.projects_root).Path
 $IdentityFile = (Resolve-Path -LiteralPath $cfg.identity_file).Path
 $ServerSource = if ($cfg.server_source) { $cfg.server_source } else { "/opt/hermes-douyin" }

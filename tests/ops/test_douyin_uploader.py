@@ -12,6 +12,34 @@ import pytest
 UPLOADER = Path(__file__).parents[2] / "ops/douyin-login/hermes-upload.ps1"
 
 
+@pytest.mark.parametrize("field,value", [
+    ("server_source", "/opt/unsafe'; echo injected; '"),
+    ("server_source", "/opt/$(id)"),
+    ("server_source", "/opt/../root"),
+    ("user", "-oProxyCommand=unexpected"),
+    ("host", "example.test;id"),
+])
+def test_public_script_validates_config_before_selecting_video_or_connecting(tmp_path, field, value):
+    powershell = shutil.which("pwsh")
+    if os.name != "nt" or powershell is None:
+        pytest.skip("需要 Windows PowerShell 7")
+    identity = tmp_path / "identity"
+    identity.write_text("隔离测试占位，不能用于SSH", encoding="utf-8")
+    config = {"host": "example.test", "user": "root", "port": 22,
+              "identity_file": str(identity), "projects_root": str(tmp_path),
+              "server_source": "/opt/hermes-douyin"}
+    config[field] = value
+    path = tmp_path / "publish.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-File", str(UPLOADER),
+         "-ConfigPath", str(path), "-Yes"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+    )
+    assert result.returncode != 0
+    assert "发布配置校验失败" in result.stderr
+
+
 @pytest.mark.parametrize("location", ["inside", "sibling", "outside", "empty", "wrong_extension", "junction"])
 def test_public_upload_script_rejects_outside_or_linked_video(tmp_path, location):
     powershell = shutil.which("pwsh")
