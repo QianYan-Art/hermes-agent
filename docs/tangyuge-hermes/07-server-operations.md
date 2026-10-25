@@ -171,9 +171,15 @@ Retained toolsets:
 
 Delegation runtime:
 
-- `delegate_task(background=true)` is available for single-task async
-  subagents. Results return to the same session through the gateway completion
-  watcher.
+- 2026-10-25 核验：服务器 `agent.disabled_toolsets` 包含 `delegation`，
+  当前会话主模型不应获得 `delegate_task`。上方 retained 列表表示源码保留能力，
+  不表示运行时全部启用；不存在 Kimi CLI 的 Agent／AgentSwarm 或 Swarm 模式。
+- 普通回合的自动记忆／技能审查仍关闭；SOUL、MEMORY 和 USER 未发现自动委派规则。
+- 若以后按用户明确要求重新启用 delegation，静态和动态工具说明都要求当前任务明确授权，
+  不以任务复杂、可并行或技能要求审查为理由自动派发，不通过终端或外部CLI绕过。
+  这是工具提示约束；当前硬边界仍是禁用工具组，不是自然语言授权识别器。
+- 源码保留 `delegate_task(background=true)` 单任务异步能力，完成结果由网关回到原会话；
+  当前禁用配置下不可用。明确请求本身不会自动修改服务器禁用列表。
 - `delegation.max_async_children` defaults to `3`; new background subagent
   dispatches are rejected at capacity instead of queued.
 

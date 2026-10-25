@@ -107,7 +107,7 @@ Tangyuge-Hermes 的 bot 可读主文档统一放在仓库内：
 - "todo压缩、压缩后todo、TODO快照、conversation compression"：读 `05-patches-and-rtk.md` 的上下文压缩与 todo snapshot 行为。
 - "生图、图生图、改图、局部重绘、mask、images.edit、image_generate、image_generate看不到、工具清单、模型工具列表、schema、heredoc、media_tag、MEDIA 图片发送、QQBot 发图、图片发不出去、主动消息、主动推送、event_id、qq_event_id、is_wakeup、qq_is_wakeup、FRIEND_ADD、FRIEND_DEL、C2C_MSG_RECEIVE、C2C_MSG_REJECT、GROUP_ADD_ROBOT、GROUP_DEL_ROBOT、GROUP_MSG_RECEIVE、GROUP_MSG_REJECT"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；执行生图/改图时直接调用 `image_generate`，不要手写 curl/Python/heredoc。
 - "内置skills、skills列表、六个skill、humanizer、creative、no-bundled-skills、上游skill残留"：读 `04-built-in-skills.md`；涉及服务器现场状态再读 `07-server-operations.md`。
-- "异步 subagent、后台 subagent、delegate_task background、background=true、max_async_children"：读 `05-patches-and-rtk.md`；只问当前服务器是否启用或默认并发时再读 `07-server-operations.md`。
+- "子代理默认关闭、自动委派、额度消耗、AgentSwarm、Swarm、异步 subagent、后台 subagent、delegate_task background、background=true、max_async_children"：先读 `07-server-operations.md` 的 Delegation runtime，区分当前硬禁用与源码保留能力；需要实现细节再读 `05-patches-and-rtk.md`。定位文档不授权开启子代理或修改禁用配置。
 - "/new 或 /reset 出现随机 tip、Telegram webhook tip、tips 从哪里来"：读 `05-patches-and-rtk.md`。
 - "MiniMax、视频链路、视频阈值、图片识别、媒体路由"：读 `05-patches-and-rtk.md` 和 `07-server-operations.md`；只问当前服务器状态时先读 `07-server-operations.md`。
 - "bot怎么成为唐语歌、角色卡怎么进内核、通用 SOUL 文档在哪里"：读 `03-identity-prompt.md`；涉及运行时文件边界再读 `00-overview.md`。

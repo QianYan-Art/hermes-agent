@@ -169,7 +169,12 @@ external patch files to replay:
   subagents cannot call `delegate_task`, `clarify`, `memory`, `send_message`,
   or `execute_code`; orchestrator subagents can delegate within configured depth
   but still cannot call `clarify`, `memory`, `send_message`, or `execute_code`.
-- Async subagent delegation is available with `delegate_task(background=true)`.
+- 任务默认由主代理完成，不能因任务复杂、上下文长、可并行或技能要求审查而自动
+  派子代理。`delegate_task` 静态、动态及注册表工具说明均要求用户对当前任务明确请求，
+  批量、嵌套、后台执行受该请求范围约束；不诱导模型自行调大并发、放开递归或绕过禁用。
+  这是提示层规则，不声称模型能可靠判定所有自然语言授权。服务器仍硬禁用 delegation，
+  retained 源码能力不等于当前模型可调用；以07号文档的运行配置为准。
+- Async subagent delegation remains implemented with `delegate_task(background=true)`.
   It is single-task only: a background call returns a `delegation_id`
   immediately, runs the child through `tools/async_delegation.py`, and pushes an
   `async_delegation` completion event through `tools.process_registry` so
