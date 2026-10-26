@@ -91,6 +91,27 @@ def response(state, message, **fields):
             "state": state, "message": message, **fields}
 
 
+def _has_operator_retry_resolution(job):
+    """只接受私有账本中有来源和本人授权的运维结论，公开请求不能设置。"""
+    resolution = job.get("operator_resolution")
+    fields = {"outcome", "release_id", "fingerprint", "checked_at", "source", "owner_authorization_ref"}
+    if (job.get("action") != "publish" or job.get("state") != "needs_attention"
+            or job.get("commit_attempted") is not True or not isinstance(resolution, dict)
+            or set(resolution) != fields or resolution.get("outcome") != "not_listed_at_check"
+            or resolution.get("release_id") != job.get("release_id")
+            or not isinstance(resolution.get("fingerprint"), str)
+            or resolution["fingerprint"] != job.get("fingerprint") or not resolution["fingerprint"]
+            or resolution.get("source") != MANAGE_URL
+            or not isinstance(resolution.get("owner_authorization_ref"), str)
+            or not 1 <= len(resolution["owner_authorization_ref"]) <= 200):
+        return False
+    try:
+        checked = datetime.fromisoformat(resolution["checked_at"].replace("Z", "+00:00"))
+        return checked.tzinfo is not None and checked.timestamp() <= time.time() + 60
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        return False
+
+
 def validate_request(value):
     if not isinstance(value, dict) or not isinstance(value.get("action"), str):
         raise ValueError("作品请求无效")
@@ -277,6 +298,10 @@ class ContentManager:
         if state == "needs_attention" and _sms_verification_visible(job.get("ui")):
             message = "当次发布遇到本人短信验证，未确认发布成功；请先人工核查，不要重复提交。验证码只用于抖音验证页面。"
             public.update(phase="发布时遇到本人短信验证，结果待核实", message=message)
+        if _has_operator_retry_resolution(job):
+            message = "历史提交已由运维核查当时平台未列出，并记录本人重试授权；可重新prepare/stage，正式发布仍需新预览和本人确认。"
+            public.update(phase="历史提交已核查，可重新准备", message=message)
+            extra = {"recovery": {"action": "prepare"}}
         return response(state, message, job=public, **extra)
 
     def _plan(self, token, *, allow_live=False):
@@ -482,6 +507,7 @@ class ContentManager:
             plan, release = self._plan(token, allow_live=action in {"resume_stage", "draft", "publish"})
             unknown_publish = any(j.get("release_id") == plan["release_id"] and j.get("action") == "publish"
                                   and j.get("commit_attempted") is True and j.get("state") == "needs_attention"
+                                  and not _has_operator_retry_resolution(j)
                                   for j in self.jobs.values())
             if action == "resume_stage":
                 if unknown_publish:
@@ -513,6 +539,8 @@ class ContentManager:
             if action == "stage" and not plan.get("cover_id"):
                 raise ValueError("请先由本人选择封面，再重新准备作品")
             for job in self.jobs.values():
+                if action == "publish" and _has_operator_retry_resolution(job):
+                    continue
                 if job.get("fingerprint") == plan["fingerprint"] and job.get("action") == action and (action != "stage" or job.get("token") == token):
                     if action == "stage" and job.get("state") == "editor_ready" and (token not in self._staged or self.editor_lease_remaining() <= 0):
                         self.invalidate_editor()

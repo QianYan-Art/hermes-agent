@@ -552,7 +552,7 @@ def _validate_content_response(result, *, action=None):
         or set(result["recovery"]) != {"action"}
         or not isinstance(result["recovery"]["action"], str)
         or result["recovery"]["action"] not in {
-            "login", "manual_verification", "check_account", "check_status", "maintenance", "inspect_result", "resume_stage"
+            "login", "manual_verification", "check_account", "check_status", "maintenance", "inspect_result", "resume_stage", "prepare"
         }
     ):
         raise ValueError("无效恢复指引")
@@ -1392,6 +1392,7 @@ def register(ctx):
                 "上传是后台任务；in_progress后及时回复当前阶段并结束本轮，不用terminal sleep或循环轮询占住对话。用户追问时查询同一个job，验证码等新消息优先处理。"
                 "用户问进度或是否需要重新上传时，先直接回答当前状态，再排查；不得先连续调用工具而搁置用户的问题。"
                 "job返回recovery.action=resume_stage时，用相同完整plan_id调用resume_stage，在同一存活编辑页继续核验，不重传视频；无此恢复指引不能自行跳过上传或修改私有账本。"
+                "recovery.action=prepare表示旧提交已由受信运维核查并记录本人重试授权，可重新准备；不继承旧发布确认，也不要求用户重复授权同一次已明确的重试意图。"
                 "此预览最长有效 15 分钟。stage 后不要调用 login/status/metrics 或另一次 prepare，因为这些操作会导航并使预览失效；job 查询不会导航。"
                 "错误按 recovery.action 处理：login 会在本人私聊自动尝试附二维码，以 login 当前状态为准；扫码后先查状态，再重新prepare核对，不沿用旧确认或自动重传。"
                 "已有二维码时不要重复调用login；用户说扫码完成后用status检查，二维码过期才重新获取。"

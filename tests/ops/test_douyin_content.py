@@ -372,6 +372,70 @@ async def test_sms_wait_uses_publish_budget_and_does_not_block_other_coroutines(
     assert calls == [30000, 1800000]
 
 
+def _operator_resolution(content, job):
+    return {"outcome": "not_listed_at_check", "release_id": job["release_id"], "fingerprint": job["fingerprint"],
+            "checked_at": content.utc_now(), "source": content.MANAGE_URL, "owner_authorization_ref": "fixture:owner-retry"}
+
+
+@pytest.mark.asyncio
+async def test_operator_resolution_unblocks_new_attempt_without_reusing_unknown_job(manager, content, monkeypatch):
+    manager.covers = SimpleNamespace(load=lambda *_: {"cover_sha256": "d" * 64})
+    prepared = await manager.process({"action": "prepare", "release_id": "ep00", "cover_id": "c" * 64})
+    token = prepared["plan"]["token"]
+    plan, _ = manager._plan(token)
+    old = {"job_id": "c" * 32, "action": "publish", "release_id": "ep00", "state": "needs_attention",
+           "phase": "发布短信结果未知", "message": "待核查", "fingerprint": plan["fingerprint"], "token": "b" * 32,
+           "commit_attempted": True, "recovery": {"action": "inspect_result"}}
+    manager._save_job(old)
+    old["operator_resolution"] = _operator_resolution(content, old)
+    manager._save_job(old)
+    response = manager._job_response(old)
+    assert response["recovery"] == {"action": "prepare"}
+    path = Path(__file__).resolve().parents[2] / "ops/douyin-plugin/__init__.py"
+    spec = importlib.util.spec_from_file_location("dy_operator_resolution_contract", path)
+    plugin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(plugin)
+    assert plugin._validate_content_response(response, action="job")["recovery"] == {"action": "prepare"}
+    assert old["state"] == "needs_attention" and old["commit_attempted"] is True
+    denied = await manager.process({"action": "publish", "token": token})
+    assert denied["state"] == "needs_attention" and "先stage" in denied["message"]
+    manager._staged[token] = {"deadline": time.monotonic() + 100}
+    invoked = []
+
+    async def simulated_run(job, *_):
+        invoked.append(job["job_id"])
+        job.update(state="needs_attention", phase="隔离测试未发布", message="仅检查调度")
+        manager._save_job(job)
+
+    monkeypatch.setattr(manager, "_run", simulated_run)
+    new = await manager.process({"action": "publish", "token": token})
+    await asyncio.gather(*list(manager.tasks.values()))
+    assert new["job"]["job_id"] != old["job_id"] and len(invoked) == 1
+    assert len(manager.jobs) == 2 and old["state"] == "needs_attention"
+    # 新尝试若再次结果未知，旧运维结论不能替新尝试解除防重。
+    manager.jobs[new["job"]["job_id"]]["commit_attempted"] = True
+    assert not content._has_operator_retry_resolution(manager.jobs[new["job"]["job_id"]])
+    blocked = await manager.process({"action": "stage", "token": token})
+    assert blocked["state"] == "needs_attention" and "结果未知" in blocked["message"]
+    assert len(manager.jobs) == 2 and not manager.tasks
+
+
+@pytest.mark.parametrize("field,value", [
+    ("outcome", "published"), ("release_id", "ep01"), ("fingerprint", "different"),
+    ("owner_authorization_ref", ""), ("source", "https://example.com"),
+    ("checked_at", "2026-10-26T12:00:00"), ("checked_at", None),
+])
+def test_incomplete_or_mismatched_operator_resolution_does_not_unlock_publish(content, field, value):
+    job = {"action": "publish", "state": "needs_attention", "commit_attempted": True,
+           "release_id": "ep00", "fingerprint": "a" * 64}
+    resolution = _operator_resolution(content, job)
+    resolution[field] = value
+    job["operator_resolution"] = resolution
+    assert not content._has_operator_retry_resolution(job)
+    with pytest.raises(ValueError):
+        content.validate_request({"action": "stage", "token": "a" * 32, "operator_resolution": resolution})
+
+
 def test_job_response_keeps_private_diagnostics_without_hiding_unknown_commit(manager):
     job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00",
            "state": "needs_attention", "phase": "结果待核实", "updated_at": "2026-10-26T04:17:17Z",
