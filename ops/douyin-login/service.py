@@ -458,8 +458,10 @@ class PlaywrightBrowser:
                     return True
         return False
 
-    async def _wait_for_login_ui(self, page, wait_for_qr: bool) -> dict[str, object]:
-        deadline = asyncio.get_running_loop().time() + LOGIN_WAIT_SECONDS
+    async def _wait_for_login_ui(
+        self, page, wait_for_qr: bool, timeout_seconds: float = LOGIN_WAIT_SECONDS
+    ) -> dict[str, object]:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
         while True:
             snapshot = await self._snapshot(page)
             state = classify_page(snapshot, self.config.expected_account)

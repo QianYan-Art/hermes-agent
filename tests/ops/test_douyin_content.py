@@ -354,6 +354,32 @@ async def test_prepare_returns_typed_account_recovery(manager, content, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_account_page_uses_extended_wait_without_relaxing_identity(manager, content, monkeypatch):
+    page = SimpleNamespace()
+    snapshot = {
+        "has_creator_navigation": True,
+        "expected_account_visible": True,
+        "account_ids": ["expected"],
+    }
+    manager.browser._page = AsyncMock(return_value=page)
+    manager.browser._wait_for_login_ui = AsyncMock(return_value=snapshot)
+    manager.invalidate_editor = lambda: None
+    monkeypatch.setattr(manager, "_navigate_entry", AsyncMock())
+    monkeypatch.setitem(sys.modules, "service", SimpleNamespace(
+        classify_page=lambda value, expected: "logged_in"
+        if value["expected_account_visible"] and expected == "expected" else "unknown"
+    ))
+
+    result = await content.ContentManager._account_page(manager)
+
+    assert result is page
+    manager.browser._wait_for_login_ui.assert_awaited_once_with(
+        page, wait_for_qr=False, timeout_seconds=content.ACCOUNT_WAIT_SECONDS
+    )
+    assert content.ACCOUNT_WAIT_SECONDS > 8
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("committed", [False, True])
 async def test_job_account_recovery_never_reopens_unknown_commit(manager, content, monkeypatch, committed):
     async def execute(*_):

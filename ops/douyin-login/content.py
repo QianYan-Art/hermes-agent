@@ -33,6 +33,7 @@ COVER_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
 PLAN_TTL = 15 * 60
 JOB_TIMEOUT = 10 * 60
 PAGE_OPERATION_TIMEOUT = 40
+ACCOUNT_WAIT_SECONDS = 30
 ACCOUNT_RECOVERY = {
     "login_required": ("login", "抖音登录已失效，需要扫码后重新准备作品。"),
     "verification_required": ("manual_verification", "抖音要求本人完成设备或身份验证，不能自动绕过。"),
@@ -298,7 +299,11 @@ class ContentManager:
         self.invalidate_editor()
         page = await self.browser._page()
         await self._navigate_entry(page, HOME_URL)
-        snapshot = await self.browser._wait_for_login_ui(page, wait_for_qr=False)
+        # 空闲回收后的冷启动可能让账号导航晚于普通状态查询出现；仍在固定页面
+        # 和有限时间内等待，并继续要求创作者导航与预期账号同时匹配。
+        snapshot = await self.browser._wait_for_login_ui(
+            page, wait_for_qr=False, timeout_seconds=ACCOUNT_WAIT_SECONDS
+        )
         # 复用登录服务现有的账号与挑战判别，不将 Cookie 存在视为授权。
         import service
         state = service.classify_page(snapshot, self.browser.config.expected_account)

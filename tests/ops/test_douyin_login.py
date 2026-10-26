@@ -533,6 +533,28 @@ def test_verification_tab_label_alone_does_not_mean_a_challenge():
     assert douyin_login.classify_page(snapshot, "creator-id") == "unknown"
 
 
+@pytest.mark.asyncio
+async def test_login_ui_wait_accepts_bounded_cold_start_timeout():
+    logged_in = {
+        "has_creator_navigation": True,
+        "expected_account_visible": True,
+        "account_ids": ["creator-id"],
+    }
+    browser = SimpleNamespace(
+        config=SimpleNamespace(expected_account="creator-id"),
+        _snapshot=AsyncMock(side_effect=[{}, {}, {}, logged_in]),
+    )
+    page = SimpleNamespace(wait_for_timeout=AsyncMock())
+
+    result = await douyin_login.PlaywrightBrowser._wait_for_login_ui(
+        browser, page, wait_for_qr=False, timeout_seconds=2
+    )
+
+    assert result is logged_in
+    assert browser._snapshot.await_count == 4
+    assert page.wait_for_timeout.await_count == 3
+
+
 def test_response_limits_qr_image_and_uses_only_contract_fields():
     too_large = b"x" * (douyin_login.MAX_QR_BYTES + 1)
     result = douyin_login.make_response("login_required", qr_png=too_large)
