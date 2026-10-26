@@ -646,3 +646,38 @@ def test_pair_rejects_missing_or_recursive_references(tmp_path, failure):
         manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True))
     with pytest.raises(covers.CoverError, match="引用的单图资产无效"):
         store.load("ep00", paired["cover_id"])
+
+
+def test_published_cover_library_survives_removal_of_source_video(tmp_path):
+    data, video, store = _store(tmp_path)
+    landscape, portrait = _paired_cover_inputs(store)
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    record = data / "published-records" / "ep00"
+    record.mkdir(parents=True)
+    (video.parent / "manifest.json").rename(record / "manifest.json")
+    video.unlink()
+    video.parent.rmdir()
+    assert store.catalog()["total"] == 3
+    assert store.catalog("ep00")["total"] == 3
+    assert store.load("ep00", paired["cover_id"])["layout"] == "paired"
+    _write_release(data, "ep01", b"new original")
+    reused = store.reuse("ep01", "ep00", paired["cover_id"])
+    assert store.load("ep01", reused["cover_id"])["layout"] == "paired"
+    with pytest.raises(releases.ReleaseError):
+        store.frames("ep00", [1.0])
+    with pytest.raises(releases.ReleaseError):
+        store.reuse("ep00", "ep01", reused["cover_id"])
+
+
+def test_recorded_cover_still_rejects_tampered_assets(tmp_path):
+    data, video, store = _store(tmp_path)
+    cover = store.import_image("ep00", _image_bytes())
+    source = store.load("ep00", cover["cover_id"])["source_path"]
+    record = data / "published-records" / "ep00"
+    record.mkdir(parents=True)
+    (video.parent / "manifest.json").rename(record / "manifest.json")
+    video.unlink()
+    video.parent.rmdir()
+    source.write_bytes(b"corrupt")
+    with pytest.raises(covers.CoverError):
+        store.catalog("ep00")

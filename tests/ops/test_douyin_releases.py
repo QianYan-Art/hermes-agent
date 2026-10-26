@@ -305,3 +305,42 @@ def test_install_rejects_symlinked_source_video(tmp_path):
     with pytest.raises(releases.ReleaseError, match="链接"):
         stage_release.install_release(source, tmp_path / "state")
 
+
+def test_recorded_manifest_is_metadata_only_and_not_an_upload(tmp_path):
+    data = tmp_path / "state"
+    package = _write_package(data / "published-records", "ep00", b"video")
+    (package / "video.mp4").unlink()
+    store = releases.ReleaseStore(data)
+    assert store.load_metadata("ep00")["video_bytes"] == 5
+    assert [item["release_id"] for item in store.list_metadata()] == ["ep00"]
+    assert store.list_releases() == []
+    with pytest.raises(releases.ReleaseError):
+        store.load("ep00")
+
+
+@pytest.mark.parametrize("failure", ["mismatched_id", "extra_file", "invalid_manifest", "broken_live_package"])
+def test_recorded_metadata_rejects_invalid_or_shadowed_records(tmp_path, failure):
+    data = tmp_path / "state"
+    package = _write_package(data / "published-records", "ep00", b"video")
+    (package / "video.mp4").unlink()
+    if failure == "mismatched_id":
+        (package / "manifest.json").write_text(json.dumps(_manifest("ep01", b"video")))
+    elif failure == "extra_file":
+        (package / "extra").write_text("unexpected")
+    elif failure == "invalid_manifest":
+        (package / "manifest.json").write_text("{}")
+    else:
+        (data / "releases" / "ep00").mkdir(parents=True)
+    with pytest.raises(releases.ReleaseError):
+        releases.ReleaseStore(data).load_metadata("ep00")
+
+
+def test_recorded_metadata_rejects_symlinked_directory(tmp_path):
+    data = tmp_path / "state"
+    record = _write_package(tmp_path / "outside", "ep00", b"video")
+    (record / "video.mp4").unlink()
+    (data / "published-records").mkdir(parents=True)
+    _symlink_or_skip(data / "published-records" / "ep00", record, target_is_directory=True)
+    with pytest.raises(releases.ReleaseError):
+        releases.ReleaseStore(data).list_metadata()
+

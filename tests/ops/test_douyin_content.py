@@ -121,7 +121,12 @@ async def test_saved_cover_import_uses_strict_base64(manager):
 def manager(content, tmp_path, monkeypatch):
     release = {"release_id": "ep00", "title": "序栞", "description": "星栞书库", "ai_generated": True,
                "video_sha256": "a" * 64, "video_path": tmp_path / "video.mp4"}
-    store = SimpleNamespace(load=lambda release_id: dict(release), list_releases=lambda: [{"release_id": "ep00"}])
+    store = SimpleNamespace(
+        load=lambda release_id: dict(release),
+        load_metadata=lambda release_id: dict(release),
+        list_releases=lambda: [{"release_id": "ep00"}],
+        list_metadata=lambda: [{"release_id": "ep00"}],
+    )
     monkeypatch.setattr(content, "ReleaseStore", lambda data_dir: store)
     browser = SimpleNamespace(config=SimpleNamespace(data_dir=tmp_path, expected_account="expected"), _context=None)
     result = content.ContentManager(browser, asyncio.Lock())

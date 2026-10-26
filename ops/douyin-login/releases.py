@@ -278,5 +278,35 @@ class ReleaseStore:
             raise ReleaseError("作品目录不存在")
         return _load_package(self.releases_dir / release_id, release_id)
 
+    def load_metadata(self, release_id: str) -> dict[str, object]:
+        """仅供已存封面校验；发布记录不能代替可上传的完整作品包。"""
+        release_id = validate_release_id(release_id)
+        assert_safe_directory(self.data_dir)
+        assert_safe_directory(self.releases_dir, allow_missing=True)
+        if os.path.lexists(self.releases_dir / release_id):
+            return self.load(release_id)
+        records = self.data_dir / "published-records"
+        assert_safe_directory(records)
+        directory = records / release_id
+        assert_safe_directory(directory)
+        if {entry.name for entry in directory.iterdir()} != {"manifest.json"}:
+            raise ReleaseError("发布清单目录内容无效")
+        manifest = _read_manifest(directory / "manifest.json")
+        if manifest["release_id"] != release_id:
+            raise ReleaseError("发布清单作品编号不一致")
+        return manifest
+
+    def list_metadata(self) -> list[dict[str, object]]:
+        """图库包含已移除原片的发布清单，上传列表仍只含完整原片。"""
+        releases = {item["release_id"]: item for item in self.list_releases()}
+        records = self.data_dir / "published-records"
+        if not assert_safe_directory(records, allow_missing=True):
+            return list(releases.values())
+        for entry in sorted(records.iterdir(), key=lambda path: path.name):
+            release_id = validate_release_id(entry.name)
+            if release_id not in releases:
+                releases[release_id] = self.load_metadata(release_id)
+        return [releases[key] for key in sorted(releases)]
+
 
 __all__ = ["ReleaseError", "ReleaseStore"]

@@ -267,9 +267,10 @@ class CoverStore:
         self.covers_dir = self.data_dir / "covers"
         self.release_store = release_store
 
-    def _release(self, release_id: str) -> dict[str, object]:
+    def _release(self, release_id: str, *, metadata_only: bool = False) -> dict[str, object]:
         release_id = validate_release_id(release_id)
-        release = self.release_store.load(release_id)
+        release = (self.release_store.load_metadata(release_id) if metadata_only
+                   else self.release_store.load(release_id))
         if not isinstance(release, dict) or release.get("release_id") != release_id:
             raise CoverError("发布作品信息无效")
         video_sha256 = release.get("video_sha256")
@@ -279,13 +280,13 @@ class CoverStore:
             raise CoverError("原视频摘要无效")
         if not _finite_number(duration) or duration <= 0:
             raise CoverError("原视频时长无效")
-        if not isinstance(video_path, (str, os.PathLike)):
+        if not metadata_only and not isinstance(video_path, (str, os.PathLike)):
             raise CoverError("原视频路径无效")
         return {
             "release_id": release_id,
             "video_sha256": video_sha256,
             "duration": float(duration),
-            "video_path": Path(video_path),
+            "video_path": Path(video_path) if isinstance(video_path, (str, os.PathLike)) else None,
         }
 
     def _ensure_layout(self, release_id: str) -> Path:
@@ -430,7 +431,7 @@ class CoverStore:
             ):
                 raise CoverError("配对封面引用编号无效")
             try:
-                source_release = self._release(source_release_id)
+                source_release = self._release(source_release_id, metadata_only=True)
                 landscape = self._load_asset(source_release, landscape_cover_id, allow_pair=False)
                 portrait = self._load_asset(source_release, portrait_cover_id, allow_pair=False)
             except Exception as exc:
@@ -550,15 +551,15 @@ class CoverStore:
         return private
 
     def load(self, release_id: str, cover_id: str) -> dict[str, object]:
-        release = self._release(release_id)
+        release = self._release(release_id, metadata_only=True)
         return self._load_asset(release, cover_id)
 
     def catalog(self, release_id: str | None = None, offset: int = 0) -> dict[str, object]:
         """分页提供已有封面预览；每页最多五组，不重新提帧。"""
         if type(offset) is not int or not 0 <= offset <= 10000:
             raise CoverError("图库分页偏移无效")
-        releases = ([self._release(release_id)] if release_id is not None
-                    else self.release_store.list_releases())
+        releases = ([self._release(release_id, metadata_only=True)] if release_id is not None
+                    else self.release_store.list_metadata())
         identities: set[tuple[str, str]] = set()
         for release in releases:
             rid = str(release["release_id"])
@@ -612,7 +613,7 @@ class CoverStore:
             if from_release_id is not None
             else str(release["release_id"])
         )
-        source_release = self._release(source_release_id)
+        source_release = self._release(source_release_id, metadata_only=True)
         landscape = self._load_asset(source_release, landscape_cover_id, allow_pair=False)
         portrait = self._load_asset(source_release, portrait_cover_id, allow_pair=False)
         landscape_source_path = landscape.get("source_path")
