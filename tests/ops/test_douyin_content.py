@@ -86,6 +86,50 @@ async def test_prepare_binds_metadata_content_and_account_without_starting_job(m
     assert "account" not in result["plan"] and "video_path" not in result["plan"]
 
 
+def test_job_response_keeps_private_diagnostics_without_hiding_unknown_commit(manager):
+    job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00",
+           "state": "needs_attention", "phase": "结果待核实", "updated_at": "2026-10-26T04:17:17Z",
+           "message": "已尝试提交，请核对实际结果，不要重投。", "commit_attempted": True,
+           "recovery": {"action": "inspect_result"},
+           "ui": {"text_tail": "网页诊断可能含 /private/path 或高熵长文本"}}
+    result = manager._job_response(job)
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    assert "ui" not in result
+    assert job["commit_attempted"] is True and "ui" in job
+
+
+def test_unknown_job_response_survives_plugin_security_validation(manager):
+    path = Path(__file__).resolve().parents[2] / "ops/douyin-plugin/__init__.py"
+    spec = importlib.util.spec_from_file_location("job_response_plugin_contract", path)
+    plugin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(plugin)
+    job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00",
+           "state": "needs_attention", "phase": "结果待核实", "updated_at": "2026-10-26T04:17:17Z",
+           "message": "已尝试提交，不要重投。", "commit_attempted": True,
+           "recovery": {"action": "inspect_result"}, "ui": {"text_tail": "/private/path"}}
+    response = manager._job_response(job)
+    assert plugin._validate_content_response(response, action="job")["state"] == "needs_attention"
+    with pytest.raises(ValueError):
+        plugin._validate_content_response({**response, "ui": job["ui"]}, action="job")
+
+
+@pytest.mark.asyncio
+async def test_library_routes_do_not_open_browser_or_create_publish_job(manager):
+    from unittest.mock import Mock
+
+    manager.covers = SimpleNamespace(
+        catalog=Mock(return_value={"covers": [], "total": 0, "next_offset": None}),
+        reuse=Mock(return_value={"release_id": "ep01", "cover_id": "a" * 64}),
+    )
+    result = await manager.process({"action": "cover_library", "release_id": "ep00", "offset": 0})
+    assert result["state"] == "ready" and result["total"] == 0
+    result = await manager.process({"action": "cover_reuse", "release_id": "ep01", "from_release_id": "ep00", "cover_id": "b" * 64})
+    assert result["cover"]["release_id"] == "ep01"
+    manager.covers.reuse.assert_called_once_with("ep01", "ep00", "b" * 64)
+    assert not manager.jobs and manager.browser._context is None
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error,retries", [(TimeoutError(), 2), (ConnectionError(), 2), (ValueError("页面不匹配"), 1)])
 async def test_navigation_retries_only_transient_errors_before_upload(manager, content, monkeypatch, error, retries):

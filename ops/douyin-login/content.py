@@ -83,6 +83,8 @@ def validate_request(value):
         "editor_check": {"action", "release_id", "cover_id", "visibility", "publish_at", "view"},
         "covers": {"action", "release_id", "times"},
         "cover_import": {"action", "release_id", "image_base64"},
+        "cover_library": {"action", "release_id", "offset"},
+        "cover_reuse": {"action", "release_id", "from_release_id", "cover_id"},
         "prepare": {"action", "release_id", "title", "description", "cover_id", "visibility", "publish_at"},
         "stage": {"action", "token"},
         "draft": {"action", "token"}, "publish": {"action", "token"},
@@ -90,6 +92,16 @@ def validate_request(value):
     }
     if action not in allowed or set(value) - allowed[action]:
         raise ValueError("作品请求包含未支持的操作或字段")
+    if action == "cover_library":
+        if "release_id" in value and (not isinstance(value["release_id"], str) or not ID_PATTERN.fullmatch(value["release_id"])):
+            raise ValueError("作品编号无效")
+        if "offset" in value and (type(value["offset"]) is not int or not 0 <= value["offset"] <= 10000):
+            raise ValueError("图库分页偏移无效")
+    if action == "cover_reuse":
+        if any(not isinstance(value.get(k), str) or not ID_PATTERN.fullmatch(value[k]) for k in ("release_id", "from_release_id")):
+            raise ValueError("作品编号无效")
+        if not isinstance(value.get("cover_id"), str) or not COVER_PATTERN.fullmatch(value["cover_id"]):
+            raise ValueError("封面编号无效")
     if action == "inspect" and value.get("view", "current") not in {"current", "saved_editor"}:
         raise ValueError("只支持当前页或已有暂存编辑页核查")
     if action == "editor_check" and value.get("view", "current") not in {"current", "saved_editor"}:
@@ -221,7 +233,8 @@ class ContentManager:
         if job.get("state") == "editor_ready" and self.editor_lease_remaining() <= 0:
             self.invalidate_editor()
         public = {key: job[key] for key in ("job_id", "action", "release_id", "state", "phase", "updated_at", "message")}
-        extra = {"ui": job["ui"]} if job.get("state") == "needs_attention" and "ui" in job else {}
+        # 网页诊断快照保留在私有账本；公开状态不夹带任意页面文本，避免严格脱敏拒绝整包。
+        extra = {}
         state = job["state"]
         if state == "needs_attention":
             if "recovery" in job:
@@ -310,6 +323,12 @@ class ContentManager:
                     raise ValueError("封面图片编码无效") from exc
                 cover = await asyncio.to_thread(self.covers.import_image, request["release_id"], image)
                 return response("ready", "本人图片已转换为双比例候选封面，尚未应用。图像保留完整画面并加黑边；请核对预览或提供合适比例的专用封面。", cover=cover)
+            if action == "cover_library":
+                catalog = await asyncio.to_thread(self.covers.catalog, request.get("release_id"), request.get("offset", 0))
+                return response("ready", "已读取保存的封面，按来源分类，每页最多五组；复用前由本人选择，不重新提帧。", **catalog)
+            if action == "cover_reuse":
+                cover = await asyncio.to_thread(self.covers.reuse, request["release_id"], request["from_release_id"], request["cover_id"])
+                return response("ready", "已有封面已绑定到目标作品，尚未应用、上传或发布；请本人核对双比例预览。", cover=cover)
             if action in {"stage", "draft", "publish"}:
                 return await self._start_job(action, request["token"])
             if self.browser_lock.locked():

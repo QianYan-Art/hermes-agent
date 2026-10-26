@@ -358,7 +358,7 @@ def test_registration_preserves_login_and_registers_content_hook():
     assert "confirmed" not in ctx.tools["douyin_content"]["schema"]["parameters"]["properties"]
     content_schema = ctx.tools["douyin_content"]["schema"]
     assert content_schema["parameters"]["properties"]["action"]["enum"] == [
-        "list", "metrics", "covers", "cover_sources", "cover_import", "prepare", "stage", "draft", "job", "publish"
+        "list", "metrics", "covers", "cover_sources", "cover_import", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"
     ]
     assert "15 分钟" in content_schema["description"]
     assert "job 查询不会导航" in content_schema["description"]
@@ -605,6 +605,73 @@ def test_gateway_passes_actual_inbound_message_id_for_confirmation():
         assert get_session_env("HERMES_SESSION_MESSAGE_ID") == "qq-actual-message"
     finally:
         clear_session_vars(reset)
+
+
+@pytest.mark.parametrize("args", [
+    {"action": "cover_library", "offset": True},
+    {"action": "cover_library", "offset": -1},
+    {"action": "cover_library", "release_id": "../ep00"},
+    {"action": "cover_library", "path": "/tmp/a"},
+    {"action": "cover_reuse", "release_id": "ep01", "from_release_id": "../ep00", "cover_id": "a" * 64},
+    {"action": "cover_reuse", "release_id": "ep01", "from_release_id": "ep00", "cover_id": "***"},
+])
+def test_library_payload_rejects_untrusted_identifiers_and_paths(args):
+    with pytest.raises(ValueError):
+        plugin._content_payload(args)
+
+
+@pytest.mark.parametrize("action", ["cover_library", "cover_reuse"])
+def test_library_requires_actual_owner_dm_even_when_cli_is_allowed(monkeypatch, action):
+    from gateway.session_context import clear_session_vars, set_session_vars
+
+    monkeypatch.setenv("DOUYIN_OWNER_QQ_USER_ID", "owner")
+    tokens = set_session_vars()
+    args = {"action": action}
+    if action == "cover_reuse":
+        args.update(release_id="ep01", from_release_id="ep00", cover_id="a" * 64)
+    try:
+        assert json.loads(asyncio.run(plugin.handle_content(args)))["state"] == "unavailable"
+    finally:
+        clear_session_vars(tokens)
+
+
+@pytest.mark.parametrize("action", ["cover_library", "cover_reuse"])
+def test_owner_library_actions_reach_only_the_validated_service_protocol(owner_context, monkeypatch, action):
+    monkeypatch.syspath_prepend(str(ROOT / "ops/douyin-login"))
+    spec = importlib.util.spec_from_file_location("douyin_library_contract", ROOT / "ops/douyin-login/content.py")
+    service = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(service)
+    calls = []
+
+    async def request(payload):
+        calls.append(service.validate_request(payload))
+        return _success_response("ready")
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    args = {"action": action}
+    if action == "cover_reuse":
+        args.update(release_id="ep01", from_release_id="ep00", cover_id="a" * 64)
+    result = json.loads(asyncio.run(plugin.handle_content(args)))
+    assert result["state"] == "ready" and calls == [args]
+
+
+@pytest.mark.parametrize("action", ["cover_library", "cover_reuse"])
+def test_library_response_uses_existing_safe_preview_pipeline(monkeypatch, tmp_path, action):
+    import hermes_constants
+
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+    response = _cover_response()
+    if action == "cover_library":
+        response.update(total=1, next_offset=None)
+    else:
+        response["cover"] = response.pop("covers")[0]
+        response["cover"]["source"] = "library_image"
+        response["cover"].pop("time", None)
+    sanitized = plugin._validate_content_response(response, action=action)
+    assert "jpeg_base64" not in json.dumps(sanitized)
+    assert len(sanitized["media_tags"]) == 2
+    with pytest.raises(ValueError):
+        plugin._validate_content_response(response, action="list")
 
 
 def _configure_image_cache(monkeypatch, tmp_path):

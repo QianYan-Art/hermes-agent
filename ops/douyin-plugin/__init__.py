@@ -33,7 +33,7 @@ CONTENT_STATES = {
 }
 _CONTENT_ROOT_FIELDS = {
     "ok", "state", "message", "releases", "plan", "job", "metrics", "ui",
-    "covers", "cover_sources", "cover", "recovery",
+    "covers", "cover_sources", "cover", "recovery", "total", "next_offset",
 }
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -144,9 +144,7 @@ async def _request_once(action, *, recovery=False):
 def _valid_release_id(value):
     return (
         isinstance(value, str)
-        and 0 < len(value) <= 256
-        and value == value.strip()
-        and not any(ord(char) < 32 for char in value)
+        and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value, re.ASCII) is not None
     )
 
 
@@ -187,6 +185,20 @@ def _content_payload(args):
     elif action == "cover_sources":
         if set(args) != {"action"}:
             raise ValueError("cover_sources 仅接受 action")
+    elif action == "cover_library":
+        if not set(args) <= {"action", "release_id", "offset"}:
+            raise ValueError("cover_library 字段无效")
+        if "release_id" in args and not _valid_release_id(args["release_id"]):
+            raise ValueError("release_id 无效")
+        if "offset" in args and (type(args["offset"]) is not int or not 0 <= args["offset"] <= 10000):
+            raise ValueError("图库分页偏移无效")
+    elif action == "cover_reuse":
+        if set(args) != {"action", "release_id", "from_release_id", "cover_id"}:
+            raise ValueError("cover_reuse 字段无效")
+        if any(not _valid_release_id(args[k]) for k in ("release_id", "from_release_id")):
+            raise ValueError("作品编号无效")
+        if not isinstance(args["cover_id"], str) or not _SHA256_RE.fullmatch(args["cover_id"]):
+            raise ValueError("封面编号无效")
     elif action == "cover_import":
         if set(args) != {"action", "release_id", "image_id"}:
             raise ValueError("cover_import 字段无效")
@@ -522,8 +534,13 @@ def _validate_content_response(result, *, action=None):
     for field in ("plan", "job", "metrics", "ui"):
         if field in result and not isinstance(result[field], dict):
             raise ValueError(f"{field} 响应无效")
-    if "cover" in result and (action != "cover_import" or not isinstance(result["cover"], dict)):
+    if "cover" in result and (action not in {"cover_import", "cover_reuse"} or not isinstance(result["cover"], dict)):
         raise ValueError("意外的 cover 响应")
+    if any(k in result for k in ("total", "next_offset")):
+        if (action != "cover_library" or type(result.get("total")) is not int or result["total"] < 0
+                or (result.get("next_offset") is not None and (
+                    type(result["next_offset"]) is not int or not 0 <= result["next_offset"] <= result["total"]))):
+            raise ValueError("图库分页响应无效")
     if "cover_sources" in result and (
         not isinstance(result["cover_sources"], list)
         or any(not isinstance(item, dict) for item in result["cover_sources"])
@@ -534,7 +551,7 @@ def _validate_content_response(result, *, action=None):
     sanitized_cover = None
     decoded_previews = []
     if "covers" in result:
-        if action != "covers":
+        if action not in {"covers", "cover_library"}:
             raise ValueError("意外的 covers 响应")
         sanitized_covers, decoded_previews = _decode_cover_responses(result["covers"])
         result_to_scan = dict(result)
@@ -861,10 +878,11 @@ async def handle_content(args, **kwargs):
             "内容操作参数无效；未执行任何操作。stage/draft 使用 prepare 返回的完整 plan_id；"
             "收到本人确认后，publish 仅传 action，不复制 token、星号或缩略值，不重复相同错误调用。"
         )}, ensure_ascii=False)
-    owner_scope = _owner_qq_dm_scope() if action in {"cover_sources", "cover_import"} else None
-    if action in {"cover_sources", "cover_import"} and owner_scope is None:
-        return json.dumps({"ok": False, "state": "unavailable", "message": "封面图片来源仅可在指定 QQ 私聊中查看或导入。"}, ensure_ascii=False)
-    if action not in {"cover_sources", "cover_import"} and not _authorized():
+    owner_actions = {"cover_sources", "cover_import", "cover_library", "cover_reuse"}
+    owner_scope = _owner_qq_dm_scope() if action in owner_actions else None
+    if action in owner_actions and owner_scope is None:
+        return json.dumps({"ok": False, "state": "unavailable", "message": "封面库与图片来源仅可在指定 QQ 私聊中查看、导入或复用。"}, ensure_ascii=False)
+    if action not in owner_actions and not _authorized():
         return json.dumps({"ok": False, "state": "unavailable", "message": "仅指定账号的 QQ 私聊或本机运维可用。"}, ensure_ascii=False)
     if action == "cover_sources":
         result = {
@@ -977,6 +995,8 @@ def register(ctx):
             "description": (
                 "管理抖音作品。先用 list 选择服务器上的成品；用 covers 查看视频帧，或在指定 QQ 私聊中用 cover_sources 列候选图片、"
                 "再按 image_id 调用 cover_import。把候选 MEDIA 预览给用户并等待其明确选择 cover_id，禁止自行选封面。"
+                "已有封面先用 cover_library 浏览，区分用户上传、视频提帧和库中复用；可传release_id筛选、offset按next_offset翻页。"
+                "本人选择库中封面后，用cover_reuse传目标release_id、来源from_release_id及来源cover_id，取得目标的新cover_id后再prepare；不能直接把另一作品的旧ID用于目标作品，也不重新提帧替代查询图库。"
                 "用户选择后用 prepare（必须传该 cover_id）确认标题、简介、封面、可见范围和可选定时；若用户要求暂存则调用 draft。"
                 "prepare 返回 plan.plan_id，stage/draft 必须完整传入 plan_id，不缩略、不替换星号；这只是计划引用，不是API密钥。"
                 "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 plan_id 会保存当前预览，否则按草稿流程上传。"
@@ -992,7 +1012,9 @@ def register(ctx):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "metrics", "covers", "cover_sources", "cover_import", "prepare", "stage", "draft", "job", "publish"]},
+                    "action": {"type": "string", "enum": ["list", "metrics", "covers", "cover_sources", "cover_import", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"]},
+                    "from_release_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
                     "release_id": {"type": "string"},
                     "image_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
                     "times": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "number", "minimum": 0, "maximum": 1e12}},

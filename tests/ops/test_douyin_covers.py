@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -140,7 +141,7 @@ def test_normalized_duplicate_is_idempotent_and_identity_binds_release_and_video
     second_png = _image_bytes("PNG", note="different metadata")
 
     first = store.import_image("ep00", first_png)
-    cover_dir = data_dir / "covers" / "ep00" / first["cover_id"]
+    cover_dir = data_dir / "covers" / "ep00" / "uploads" / first["cover_id"]
     before = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in cover_dir.iterdir()}
     second = store.import_image("ep00", second_png)
 
@@ -262,7 +263,7 @@ def test_existing_id_with_tampered_file_fails_closed_without_replacing_it(tmp_pa
     _data_dir, _video_path, store = _store(tmp_path)
     image = _image_bytes("PNG")
     public = store.import_image("ep00", image)
-    tampered = tmp_path / "state" / "covers" / "ep00" / public["cover_id"] / "portrait.jpg"
+    tampered = tmp_path / "state" / "covers" / "ep00" / "uploads" / public["cover_id"] / "portrait.jpg"
     tampered.write_bytes(b"changed")
 
     with pytest.raises(covers.CoverError, match="摘要不一致"):
@@ -302,7 +303,7 @@ def test_unchanged_legacy_cover_derivatives_remain_loadable(tmp_path):
 def test_load_rejects_cover_bytes_with_coordinated_manifest_digest(tmp_path):
     _data_dir, _video_path, store = _store(tmp_path)
     public = store.import_image("ep00", _image_bytes("PNG"))
-    cover_dir = tmp_path / "state" / "covers" / "ep00" / public["cover_id"]
+    cover_dir = tmp_path / "state" / "covers" / "ep00" / "uploads" / public["cover_id"]
     landscape = cover_dir / "landscape.jpg"
     changed_bytes = _image_bytes("JPEG", color=(0, 190, 40), size=(1200, 900))
     landscape.write_bytes(changed_bytes)
@@ -322,7 +323,7 @@ def test_load_rejects_cover_bytes_with_coordinated_manifest_digest(tmp_path):
 def test_load_rejects_symlinked_cover_assets(tmp_path, monkeypatch):
     _data_dir, _video_path, store = _store(tmp_path)
     public = store.import_image("ep00", _image_bytes())
-    cover_dir = tmp_path / "state" / "covers" / "ep00" / public["cover_id"]
+    cover_dir = tmp_path / "state" / "covers" / "ep00" / "uploads" / public["cover_id"]
     asset = cover_dir / "landscape.jpg"
     outside = tmp_path / "outside.jpg"
     outside.write_bytes(asset.read_bytes())
@@ -363,7 +364,7 @@ def test_load_rejects_malformed_manifest_fields(tmp_path):
     _data_dir, _video_path, store = _store(tmp_path)
     public = store.import_image("ep00", _image_bytes())
     manifest_path = (
-        tmp_path / "state" / "covers" / "ep00" / public["cover_id"] / "cover.json"
+        tmp_path / "state" / "covers" / "ep00" / "uploads" / public["cover_id"] / "cover.json"
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["source"] = []
@@ -371,3 +372,90 @@ def test_load_rejects_malformed_manifest_fields(tmp_path):
 
     with pytest.raises(covers.CoverError):
         store.load("ep00", public["cover_id"])
+
+
+def test_classified_layout_keeps_legacy_idempotency_and_rejects_ambiguous_copy(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    image = _image_bytes()
+    public = store.import_image("ep00", image)
+    directory = store.load("ep00", public["cover_id"])["source_path"].parent
+    assert directory.parent.name == "uploads"
+    original = {p.name: p.read_bytes() for p in directory.iterdir()}
+    legacy = data_dir / "covers" / "ep00" / public["cover_id"]
+    directory.rename(legacy)
+    assert store.load("ep00", public["cover_id"])["source_path"].parent == legacy
+    assert store.import_image("ep00", image)["cover_id"] == public["cover_id"]
+    assert original == {p.name: p.read_bytes() for p in legacy.iterdir()}
+    shutil.copytree(legacy, directory)
+    with pytest.raises(covers.CoverError, match="多份"):
+        store.load("ep00", public["cover_id"])
+    with pytest.raises(covers.CoverError, match="多份"):
+        store.catalog()
+
+
+def test_catalog_paginates_existing_assets_without_generating_frames(tmp_path):
+    _, _, store = _store(tmp_path)
+    expected = {store.import_image("ep00", _image_bytes(color=(i * 35, 20, 30)))["cover_id"] for i in range(6)}
+    first = store.catalog()
+    second = store.catalog("ep00", first["next_offset"])
+    assert first["total"] == second["total"] == 6
+    assert len(first["covers"]) == 5
+    assert second["next_offset"] is None
+    assert {c["cover_id"] for c in first["covers"] + second["covers"]} == expected
+    with pytest.raises(covers.CoverError):
+        store.catalog(offset=True)
+
+
+def test_library_reuse_rebinds_target_identity_and_preserves_original(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    _write_release(data_dir, "ep01", b"target video")
+    original = store.import_image("ep00", _image_bytes())
+    source = store.load("ep00", original["cover_id"])
+    source_bytes = source["source_path"].read_bytes()
+    reused = store.reuse("ep01", "ep00", original["cover_id"])
+    assert reused["cover_id"] != original["cover_id"]
+    assert reused["cover_sha256"] == original["cover_sha256"]
+    assert reused["source"] == "library_image"
+    assert "time" not in reused
+    target = store.load("ep01", reused["cover_id"])
+    assert target["source_path"].parent.parent.name == "reused"
+    assert target["source_path"].read_bytes() == source_bytes == source["source_path"].read_bytes()
+    same = store.reuse("ep00", "ep00", original["cover_id"])
+    assert same["cover_id"] == original["cover_id"]
+    assert same["source"] == "qq_image"
+    assert not (data_dir / "covers" / "ep00" / "reused").exists()
+
+
+def test_category_mismatch_and_reuse_of_tampered_source_are_rejected(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    original = store.import_image("ep00", _image_bytes())
+    directory = store.load("ep00", original["cover_id"])["source_path"].parent
+    other = directory.parent.parent / "frames"
+    other.mkdir(mode=0o700)
+    directory.rename(other / directory.name)
+    with pytest.raises(covers.CoverError, match="分类"):
+        store.load("ep00", original["cover_id"])
+    with pytest.raises(covers.CoverError, match="分类"):
+        store.reuse("ep01", "ep00", original["cover_id"])
+
+
+def test_catalog_reports_persistent_origin_when_same_pixels_arrive_from_another_source(tmp_path):
+    _, _, store = _store(tmp_path)
+    imported = store.import_image("ep00", _image_bytes())
+    private = store.load("ep00", imported["cover_id"])
+    requested = store._install(store._release("ep00"), private["source_path"].read_bytes(), source="video_frame", time=1.0)
+    assert requested["cover_id"] == imported["cover_id"]
+    assert requested["source"] == "video_frame" and requested["time"] == 1.0
+    saved = store.catalog()["covers"][0]
+    assert saved["source"] == "qq_image" and "time" not in saved
+
+
+def test_release_named_frames_cannot_hide_a_wrong_category(tmp_path):
+    _, _, store = _store(tmp_path, release_id="frames")
+    imported = store.import_image("frames", _image_bytes())
+    directory = store.load("frames", imported["cover_id"])["source_path"].parent
+    incorrect_parent = directory.parent.parent / "frames"
+    incorrect_parent.mkdir(mode=0o700)
+    directory.rename(incorrect_parent / directory.name)
+    with pytest.raises(covers.CoverError, match="分类"):
+        store.load("frames", imported["cover_id"])

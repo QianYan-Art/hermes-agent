@@ -243,6 +243,8 @@ def _preview_jpeg(cover_jpeg: bytes, name: str) -> bytes:
 
 
 class CoverStore:
+    CATEGORIES = {"qq_image": "uploads", "video_frame": "frames", "library_image": "reused"}
+
     def __init__(self, data_dir: str | os.PathLike[str], release_store: Any) -> None:
         self.data_dir = Path(os.path.abspath(data_dir))
         self.covers_dir = self.data_dir / "covers"
@@ -302,6 +304,24 @@ class CoverStore:
             public["time"] = time
         return public
 
+    def _asset_directory(self, release_id: str, cover_id: str) -> Path | None:
+        """兼容旧扁平目录，同一编号只允许存在一份资产。"""
+        release_dir = self.covers_dir / release_id
+        _assert_private_directory(self.covers_dir)
+        _assert_private_directory(release_dir)
+        found = []
+        for parent in [release_dir, *(release_dir / name for name in self.CATEGORIES.values())]:
+            if not os.path.lexists(parent):
+                continue
+            _assert_private_directory(parent)
+            candidate = parent / cover_id
+            if os.path.lexists(candidate):
+                _assert_private_directory(candidate)
+                found.append(candidate)
+        if len(found) > 1:
+            raise CoverError("同一封面编号出现多份资产，拒绝歧义引用")
+        return found[0] if found else None
+
     def _load_asset(
         self,
         release: dict[str, object],
@@ -310,10 +330,9 @@ class CoverStore:
         release_id = str(release["release_id"])
         if not isinstance(cover_id, str) or _HEX_DIGEST.fullmatch(cover_id) is None:
             raise CoverError("cover_id 格式无效")
-        directory = self.covers_dir / release_id / cover_id
-        _assert_private_directory(self.covers_dir)
-        _assert_private_directory(self.covers_dir / release_id)
-        _assert_private_directory(directory)
+        directory = self._asset_directory(release_id, cover_id)
+        if directory is None:
+            raise CoverError("封面资产不存在")
         try:
             names = {entry.name for entry in directory.iterdir()}
         except OSError as exc:
@@ -350,8 +369,10 @@ class CoverStore:
             raise CoverError("封面关联的原视频已变化")
         if _cover_identity(release_id, str(video_sha256), cover_sha256) != cover_id:
             raise CoverError("封面身份摘要不匹配")
-        if not isinstance(manifest["source"], str) or manifest["source"] not in {"video_frame", "qq_image"}:
+        if not isinstance(manifest["source"], str) or manifest["source"] not in self.CATEGORIES:
             raise CoverError("封面来源无效")
+        if directory.parent != self.covers_dir / release_id and directory.parent.name != self.CATEGORIES[manifest["source"]]:
+            raise CoverError("封面分类与记录来源不一致")
         frame_time = manifest["time"]
         if manifest["source"] == "video_frame":
             if not _finite_number(frame_time):
@@ -414,6 +435,41 @@ class CoverStore:
         release = self._release(release_id)
         return self._load_asset(release, cover_id)
 
+    def catalog(self, release_id: str | None = None, offset: int = 0) -> dict[str, object]:
+        """分页提供已有封面预览；每页最多五组，不重新提帧。"""
+        if type(offset) is not int or not 0 <= offset <= 10000:
+            raise CoverError("图库分页偏移无效")
+        releases = ([self._release(release_id)] if release_id is not None
+                    else self.release_store.list_releases())
+        identities: set[tuple[str, str]] = set()
+        for release in releases:
+            rid = str(release["release_id"])
+            root = self.covers_dir / rid
+            if not os.path.lexists(root):
+                continue
+            _assert_private_directory(root)
+            for parent in [root, *(root / name for name in self.CATEGORIES.values())]:
+                if not os.path.lexists(parent):
+                    continue
+                _assert_private_directory(parent)
+                for entry in parent.iterdir():
+                    if _HEX_DIGEST.fullmatch(entry.name):
+                        identities.add((rid, entry.name))
+        ordered = sorted(identities)
+        result = []
+        for rid, cid in ordered[offset:offset + 5]:
+            private = self.load(rid, cid)
+            result.append(self._public_dict(private, source=str(private["source"]), time=private["time"]))
+        next_offset = offset + len(result)
+        return {"covers": result, "total": len(ordered),
+                "next_offset": next_offset if next_offset < len(ordered) else None}
+
+    def reuse(self, release_id: str, from_release_id: str, cover_id: str) -> dict[str, object]:
+        """校验库中规范化原图，再绑定到目标作品，不沿用源作品身份。"""
+        source = self.load(from_release_id, cover_id)
+        contents = _read_regular_file(source["source_path"], MAX_SOURCE_BYTES, private=True)
+        return self._install(self._release(release_id), contents, source="library_image", time=None)
+
     def _install(
         self,
         release: dict[str, object],
@@ -427,7 +483,16 @@ class CoverStore:
         cover_sha256 = _digest(source_jpeg)
         cover_id = _cover_identity(release_id, video_sha256, cover_sha256)
         release_dir = self._ensure_layout(release_id)
-        destination = release_dir / cover_id
+        existing_dir = self._asset_directory(release_id, cover_id)
+        if existing_dir is not None:
+            existing = self._load_asset(release, cover_id)
+            # 提帧响应保留本次请求时刻；库中复用命中旧资产时保留其原始来源。
+            return self._public_dict(existing,
+                                     source=str(existing["source"]) if source == "library_image" else source,
+                                     time=existing["time"] if source == "library_image" else time)
+        category_dir = release_dir / self.CATEGORIES[source]
+        _ensure_private_directory(category_dir)
+        destination = category_dir / cover_id
 
         try:
             os.lstat(destination)
@@ -458,7 +523,7 @@ class CoverStore:
             "time": time,
         }
         manifest_bytes = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        temporary = Path(tempfile.mkdtemp(prefix=".tmp-cover-", dir=release_dir))
+        temporary = Path(tempfile.mkdtemp(prefix=".tmp-cover-", dir=category_dir))
         if os.name == "posix":
             os.chmod(temporary, 0o700)
         try:
