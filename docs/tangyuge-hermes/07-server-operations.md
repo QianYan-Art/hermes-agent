@@ -28,6 +28,9 @@ docs.
 `09-douyin-login.md`；作品手动入库、封面、stage、草稿及逐次确认发布见
 `10-douyin-publishing.md`。登录工具本身不上传或发布；统计仅限网页可靠可见字段，
 不是官方 API。不要把浏览器 profile、有效原片和防重账本当成无用缓存清理。
+UTC 2026-10-26 第一栞提交发布并核对列表后，已按阿颜明确要求删除服务器 `ep00/ep01`
+原片，原清单转入 `/var/lib/hermes-douyin/published-records/`；本机原片、封面库、
+profile与防重记录保留。该目录只供图库校验，不能代替可上传原片，详见抖音专题。
 
 Default model provider:
 
