@@ -32,9 +32,10 @@ JOB_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
 COVER_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
 PLAN_TTL = 60 * 60
 EDITOR_LEASE_SECONDS = 15 * 60
-JOB_TIMEOUT = 60 * 60
+JOB_TIMEOUT = 75 * 60
 UPLOAD_TIMEOUT = 55 * 60
-SMS_VERIFICATION_TIMEOUT = 10 * 60
+SMS_VERIFICATION_TIMEOUT = 30 * 60
+PUBLISH_TIMEOUT = SMS_VERIFICATION_TIMEOUT + 120
 PAGE_OPERATION_TIMEOUT = 40
 ACCOUNT_WAIT_SECONDS = 30
 ACCOUNT_RECOVERY = {
@@ -105,6 +106,7 @@ def validate_request(value):
         "cover_reuse": {"action", "release_id", "from_release_id", "cover_id"},
         "prepare": {"action", "release_id", "title", "description", "cover_id", "visibility", "publish_at"},
         "stage": {"action", "token"},
+        "resume_stage": {"action", "token"},
         "draft": {"action", "token"}, "publish": {"action", "token"},
         "job": {"action", "job_id"},
     }
@@ -159,7 +161,7 @@ def validate_request(value):
             raise ValueError("简介不能超过1000个字符")
         if "\0" in value.get("description", ""):
             raise ValueError("简介不能包含空字符")
-    if action in {"stage", "draft", "publish"} and (not isinstance(value.get("token"), str) or not TOKEN_PATTERN.fullmatch(value["token"])):
+    if action in {"stage", "resume_stage", "draft", "publish"} and (not isinstance(value.get("token"), str) or not TOKEN_PATTERN.fullmatch(value["token"])):
         raise ValueError("准备令牌无效")
     if action == "job" and (not isinstance(value.get("job_id"), str) or not JOB_PATTERN.fullmatch(value["job_id"])):
         raise ValueError("任务编号无效")
@@ -232,6 +234,7 @@ class ContentManager:
         self.tasks = {}
         self.state_lock = asyncio.Lock()
         self._staged = {}
+        self._uploads = {}
         for path in sorted(self.job_dir.glob("*.json")):
             if not JOB_PATTERN.fullmatch(path.stem):
                 continue
@@ -248,13 +251,15 @@ class ContentManager:
 
     def invalidate_editor(self):
         self._staged.clear()
+        self._uploads.clear()
         for job in self.jobs.values():
             if job.get("state") == "editor_ready":
                 job.update(state="needs_attention", phase="编辑预览已失效", message="页面已切换或等待已过期；请重新准备并核对，不沿用旧确认。")
                 self._save_job(job)
 
     def editor_lease_remaining(self):
-        remaining = max((item["deadline"] - time.monotonic() for item in self._staged.values()), default=0)
+        proofs = [*self._staged.values(), *self._uploads.values()]
+        remaining = max((item["deadline"] - time.monotonic() for item in proofs), default=0)
         return max(0, min(EDITOR_LEASE_SECONDS, remaining))
 
     def _job_response(self, job):
@@ -274,9 +279,11 @@ class ContentManager:
             public.update(phase="发布时遇到本人短信验证，结果待核实", message=message)
         return response(state, message, job=public, **extra)
 
-    def _plan(self, token):
+    def _plan(self, token, *, allow_live=False):
         plan = _read_json(self.plan_dir / (token + ".json"))
-        if plan["expires_unix"] < time.time():
+        proof = self._staged.get(token) or self._uploads.get(token)
+        live = allow_live and proof is not None and proof["deadline"] > time.monotonic()
+        if plan["expires_unix"] < time.time() and not live:
             raise ValueError("准备令牌已过期，请重新准备作品")
         release = self.store.load(plan["release_id"])
         if release["video_sha256"] != plan["video_sha256"] or plan["account"] != self.browser.config.expected_account:
@@ -387,7 +394,7 @@ class ContentManager:
             if action == "cover_reuse":
                 cover = await asyncio.to_thread(self.covers.reuse, request["release_id"], request["from_release_id"], request["cover_id"])
                 return response("ready", "已有封面已绑定到目标作品，尚未应用、上传或发布；请本人核对双比例预览。", cover=cover)
-            if action in {"stage", "draft", "publish"}:
+            if action in {"stage", "resume_stage", "draft", "publish"}:
                 return await self._start_job(action, request["token"])
             if self.browser_lock.locked():
                 return response("needs_attention", "浏览器正在处理其他任务，请先查询任务状态。")
@@ -472,7 +479,37 @@ class ContentManager:
 
     async def _start_job(self, action, token):
         async with self.state_lock:
-            plan, release = self._plan(token)
+            plan, release = self._plan(token, allow_live=action in {"resume_stage", "draft", "publish"})
+            unknown_publish = any(j.get("release_id") == plan["release_id"] and j.get("action") == "publish"
+                                  and j.get("commit_attempted") is True and j.get("state") == "needs_attention"
+                                  for j in self.jobs.values())
+            if action == "resume_stage":
+                if unknown_publish:
+                    raise ValueError("这份视频已有结果未知的发布提交，不能恢复编辑或重新提交")
+                candidates = [j for j in self.jobs.values() if j.get("token") == token
+                              and j.get("action") == "stage" and j.get("fingerprint") == plan["fingerprint"]]
+                if len(candidates) != 1:
+                    raise ValueError("没有唯一的原上传任务可恢复")
+                job = candidates[0]
+                if job.get("state") == "in_progress":
+                    return self._job_response(job)
+                if any(j.get("state") == "in_progress" for j in self.jobs.values()):
+                    raise ValueError("已有作品任务在进行，请查询原任务")
+                if job.get("state") == "editor_ready" and token in self._staged:
+                    return self._job_response(job)
+                if (job.get("state") != "needs_attention" or job.get("commit_attempted")
+                        or token not in self._uploads or self._uploads[token]["deadline"] <= time.monotonic()):
+                    raise ValueError("原上传页面或证明已失效，不能无依据跳过上传")
+                job.update(state="in_progress", phase="恢复已上传视频的编辑核验", resume_requested=True,
+                           message="沿用同一页面中已核实的原视频，不重新上传；尚未保存或发布。")
+                job.pop("recovery", None)
+                self._save_job(job)
+                task = asyncio.create_task(self._run(job, plan, release))
+                self.tasks[job["job_id"]] = task
+                task.add_done_callback(lambda _task: self.tasks.pop(job["job_id"], None))
+                return self._job_response(job)
+            if action == "draft" and token in self._uploads and token not in self._staged:
+                raise ValueError("视频已上传但编辑核验未完成，请先resume_stage，不重新上传")
             if action == "stage" and not plan.get("cover_id"):
                 raise ValueError("请先由本人选择封面，再重新准备作品")
             for job in self.jobs.values():
@@ -490,9 +527,7 @@ class ContentManager:
                         self.tasks[job["job_id"]] = task
                         task.add_done_callback(lambda _task: self.tasks.pop(job["job_id"], None))
                     return self._job_response(job)
-            if any(j.get("release_id") == plan["release_id"] and j.get("action") == "publish"
-                   and j.get("commit_attempted") is True and j.get("state") == "needs_attention"
-                   for j in self.jobs.values()):
+            if unknown_publish:
                 raise ValueError("这份视频已有结果未知的发布提交；须先人工核实平台结果，不能换文案或封面后重提")
             if action == "publish" and (token not in self._staged or self.editor_lease_remaining() <= 0):
                 raise ValueError("须先stage并核对这份物料的实时编辑预览；旧暂存槽不能直接发布")
@@ -510,8 +545,10 @@ class ContentManager:
     async def _run(self, job, plan, release):
         try:
             async with self.browser_lock:
-                await asyncio.wait_for(self._execute(job, plan, release), timeout=JOB_TIMEOUT)
+                timeout = PUBLISH_TIMEOUT if job["action"] == "publish" else JOB_TIMEOUT
+                await asyncio.wait_for(self._execute(job, plan, release), timeout=timeout)
         except (Exception, asyncio.CancelledError) as exc:
+            checkpoint = self._uploads.get(plan.get("token"))
             self.invalidate_editor()
             frames = [frame for frame in traceback.extract_tb(exc.__traceback__) if Path(frame.filename).name in {"content.py", "editor.py", "covers.py"}]
             location = frames[-1].lineno if frames else 0
@@ -536,6 +573,16 @@ class ContentManager:
                 if account_error is not None:
                     job.update(error_state=account_error.state, recovery=account_error.recovery,
                                message=str(account_error))
+            if (job.get("action") == "stage" and checkpoint is not None and not job.get("commit_attempted")
+                    and account_error is None and not isinstance(exc, (asyncio.CancelledError, UploadFailedError))):
+                try:
+                    await asyncio.wait_for(self._verified_upload(plan, checkpoint), timeout=10)
+                except Exception:
+                    LOGGER.info("已上传页面未通过恢复核验，不跳过原片上传。")
+                else:
+                    self._uploads[plan["token"]] = checkpoint
+                    job.update(recovery={"action": "resume_stage"},
+                               message="原视频已上传，编辑步骤未完成；可在当前页面保留期内用相同plan_id恢复核验，不重新上传。尚未保存或发布。")
             if not isinstance(exc, asyncio.CancelledError):
                 if isinstance(exc, UploadFailedError):
                     job["message"] = str(exc)
@@ -705,6 +752,43 @@ class ContentManager:
             job["ai_declaration_verified"] = True
             await self._save_draft(page, job, plan)
             return
+        resume = job.pop("resume_requested", False)
+        if resume:
+            page = await self._verified_upload(plan)
+            await self._fill_metadata(page, plan)
+            await self._ai_declaration(page)
+            job["ai_declaration_verified"] = True
+        else:
+            page = await self._upload_video(job, plan, current)
+        await self._dismiss_preview_tip(page)
+        if plan.get("cover_id"):
+            self._phase(job, "应用并核对双比例封面")
+            asset = self.covers.load(plan["release_id"], plan["cover_id"])
+            cover_evidence = await apply_cover(page, asset)
+        else:
+            cover_evidence = None
+        settings = plan.get("settings", validate_settings())
+        self._phase(job, "应用并核对可见范围与发布时间")
+        await apply_settings(page, settings)
+        await self._verify_metadata(page, plan)
+        if job["action"] == "stage":
+            if not job["ai_declaration_verified"]:
+                raise ValueError("平台AI声明未确认，不能形成发布预览")
+            await self._verified_upload(plan)
+            source = await self._video_source(page, activate=True)
+            await self._verify_metadata(page, plan)
+            marker = secrets.token_hex(32)
+            await page.evaluate("marker => { window.__hermesEditorProof = marker; }", marker)
+            self._staged[plan["token"]] = {"page": page, "context": self.browser._context,
+                "marker": marker, "video_source": source, "cover": cover_evidence,
+                "deadline": time.monotonic() + EDITOR_LEASE_SECONDS}
+            self._uploads.pop(plan["token"], None)
+            job.update(state="editor_ready", phase="完整物料待本人确认", message="视频、双比例封面、文案、AI声明和发布设置已核对。尚未保存或发布；编辑完成后有独立15分钟确认窗口。")
+            self._save_job(job)
+            return
+        await self._save_draft(page, job, plan)
+
+    async def _upload_video(self, job, plan, current):
         page = await self._account_page()
         self._phase(job, "打开上传页")
         await self._navigate_entry(page, UPLOAD_URL)
@@ -731,31 +815,28 @@ class ContentManager:
             await uploading.wait_for(state="hidden", timeout=UPLOAD_TIMEOUT * 1000)
         if await self._upload_failed(page):
             raise UploadFailedError("平台报告视频上传失败，未形成发布预览；可按原片重新上传。")
-        await self._dismiss_preview_tip(page)
-        if plan.get("cover_id"):
-            self._phase(job, "应用并核对双比例封面")
-            asset = self.covers.load(plan["release_id"], plan["cover_id"])
-            cover_evidence = await apply_cover(page, asset)
-        else:
-            cover_evidence = None
-        settings = plan.get("settings", validate_settings())
-        self._phase(job, "应用并核对可见范围与发布时间")
-        await apply_settings(page, settings)
-        await self._verify_metadata(page, plan)
-        if job["action"] == "stage":
-            if not job["ai_declaration_verified"]:
-                raise ValueError("平台AI声明未确认，不能形成发布预览")
-            source = await self._video_source(page, activate=True)
-            await self._verify_metadata(page, plan)
-            marker = secrets.token_hex(32)
-            await page.evaluate("marker => { window.__hermesEditorProof = marker; }", marker)
-            self._staged[plan["token"]] = {"page": page, "context": self.browser._context,
-                "marker": marker, "video_source": source, "cover": cover_evidence,
-                "deadline": time.monotonic() + min(EDITOR_LEASE_SECONDS, max(0, plan["expires_unix"] - time.time()))}
-            job.update(state="editor_ready", phase="完整物料待本人确认", message="视频、双比例封面、文案、AI声明和发布设置已核对。尚未保存或发布；请在准备令牌有效期内本人私聊确认。")
-            self._save_job(job)
-            return
-        await self._save_draft(page, job, plan)
+        source = await self._video_source(page, activate=True)
+        marker = secrets.token_hex(32)
+        await page.evaluate("marker => { window.__hermesUploadProof = marker; }", marker)
+        self._uploads[plan["token"]] = {"page": page, "context": self.browser._context,
+            "marker": marker, "video_source": source, "fingerprint": plan["fingerprint"],
+            "video_sha256": current["video_sha256"], "deadline": time.monotonic() + EDITOR_LEASE_SECONDS}
+        return page
+
+    async def _verified_upload(self, plan, proof=None):
+        proof = proof if proof is not None else self._uploads.get(plan["token"])
+        if proof is None or proof["deadline"] <= time.monotonic():
+            raise ValueError("已上传视频的页面保留期已过，不能直接恢复")
+        page = proof["page"]
+        if (self.browser._context is not proof["context"] or page.is_closed() or not _safe_editor_url(page.url)
+                or proof["fingerprint"] != plan["fingerprint"] or proof["video_sha256"] != plan["video_sha256"]
+                or plan["account"] != self.browser.config.expected_account):
+            raise ValueError("已上传视频的页面、账号或计划已变化")
+        if await page.evaluate("() => window.__hermesUploadProof || null") != proof["marker"]:
+            raise ValueError("已上传视频的文档已变化")
+        if await self._video_source(page) != proof["video_source"] or await self._upload_failed(page):
+            raise ValueError("页面视频已变化或平台上传失败，不能直接恢复")
+        return page
 
     async def _save_draft(self, page, job, plan):
         save = await self._button(page, ("保存草稿", "暂存离开"))
@@ -830,7 +911,7 @@ class ContentManager:
                 raise
             job["verification_required"] = "sms"
             self._phase(job, "发布需本人短信验证；请在当前页面完成，尚未确认发布")
-            # 短信协助保留十分钟窗口；长视频任务总时限不扩大此验证等待。
+            # 人工短信验证使用独立有界窗口，不消耗上传或编辑确认预算。
             await success.wait_for(state="visible", timeout=SMS_VERIFICATION_TIMEOUT * 1000)
         job.pop("verification_required", None)
         job.update(state="published", phase="已提交发布", message="页面已确认提交发布；后续审核状态以平台为准。")

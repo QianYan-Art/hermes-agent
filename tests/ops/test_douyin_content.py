@@ -163,6 +163,215 @@ async def test_prepare_binds_metadata_content_and_account_without_starting_job(m
     assert "account" not in result["plan"] and "video_path" not in result["plan"]
 
 
+async def _checkpoint_editor(manager, content, monkeypatch):
+    manager.covers = SimpleNamespace(load=lambda *_: {"cover_sha256": "d" * 64})
+    result = await manager.process({"action": "prepare", "release_id": "ep00", "cover_id": "c" * 64})
+    token = result["plan"]["token"]
+    plan, release = manager._plan(token)
+    markers = {"upload": "original-upload", "editor": None}
+
+    async def evaluate(script, argument=None):
+        if "__hermesUploadProof" in script:
+            return markers["upload"]
+        if "__hermesEditorProof = marker" in script:
+            markers["editor"] = argument
+        return markers["editor"]
+
+    page = SimpleNamespace(url=content.UPLOAD_URL, is_closed=lambda: False, evaluate=evaluate)
+    manager.browser._context = SimpleNamespace(pages=[page])
+    manager._uploads[token] = {
+        "page": page, "context": manager.browser._context, "marker": markers["upload"],
+        "video_source": "blob:original-video", "fingerprint": plan["fingerprint"],
+        "video_sha256": plan["video_sha256"], "deadline": time.monotonic() + 900,
+    }
+    for method in ["_fill_metadata", "_ai_declaration", "_dismiss_preview_tip", "_verify_metadata"]:
+        monkeypatch.setattr(manager, method, AsyncMock())
+    monkeypatch.setattr(manager, "_video_source", AsyncMock(return_value="blob:original-video"))
+    monkeypatch.setattr(manager, "_upload_failed", AsyncMock(return_value=False))
+    monkeypatch.setattr(content, "apply_cover", AsyncMock(return_value={"verified": True}))
+    monkeypatch.setattr(content, "apply_settings", AsyncMock())
+    job = {"job_id": "b" * 32, "action": "stage", "token": token, "release_id": "ep00",
+           "fingerprint": plan["fingerprint"], "state": "in_progress", "phase": "编辑核验", "message": "处理中",
+           "ai_declaration_verified": True}
+    manager._save_job(job)
+    return token, plan, release, page, job, markers
+
+
+@pytest.mark.asyncio
+async def test_post_upload_edit_failure_resumes_original_job_without_second_transfer(manager, content, monkeypatch):
+    token, plan, release, page, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    transfer = AsyncMock(return_value=page)
+    monkeypatch.setattr(manager, "_upload_video", transfer)
+    monkeypatch.setattr(content, "apply_settings", AsyncMock(side_effect=[ValueError("页面控件暂时未加载"), None]))
+    await manager._run(job, plan, release)
+    assert job["state"] == "needs_attention" and job["recovery"] == {"action": "resume_stage"}
+    assert 0 < manager.editor_lease_remaining() <= 900
+    response = await manager.process({"action": "resume_stage", "token": token})
+    assert response["job"]["job_id"] == job["job_id"]
+    duplicate = await manager.process({"action": "resume_stage", "token": token})
+    assert duplicate["job"]["job_id"] == job["job_id"] and len(manager.tasks) == 1
+    await asyncio.gather(*list(manager.tasks.values()))
+    assert job["state"] == "editor_ready" and len(manager.jobs) == 1
+    transfer.assert_awaited_once()
+    assert token not in manager._uploads and token in manager._staged
+    assert not job.get("commit_attempted")
+
+
+@pytest.mark.asyncio
+async def test_completed_upload_gets_full_preview_lease_after_prepare_expiry(manager, content, monkeypatch):
+    token, plan, release, page, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    plan["expires_unix"] = time.time() - 1
+    content._write_json(manager.plan_dir / (token + ".json"), plan)
+    job.update(state="needs_attention")
+    manager._save_job(job)
+    transfer = AsyncMock(side_effect=AssertionError("不能再次上传"))
+    monkeypatch.setattr(manager, "_upload_video", transfer)
+    clock = SimpleNamespace(time=lambda: plan["expires_unix"] + 2, monotonic=lambda: 5000)
+    monkeypatch.setattr(content, "time", clock)
+    manager._uploads[token]["deadline"] = 5900
+    response = await manager.process({"action": "resume_stage", "token": token})
+    assert response["state"] == "in_progress"
+    await asyncio.gather(*list(manager.tasks.values()))
+    assert job["state"] == "editor_ready" and manager._staged[token]["deadline"] == 5900
+    assert manager._plan(token, allow_live=True)[0]["token"] == token
+    with pytest.raises(ValueError, match="过期"):
+        manager._plan(token)
+    clock.monotonic = lambda: 5901
+    with pytest.raises(ValueError, match="过期"):
+        manager._plan(token, allow_live=True)
+    transfer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["page", "context", "marker", "video", "fingerprint", "hash", "account", "expired"])
+async def test_resume_rejects_changed_upload_identity_without_falling_back_to_upload(manager, content, monkeypatch, change):
+    token, plan, release, page, job, markers = await _checkpoint_editor(manager, content, monkeypatch)
+    job.update(state="needs_attention")
+    manager._save_job(job)
+    if change == "page":
+        page.is_closed = lambda: True
+    elif change == "context":
+        manager.browser._context = SimpleNamespace(pages=[page])
+    elif change == "marker":
+        markers["upload"] = "other-document"
+    elif change == "video":
+        manager._video_source.return_value = "blob:other-video"
+    elif change == "fingerprint":
+        manager._uploads[token]["fingerprint"] = "f" * 64
+    elif change == "hash":
+        manager._uploads[token]["video_sha256"] = "f" * 64
+    elif change == "account":
+        manager.browser.config.expected_account = "other-account"
+    else:
+        manager._uploads[token]["deadline"] = 0
+    transfer = AsyncMock(side_effect=AssertionError("不能再次上传"))
+    monkeypatch.setattr(manager, "_upload_video", transfer)
+    result = await manager.process({"action": "resume_stage", "token": token})
+    if manager.tasks:
+        await asyncio.gather(*list(manager.tasks.values()))
+    assert result["state"] in {"in_progress", "needs_attention"}
+    assert job["state"] == "needs_attention"
+    assert not manager._staged and not job.get("commit_attempted")
+    transfer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resume_cannot_bypass_unknown_publish_or_restart(manager, content, monkeypatch):
+    token, plan, _, _, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    job.update(state="needs_attention")
+    manager._save_job(job)
+    other = {**job, "job_id": "e" * 32, "action": "publish", "commit_attempted": True}
+    manager._save_job(other)
+    response = await manager.process({"action": "resume_stage", "token": token})
+    assert response["state"] == "needs_attention" and "结果未知" in response["message"]
+    assert not manager.tasks
+    restarted = content.ContentManager(manager.browser, asyncio.Lock())
+    assert not restarted._uploads and not restarted._staged
+    response = await restarted.process({"action": "resume_stage", "token": token})
+    assert response["state"] == "needs_attention" and not restarted.tasks
+
+
+@pytest.mark.asyncio
+async def test_cancelled_stage_drops_checkpoint_and_does_not_offer_resume(manager, content, monkeypatch):
+    token, plan, release, _, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    monkeypatch.setattr(manager, "_execute", AsyncMock(side_effect=asyncio.CancelledError()))
+    with pytest.raises(asyncio.CancelledError):
+        await manager._run(job, plan, release)
+    assert token not in manager._uploads
+    assert job["recovery"] != {"action": "resume_stage"}
+
+
+@pytest.mark.asyncio
+async def test_resume_protocol_crosses_plugin_validation_and_manager_without_upload(manager, content, monkeypatch):
+    token, plan, _, page, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    job.update(state="needs_attention", recovery={"action": "resume_stage"})
+    manager._save_job(job)
+    path = Path(__file__).resolve().parents[2] / "ops/douyin-plugin/__init__.py"
+    spec = importlib.util.spec_from_file_location("dy_resume_pipeline", path)
+    plugin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(plugin)
+    monkeypatch.setattr(plugin, "_authorized", lambda: True)
+    requests = []
+
+    async def transport(payload):
+        requests.append(payload)
+        validated = content.validate_request(payload)
+        response = await manager.process(validated)
+        return plugin._validate_content_response(response, action=payload["action"])
+
+    monkeypatch.setattr(plugin, "_request_content", transport)
+    transfer = AsyncMock(side_effect=AssertionError("恢复不得上传"))
+    monkeypatch.setattr(manager, "_upload_video", transfer)
+    response = json.loads(await plugin.handle_content({"action": "resume_stage", "plan_id": token}))
+    assert response["state"] == "in_progress"
+    assert requests == [{"action": "resume_stage", "token": token}]
+    await asyncio.gather(*list(manager.tasks.values()))
+    response = json.loads(await plugin.handle_content({"action": "job", "job_id": job["job_id"]}))
+    assert response["state"] == "editor_ready" and page is manager._staged[token]["page"]
+    assert len(manager.jobs) == 1 and not job.get("commit_attempted")
+    transfer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sms_wait_uses_publish_budget_and_does_not_block_other_coroutines(manager, content, monkeypatch):
+    entered = asyncio.Event()
+    answer = asyncio.Event()
+    calls = []
+
+    async def success_wait(*, state, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise TimeoutError()
+        entered.set()
+        await answer.wait()
+
+    success = SimpleNamespace(wait_for=success_wait)
+    page = SimpleNamespace(get_by_text=lambda *_a, **_k: SimpleNamespace(first=success))
+    button = SimpleNamespace(is_enabled=AsyncMock(return_value=True), click=AsyncMock())
+    monkeypatch.setattr(manager, "_verified_stage", AsyncMock(return_value=page))
+    monkeypatch.setattr(manager, "_dismiss_preview_tip", AsyncMock())
+    monkeypatch.setattr(manager, "_button", AsyncMock(return_value=button))
+    monkeypatch.setattr(manager, "_ui", AsyncMock(return_value={"text_tail": "接收短信验证码 为确保是本人操作抖音账号"}))
+    monkeypatch.setattr(content, "JOB_TIMEOUT", .001)
+    monkeypatch.setattr(content, "PUBLISH_TIMEOUT", 1)
+    job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00", "state": "in_progress", "phase": "发布"}
+
+    async def execute(current, plan, release):
+        await manager._publish(page, current, plan)
+
+    monkeypatch.setattr(manager, "_execute", execute)
+    task = asyncio.create_task(manager._run(job, {"token": "a" * 32}, {}))
+    await asyncio.wait_for(entered.wait(), 1)
+    await asyncio.sleep(.01)
+    assert manager.browser_lock.locked() and job["state"] == "in_progress"
+    assert job["verification_required"] == "sms"
+    answer.set()
+    await task
+    assert not manager.browser_lock.locked() and job["state"] == "published"
+    button.click.assert_awaited_once()
+    assert calls == [30000, 1800000]
+
+
 def test_job_response_keeps_private_diagnostics_without_hiding_unknown_commit(manager):
     job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00",
            "state": "needs_attention", "phase": "结果待核实", "updated_at": "2026-10-26T04:17:17Z",
@@ -224,7 +433,7 @@ async def test_publish_keeps_same_page_waiting_for_user_sms_without_second_click
     assert "verification_required" not in job
     button.click.assert_awaited_once()
     assert success.wait_for.await_args_list[0].kwargs["timeout"] == 30000
-    assert success.wait_for.await_args_list[1].kwargs["timeout"] == 600000
+    assert success.wait_for.await_args_list[1].kwargs["timeout"] == 1800000
 
 
 @pytest.mark.asyncio
@@ -521,10 +730,11 @@ def test_navigation_invalidates_ready_jobs_and_lease(manager):
 
 def test_large_video_budget_does_not_extend_editor_confirmation(content):
     assert content.PLAN_TTL == 3600
-    assert content.JOB_TIMEOUT == 3600
+    assert content.JOB_TIMEOUT >= content.UPLOAD_TIMEOUT + 15 * 60
     assert content.UPLOAD_TIMEOUT == 3300
     assert content.EDITOR_LEASE_SECONDS == 900
-    assert content.SMS_VERIFICATION_TIMEOUT == 600
+    assert content.SMS_VERIFICATION_TIMEOUT == 1800
+    assert content.PUBLISH_TIMEOUT > content.SMS_VERIFICATION_TIMEOUT + 30
 
 
 @pytest.mark.asyncio

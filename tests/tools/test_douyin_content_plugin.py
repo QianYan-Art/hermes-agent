@@ -21,7 +21,7 @@ OTHER_TOKEN = "b" * 32
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action,expected", [("list", 2), ("job", 2), ("prepare", 1), ("stage", 1), ("draft", 1), ("publish", 1)])
+@pytest.mark.parametrize("action,expected", [("list", 2), ("job", 2), ("prepare", 1), ("stage", 1), ("resume_stage", 1), ("draft", 1), ("publish", 1)])
 async def test_transport_retry_never_replays_mutating_content_requests(monkeypatch, action, expected):
     from unittest.mock import AsyncMock
     request = AsyncMock(side_effect=[OSError("连接暂断"), {"ok": True}])
@@ -378,7 +378,7 @@ def test_registration_preserves_login_and_registers_content_hook():
     content_schema = ctx.tools["douyin_content"]["schema"]
     assert content_schema["parameters"]["properties"]["action"]["enum"] == [
         "list", "metrics", "covers", "cover_sources", "cover_import", "cover_saved_sources", "cover_import_saved",
-        "cover_pair", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"
+        "cover_pair", "cover_library", "cover_reuse", "prepare", "stage", "resume_stage", "draft", "job", "publish"
     ]
     description = content_schema["description"]
     assert "横封面槽为4:3、竖封面槽为3:4" in description
