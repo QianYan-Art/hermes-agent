@@ -40,6 +40,83 @@ def test_rejects_expanded_or_invalid_content_protocol(content, payload):
         content.validate_request(payload)
 
 
+@pytest.mark.parametrize("payload", [
+    {"action": "cover_import_saved", "release_id": "ep00", "image_base64": "AAAA", "image_id": "0" * 32},
+    {"action": "cover_pair", "release_id": "ep00", "landscape_cover_id": "0" * 64},
+    {"action": "cover_pair", "release_id": "../ep00", "landscape_cover_id": "0" * 64, "portrait_cover_id": "1" * 64},
+    {"action": "cover_pair", "release_id": "ep00", "landscape_cover_id": "x" * 64, "portrait_cover_id": "1" * 64},
+    {"action": "cover_pair", "release_id": "ep00", "landscape_cover_id": "0" * 64, "portrait_cover_id": "1" * 64, "from_release_id": "../other"},
+    {"action": "cover_pair", "release_id": "ep00", "landscape_cover_id": "0" * 64, "portrait_cover_id": "1" * 64, "cover_id": "2" * 64},
+    {"action": "cover_import_saved", "release_id": "ep00", "image_base64": ""},
+    {"action": "cover_import_saved", "release_id": "ep00", "image_base64": "a" * (12 * 1024 * 1024 + 1)},
+])
+def test_rejects_invalid_saved_cover_internal_protocol(content, payload):
+    with pytest.raises(ValueError):
+        content.validate_request(payload)
+
+
+def test_accepts_closed_saved_cover_internal_protocol(content):
+    imported = {
+        "action": "cover_import_saved",
+        "release_id": "ep00",
+        "image_base64": "aGVsbG8=",
+    }
+    paired = {
+        "action": "cover_pair",
+        "release_id": "ep00",
+        "landscape_cover_id": "a" * 64,
+        "portrait_cover_id": "b" * 64,
+        "from_release_id": "ep01",
+    }
+    assert content.validate_request(imported) == imported
+    assert content.validate_request(paired) == paired
+
+
+@pytest.mark.asyncio
+async def test_saved_cover_internal_actions_route_to_single_image_import_and_pair(manager):
+    calls = []
+
+    def import_image(release_id, image, *, source=None):
+        calls.append(("import", release_id, image, source))
+        return {"cover_id": "c" * 64}
+
+    def pair(release_id, landscape_cover_id, portrait_cover_id, *, from_release_id=None):
+        calls.append(("pair", release_id, landscape_cover_id, portrait_cover_id, from_release_id))
+        return {"cover_id": "d" * 64}
+
+    manager.covers = SimpleNamespace(import_image=import_image, pair=pair)
+    imported = await manager.process({
+        "action": "cover_import_saved",
+        "release_id": "ep00",
+        "image_base64": "c291cmNlLWltYWdl",
+    })
+    paired = await manager.process({
+        "action": "cover_pair",
+        "release_id": "ep00",
+        "landscape_cover_id": "a" * 64,
+        "portrait_cover_id": "b" * 64,
+        "from_release_id": "ep01",
+    })
+
+    assert imported["state"] == "ready" and imported["cover"]["cover_id"] == "c" * 64
+    assert paired["state"] == "ready" and paired["cover"]["cover_id"] == "d" * 64
+    assert calls == [
+        ("import", "ep00", b"source-image", "saved_image"),
+        ("pair", "ep00", "a" * 64, "b" * 64, "ep01"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_saved_cover_import_uses_strict_base64(manager):
+    manager.covers = SimpleNamespace(import_image=lambda *_args, **_kwargs: pytest.fail("不应导入无效图片"))
+    result = await manager.process({
+        "action": "cover_import_saved",
+        "release_id": "ep00",
+        "image_base64": "%%%not-base64%%%",
+    })
+    assert result["state"] == "needs_attention"
+
+
 @pytest.fixture
 def manager(content, tmp_path, monkeypatch):
     release = {"release_id": "ep00", "title": "序栞", "description": "星栞书库", "ai_generated": True,

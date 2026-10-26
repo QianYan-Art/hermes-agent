@@ -88,6 +88,16 @@ def _store(tmp_path: Path, *, release_id: str = "ep00", video: bytes = b"origina
     return data_dir, video_path, covers.CoverStore(data_dir, release_store)
 
 
+def _paired_cover_inputs(store):
+    landscape = store.import_image(
+        "ep00", _image_bytes("PNG", color=(180, 40, 20), size=(1440, 1080))
+    )
+    portrait = store.import_image(
+        "ep00", _image_bytes("PNG", color=(20, 80, 190), size=(1080, 1440))
+    )
+    return landscape, portrait
+
+
 def test_import_creates_private_oriented_assets_and_safe_public_previews(tmp_path):
     data_dir, _video_path, store = _store(tmp_path)
     uploaded = _image_bytes("JPEG", size=(80, 40), exif_orientation=6)
@@ -459,3 +469,180 @@ def test_release_named_frames_cannot_hide_a_wrong_category(tmp_path):
     directory.rename(incorrect_parent / directory.name)
     with pytest.raises(covers.CoverError, match="分类"):
         store.load("frames", imported["cover_id"])
+
+
+def test_pair_uses_existing_exact_aspect_assets_and_preserves_v1_bytes(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    landscape, portrait = _paired_cover_inputs(store)
+    landscape_private = store.load("ep00", landscape["cover_id"])
+    portrait_private = store.load("ep00", portrait["cover_id"])
+    original_hashes = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for private in (landscape_private, portrait_private)
+        for path in private["source_path"].parent.iterdir()
+    }
+    video_sha256 = landscape_private["video_sha256"]
+    expected_landscape_id = hashlib.sha256(
+        b"douyin-cover-v1\0ep00\0"
+        + video_sha256.encode("ascii")
+        + b"\0"
+        + landscape["cover_sha256"].encode("ascii")
+    ).hexdigest()
+    assert landscape["cover_id"] == expected_landscape_id
+    assert json.loads((landscape_private["source_path"].parent / "cover.json").read_text())["schema_version"] == 1
+
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    private = store.load("ep00", paired["cover_id"])
+    assert paired["source"] == "paired_images"
+    assert "time" not in paired
+    assert set(paired) == {
+        "release_id", "cover_id", "cover_sha256", "video_sha256", "source", "previews"
+    }
+    assert private["layout"] == "paired"
+    assert private["references"] == {
+        "release_id": "ep00",
+        "landscape_cover_id": landscape["cover_id"],
+        "portrait_cover_id": portrait["cover_id"],
+    }
+    assert "source_path" not in private
+    pair_directory = private["landscape_path"].parent
+    assert pair_directory.parent.name == "pairs"
+    assert {path.name for path in pair_directory.iterdir()} == {
+        "cover.json", "landscape.jpg", "portrait.jpg"
+    }
+    assert private["landscape_path"].read_bytes() == landscape_private["landscape_path"].read_bytes()
+    assert private["portrait_path"].read_bytes() == portrait_private["portrait_path"].read_bytes()
+    with Image.open(private["landscape_path"]) as image:
+        assert image.getpixel((0, 450))[0] > 100
+    with Image.open(private["portrait_path"]) as image:
+        assert image.getpixel((450, 0))[2] > 100
+    manifest = json.loads((pair_directory / "cover.json").read_text())
+    assert manifest["schema_version"] == 2
+    assert manifest["source"] == "paired_images" and manifest["time"] is None
+    assert manifest["references"] == private["references"]
+    expected_pair_sha256 = hashlib.sha256(
+        b"douyin-paired-cover-v2\0"
+        + bytes.fromhex(landscape["cover_sha256"])
+        + bytes.fromhex(portrait["cover_sha256"])
+    ).hexdigest()
+    assert paired["cover_sha256"] == expected_pair_sha256
+    assert paired["cover_id"] == covers._cover_identity("ep00", video_sha256, expected_pair_sha256)
+    assert paired["cover_id"] not in {landscape["cover_id"], portrait["cover_id"]}
+    assert original_hashes == {
+        path: hashlib.sha256(path.read_bytes()).hexdigest() for path in original_hashes
+    }
+    repeated = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    assert repeated["cover_id"] == paired["cover_id"]
+    assert store.catalog("ep00")["total"] == 3
+
+    if os.name == "posix":
+        assert stat.S_IMODE(pair_directory.stat().st_mode) == 0o700
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in pair_directory.iterdir())
+
+
+def test_pair_rejects_non_exact_aspect_single_sources(tmp_path):
+    _, _, store = _store(tmp_path)
+    wrong_landscape = store.import_image(
+        "ep00", _image_bytes("PNG", color=(160, 30, 10), size=(1080, 1920))
+    )
+    portrait = store.import_image(
+        "ep00", _image_bytes("PNG", color=(10, 60, 190), size=(1080, 1440))
+    )
+    with pytest.raises(covers.CoverError, match="4:3"):
+        store.pair("ep00", wrong_landscape["cover_id"], portrait["cover_id"])
+
+
+def test_saved_image_import_preserves_source_and_is_pairable(tmp_path):
+    _, _, store = _store(tmp_path)
+    landscape = store.import_image(
+        "ep00",
+        _image_bytes("PNG", color=(170, 35, 15), size=(1440, 1080)),
+        source="saved_image",
+    )
+    portrait = store.import_image(
+        "ep00",
+        _image_bytes("PNG", color=(15, 75, 185), size=(1080, 1440)),
+        source="saved_image",
+    )
+    for imported in (landscape, portrait):
+        private = store.load("ep00", imported["cover_id"])
+        assert private["source"] == "saved_image"
+        assert private["source_path"].parent.parent.name == "saved"
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    assert paired["source"] == "paired_images"
+
+    for source in ("video_frame", "library_image", "paired_images", "arbitrary"):
+        with pytest.raises(covers.CoverError, match="来源无效"):
+            store.import_image("ep00", b"ignored", source=source)
+
+
+def test_saved_import_duplicate_keeps_persisted_origin(tmp_path):
+    _, _, store = _store(tmp_path)
+    image = _image_bytes()
+    uploaded = store.import_image("ep00", image)
+    duplicate = store.import_image("ep00", image, source="saved_image")
+    assert duplicate["cover_id"] == uploaded["cover_id"]
+    assert duplicate["source"] == "qq_image"
+    assert store.catalog("ep00")["covers"][0]["source"] == "qq_image"
+
+
+def test_paired_reuse_rebinds_target_and_preserves_original_references(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    _write_release(data_dir, "ep01", b"target video")
+    landscape, portrait = _paired_cover_inputs(store)
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    original = store.load("ep00", paired["cover_id"])
+    original_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in original["landscape_path"].parent.iterdir()
+    }
+
+    reused = store.reuse("ep01", "ep00", paired["cover_id"])
+    target = store.load("ep01", reused["cover_id"])
+    assert reused["source"] == "paired_images"
+    assert reused["cover_id"] != paired["cover_id"]
+    assert reused["video_sha256"] != paired["video_sha256"]
+    assert target["references"] == original["references"]
+    assert target["landscape_path"].read_bytes() == original["landscape_path"].read_bytes()
+    assert target["portrait_path"].read_bytes() == original["portrait_path"].read_bytes()
+    assert original_hashes == {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in original["landscape_path"].parent.iterdir()
+    }
+    same = store.reuse("ep01", "ep01", reused["cover_id"])
+    assert same["cover_id"] == reused["cover_id"]
+
+
+def test_pair_rejects_coordinated_asset_tampering(tmp_path):
+    data_dir, _, store = _store(tmp_path)
+    landscape, portrait = _paired_cover_inputs(store)
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    private = store.load("ep00", paired["cover_id"])
+    pair_directory = private["landscape_path"].parent
+    changed = private["landscape_path"].read_bytes() + b"tampered"
+    private["landscape_path"].write_bytes(changed)
+    manifest_path = pair_directory / "cover.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["landscape.jpg"] = hashlib.sha256(changed).hexdigest()
+    manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True))
+    with pytest.raises(covers.CoverError, match="原始单图"):
+        store.load("ep00", paired["cover_id"])
+
+
+@pytest.mark.parametrize("failure", ["missing", "recursive"])
+def test_pair_rejects_missing_or_recursive_references(tmp_path, failure):
+    data_dir, _, store = _store(tmp_path)
+    landscape, portrait = _paired_cover_inputs(store)
+    paired = store.pair("ep00", landscape["cover_id"], portrait["cover_id"])
+    pair_private = store.load("ep00", paired["cover_id"])
+    pair_directory = pair_private["landscape_path"].parent
+    if failure == "missing":
+        source_directory = store.load("ep00", landscape["cover_id"])["source_path"].parent
+        shutil.rmtree(source_directory)
+    else:
+        manifest_path = pair_directory / "cover.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["references"]["landscape_cover_id"] = paired["cover_id"]
+        manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True))
+    with pytest.raises(covers.CoverError, match="引用的单图资产无效"):
+        store.load("ep00", paired["cover_id"])

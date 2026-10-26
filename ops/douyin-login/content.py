@@ -91,6 +91,8 @@ def validate_request(value):
         "editor_check": {"action", "release_id", "cover_id", "visibility", "publish_at", "view"},
         "covers": {"action", "release_id", "times"},
         "cover_import": {"action", "release_id", "image_base64"},
+        "cover_import_saved": {"action", "release_id", "image_base64"},
+        "cover_pair": {"action", "release_id", "landscape_cover_id", "portrait_cover_id", "from_release_id"},
         "cover_library": {"action", "release_id", "offset"},
         "cover_reuse": {"action", "release_id", "from_release_id", "cover_id"},
         "prepare": {"action", "release_id", "title", "description", "cover_id", "visibility", "publish_at"},
@@ -114,13 +116,23 @@ def validate_request(value):
         raise ValueError("只支持当前页或已有暂存编辑页核查")
     if action == "editor_check" and value.get("view", "current") not in {"current", "saved_editor"}:
         raise ValueError("只支持当前页或已有暂存编辑页核查")
-    if action in {"prepare", "covers", "cover_import", "editor_check"}:
+    if action in {"prepare", "covers", "cover_import", "cover_import_saved", "cover_pair", "editor_check"}:
         if not isinstance(value.get("release_id"), str) or not ID_PATTERN.fullmatch(value["release_id"]):
             raise ValueError("作品编号无效")
-    if action == "cover_import":
+    if action in {"cover_import", "cover_import_saved"}:
         encoded = value.get("image_base64")
         if not isinstance(encoded, str) or not 1 <= len(encoded) <= 12 * 1024 * 1024:
             raise ValueError("封面图片编码无效")
+    if action == "cover_pair":
+        if any(
+            not isinstance(value.get(field), str) or not COVER_PATTERN.fullmatch(value[field])
+            for field in ("landscape_cover_id", "portrait_cover_id")
+        ):
+            raise ValueError("单图封面编号无效")
+        if "from_release_id" in value and (
+            not isinstance(value["from_release_id"], str) or not ID_PATTERN.fullmatch(value["from_release_id"])
+        ):
+            raise ValueError("来源作品编号无效")
     if action == "covers" and "times" in value:
         times = value["times"]
         import math
@@ -334,7 +346,29 @@ class ContentManager:
                 except ValueError as exc:
                     raise ValueError("封面图片编码无效") from exc
                 cover = await asyncio.to_thread(self.covers.import_image, request["release_id"], image)
-                return response("ready", "本人图片已转换为双比例候选封面，尚未应用。图像保留完整画面并加黑边；请核对预览或提供合适比例的专用封面。", cover=cover)
+                return response("ready", "本人图片已导入并生成单图候选封面，尚未应用；请核对双槽预览，不能据此认为两种槽位都已匹配。", cover=cover)
+            if action == "cover_import_saved":
+                try:
+                    image = base64.b64decode(request["image_base64"], validate=True)
+                except ValueError as exc:
+                    raise ValueError("封面图片编码无效") from exc
+                cover = await asyncio.to_thread(
+                    self.covers.import_image, request["release_id"], image, source="saved_image",
+                )
+                return response("ready", "本地制作素材已导入为单图候选封面，尚未应用；请核对预览或使用两张适配素材配对。", cover=cover)
+            if action == "cover_pair":
+                cover = await asyncio.to_thread(
+                    self.covers.pair,
+                    request["release_id"],
+                    request["landscape_cover_id"],
+                    request["portrait_cover_id"],
+                    from_release_id=request.get("from_release_id"),
+                )
+                return response(
+                    "ready",
+                    "双素材封面已配对：横槽4:3、竖槽3:4。仅生成候选，尚未应用、上传或发布；请核对双槽预览。",
+                    cover=cover,
+                )
             if action == "cover_library":
                 catalog = await asyncio.to_thread(self.covers.catalog, request.get("release_id"), request.get("offset", 0))
                 return response("ready", "已读取保存的封面，按来源分类，每页最多五组；复用前由本人选择，不重新提帧。", **catalog)

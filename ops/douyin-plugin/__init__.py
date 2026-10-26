@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+import errno
 import hashlib
 import io
 import json
@@ -33,7 +34,7 @@ CONTENT_STATES = {
 }
 _CONTENT_ROOT_FIELDS = {
     "ok", "state", "message", "releases", "plan", "job", "metrics", "ui",
-    "covers", "cover_sources", "cover", "recovery", "total", "next_offset",
+    "covers", "cover_sources", "saved_sources", "cover", "recovery", "total", "next_offset",
 }
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -62,6 +63,10 @@ _COVER_PREVIEW_SIZES = {"landscape": (320, 240), "portrait": (240, 320)}
 _MAX_COVER_CACHE_FILES = 200
 _COVER_CACHE_TTL_SECONDS = 24 * 60 * 60
 _COVER_CACHE_FILENAME_RE = re.compile(r"[0-9a-f]{64}\.jpg\Z")
+_SAVED_COVER_VARIANTS = (("9x16", "9:16"), ("16x9", "16:9"), ("4x3", "4:3"), ("3x4", "3:4"))
+_SAVED_COVER_EXTENSIONS = (("png", "PNG"), ("jpg", "JPEG"), ("jpeg", "JPEG"), ("webp", "WEBP"))
+_SAVED_COVER_ASPECTS = {"9:16": (9, 16), "16:9": (16, 9), "4:3": (4, 3), "3:4": (3, 4)}
+_COVER_SOURCES = {"qq_image", "video_frame", "library_image", "saved_image", "paired_images"}
 _INBOUND_IMAGE_LOCK = threading.Lock()
 _INBOUND_IMAGES = {}
 _INBOUND_IMAGE_NONCES = {}
@@ -185,6 +190,9 @@ def _content_payload(args):
     elif action == "cover_sources":
         if set(args) != {"action"}:
             raise ValueError("cover_sources 仅接受 action")
+    elif action == "cover_saved_sources":
+        if set(args) != {"action", "release_id"} or not _valid_release_id(args.get("release_id")):
+            raise ValueError("cover_saved_sources 字段无效")
     elif action == "cover_library":
         if not set(args) <= {"action", "release_id", "offset"}:
             raise ValueError("cover_library 字段无效")
@@ -206,6 +214,27 @@ def _content_payload(args):
             raise ValueError("release_id 无效")
         if not isinstance(args.get("image_id"), str) or not _IMAGE_ID_RE.fullmatch(args["image_id"]):
             raise ValueError("image_id 无效")
+    elif action == "cover_import_saved":
+        if set(args) != {"action", "release_id", "image_id"}:
+            raise ValueError("cover_import_saved 字段无效")
+        if not _valid_release_id(args.get("release_id")):
+            raise ValueError("release_id 无效")
+        if not isinstance(args.get("image_id"), str) or not _IMAGE_ID_RE.fullmatch(args["image_id"]):
+            raise ValueError("image_id 无效")
+    elif action == "cover_pair":
+        if not {"action", "release_id", "landscape_cover_id", "portrait_cover_id"} <= set(args) or not set(args) <= {
+            "action", "release_id", "landscape_cover_id", "portrait_cover_id", "from_release_id"
+        }:
+            raise ValueError("cover_pair 字段无效")
+        if not _valid_release_id(args.get("release_id")):
+            raise ValueError("release_id 无效")
+        if "from_release_id" in args and not _valid_release_id(args["from_release_id"]):
+            raise ValueError("from_release_id 无效")
+        if any(
+            not isinstance(args.get(field), str) or not _SHA256_RE.fullmatch(args[field])
+            for field in ("landscape_cover_id", "portrait_cover_id")
+        ):
+            raise ValueError("单图封面编号无效")
     elif action == "prepare":
         allowed = {"action", "release_id", "title", "description", "cover_id", "visibility", "publish_at"}
         if not {"action", "release_id", "cover_id"} <= set(args) or not set(args) <= allowed:
@@ -409,7 +438,7 @@ def _save_cover_preview(data):
             os.close(fd)
 
 
-def _decode_cover_responses(covers):
+def _decode_cover_responses(covers, *, expected_source=None):
     if not isinstance(covers, list) or len(covers) > 5:
         raise ValueError("covers 响应无效")
     sanitized = []
@@ -427,7 +456,8 @@ def _decode_cover_responses(covers):
                 for field in ("cover_id", "cover_sha256", "video_sha256")
             )
             or not isinstance(cover.get("source"), str)
-            or not cover["source"]
+            or cover["source"] not in _COVER_SOURCES
+            or (expected_source is not None and cover["source"] != expected_source)
             or ("time" in cover and (
                 isinstance(cover["time"], bool)
                 or not isinstance(cover["time"], (int, float))
@@ -534,7 +564,10 @@ def _validate_content_response(result, *, action=None):
     for field in ("plan", "job", "metrics", "ui"):
         if field in result and not isinstance(result[field], dict):
             raise ValueError(f"{field} 响应无效")
-    if "cover" in result and (action not in {"cover_import", "cover_reuse"} or not isinstance(result["cover"], dict)):
+    if "cover" in result and (
+        action not in {"cover_import", "cover_import_saved", "cover_reuse", "cover_pair"}
+        or not isinstance(result["cover"], dict)
+    ):
         raise ValueError("意外的 cover 响应")
     if any(k in result for k in ("total", "next_offset")):
         if (action != "cover_library" or type(result.get("total")) is not int or result["total"] < 0
@@ -546,6 +579,54 @@ def _validate_content_response(result, *, action=None):
         or any(not isinstance(item, dict) for item in result["cover_sources"])
     ):
         raise ValueError("cover_sources 响应无效")
+    if "saved_sources" in result:
+        saved_sources = result["saved_sources"]
+        if action != "cover_saved_sources" or not isinstance(saved_sources, list) or len(saved_sources) > 16:
+            raise ValueError("saved_sources 响应无效")
+        expected_fields = {
+            "image_id", "filename", "release_id", "width", "height", "aspect", "expected_aspect",
+        }
+        seen_image_ids = set()
+        for source in saved_sources:
+            if (
+                not isinstance(source, dict)
+                or set(source) != expected_fields
+                or not isinstance(source.get("image_id"), str)
+                or not _IMAGE_ID_RE.fullmatch(source["image_id"])
+                or source["image_id"] in seen_image_ids
+                or not _valid_release_id(source.get("release_id"))
+                or not isinstance(source.get("filename"), str)
+                or "/" in source["filename"]
+                or "\\" in source["filename"]
+                or Path(source["filename"]).name != source["filename"]
+                or not re.fullmatch(
+                    re.escape(source["release_id"])
+                    + r"_(?:9x16|16x9|4x3|3x4)\.(?:png|jpg|jpeg|webp)",
+                    source["filename"],
+                )
+                or type(source.get("width")) is not int
+                or type(source.get("height")) is not int
+                or source["width"] <= 0
+                or source["height"] <= 0
+                or source["width"] * source["height"] > _MAX_COVER_PREVIEW_PIXELS
+                or not isinstance(source.get("aspect"), str)
+                or source["aspect"] not in _SAVED_COVER_ASPECTS
+                or not isinstance(source.get("expected_aspect"), str)
+                or source["expected_aspect"] not in _SAVED_COVER_ASPECTS
+                or not any(
+                    source["width"] * aspect_height == source["height"] * aspect_width
+                    and aspect == source["aspect"]
+                    for aspect, (aspect_width, aspect_height) in _SAVED_COVER_ASPECTS.items()
+                )
+                or _SAVED_COVER_VARIANTS[
+                    next(
+                        index for index, (variant, _aspect) in enumerate(_SAVED_COVER_VARIANTS)
+                        if f"_{variant}." in source["filename"]
+                    )
+                ][1] != source["expected_aspect"]
+            ):
+                raise ValueError("saved_sources 项目无效")
+            seen_image_ids.add(source["image_id"])
 
     sanitized_covers = None
     sanitized_cover = None
@@ -557,7 +638,10 @@ def _validate_content_response(result, *, action=None):
         result_to_scan = dict(result)
         result_to_scan["covers"] = sanitized_covers
     elif "cover" in result:
-        sanitized_single, decoded_previews = _decode_cover_responses([result["cover"]])
+        expected_source = "paired_images" if action == "cover_pair" else None
+        sanitized_single, decoded_previews = _decode_cover_responses(
+            [result["cover"]], expected_source=expected_source,
+        )
         sanitized_cover = sanitized_single[0]
         result_to_scan = dict(result)
         result_to_scan["cover"] = sanitized_cover
@@ -794,6 +878,265 @@ def _read_registered_image(image_id, scope):
     return data
 
 
+def _saved_cover_root(root=None):
+    return Path(root) if root is not None else Path.home() / "workspace" / "starlibrary_covers"
+
+
+def _saved_file_stat_identity(info):
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _saved_directory_snapshot(path):
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    _checked_directory(absolute)
+    components = [Path(absolute.anchor)]
+    current = components[0]
+    for part in absolute.parts[1:]:
+        current = current / part
+        components.append(current)
+    snapshot = []
+    for component in components:
+        info = component.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError("不安全的制作素材目录")
+        snapshot.append((component, info.st_dev, info.st_ino))
+    return tuple(snapshot)
+
+
+def _verify_saved_directory_snapshot(snapshot):
+    for component, device, inode in snapshot:
+        info = component.lstat()
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or (info.st_dev, info.st_ino) != (device, inode)
+        ):
+            raise ValueError("制作素材目录身份已变化")
+
+
+def _saved_directory_open_flags():
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError("当前系统不支持安全的本地素材目录读取")
+    return (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+
+
+def _open_saved_cover_directory(path):
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    flags = _saved_directory_open_flags()
+    directory_fd = os.open(absolute.anchor, flags)
+    try:
+        for part in absolute.parts[1:]:
+            next_fd = os.open(part, flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return directory_fd
+    except FileNotFoundError:
+        os.close(directory_fd)
+        raise
+    except OSError as exc:
+        os.close(directory_fd)
+        if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+            raise ValueError("不安全的制作素材目录") from exc
+        raise
+
+
+def _open_saved_cover_child_directory(parent_fd, name):
+    try:
+        return os.open(name, _saved_directory_open_flags(), dir_fd=parent_fd)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+            raise ValueError("不安全的制作素材目录") from exc
+        raise
+
+
+def _read_saved_cover_file_posix(directory_fd, filename, max_bytes):
+    before = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise ValueError("制作素材必须是普通文件")
+    if before.st_size > max_bytes:
+        raise ValueError("制作素材超过大小限制")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(filename, flags, dir_fd=directory_fd)
+    try:
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+            or _saved_file_stat_identity(before) != _saved_file_stat_identity(opened)
+        ):
+            raise ValueError("制作素材文件身份已变化")
+        if opened.st_size > max_bytes:
+            raise ValueError("制作素材超过大小限制")
+
+        data = bytearray()
+        while len(data) <= max_bytes:
+            chunk = os.read(fd, min(64 * 1024, max_bytes + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        if len(data) > max_bytes:
+            raise ValueError("制作素材超过大小限制")
+
+        after = os.fstat(fd)
+        named_after = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(named_after.st_mode)
+            or _saved_file_stat_identity(before) != _saved_file_stat_identity(opened)
+            or _saved_file_stat_identity(opened) != _saved_file_stat_identity(after)
+            or _saved_file_stat_identity(after) != _saved_file_stat_identity(named_after)
+            or len(data) != after.st_size
+        ):
+            raise ValueError("制作素材文件身份或内容已变化")
+        return bytes(data)
+    finally:
+        os.close(fd)
+
+
+def _read_saved_cover_file_windows(path, directory_snapshot, max_bytes):
+    _verify_saved_directory_snapshot(directory_snapshot)
+    before = path.lstat()
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise ValueError("制作素材必须是普通文件")
+    if before.st_size > max_bytes:
+        raise ValueError("制作素材超过大小限制")
+    data = _read_no_follow(path, max_bytes)
+    after = path.lstat()
+    _verify_saved_directory_snapshot(directory_snapshot)
+    if (
+        stat.S_ISLNK(after.st_mode)
+        or not stat.S_ISREG(after.st_mode)
+        or _saved_file_stat_identity(before) != _saved_file_stat_identity(after)
+        or len(data) != after.st_size
+    ):
+        raise ValueError("制作素材文件身份或内容已变化")
+    return data
+
+
+def _read_saved_cover_records(directory, scope, release_id, *, posix_fd, directory_snapshot=None):
+    scope_parts = scope if isinstance(scope, (tuple, list)) else (scope or "owner",)
+    records = []
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError("无法加载图片解码器") from exc
+
+    for variant, expected_aspect in _SAVED_COVER_VARIANTS:
+        for extension, expected_format in _SAVED_COVER_EXTENSIONS:
+            filename = f"{release_id}_{variant}.{extension}"
+            try:
+                if posix_fd:
+                    data = _read_saved_cover_file_posix(directory, filename, _MAX_INBOUND_IMAGE_BYTES)
+                else:
+                    data = _read_saved_cover_file_windows(
+                        directory / filename, directory_snapshot, _MAX_INBOUND_IMAGE_BYTES,
+                    )
+            except FileNotFoundError:
+                continue
+            try:
+                with Image.open(io.BytesIO(data), formats=("PNG", "JPEG", "WEBP")) as image:
+                    width, height = image.size
+                    actual_aspect = next((
+                        aspect for aspect, (aspect_width, aspect_height) in _SAVED_COVER_ASPECTS.items()
+                        if width * aspect_height == height * aspect_width
+                    ), None)
+                    if (
+                        image.format != expected_format
+                        or bool(getattr(image, "is_animated", False))
+                        or getattr(image, "n_frames", 1) != 1
+                        or width <= 0
+                        or height <= 0
+                        or width * height > _MAX_COVER_PREVIEW_PIXELS
+                        or actual_aspect is None
+                    ):
+                        raise ValueError("制作素材图片尺寸、比例或帧数无效")
+                    image.load()
+            except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+                raise ValueError("制作素材图片无法安全解码") from exc
+
+            content_sha256 = hashlib.sha256(data).hexdigest()
+            identity = hashlib.sha256("\0".join((
+                *(str(part) for part in scope_parts), release_id, filename, content_sha256,
+            )).encode("utf-8")).hexdigest()[:32]
+            records.append(({
+                "image_id": identity,
+                "filename": filename,
+                "release_id": release_id,
+                "width": width,
+                "height": height,
+                "aspect": actual_aspect,
+                "expected_aspect": expected_aspect,
+            }, data))
+    return records
+
+
+def _enumerate_saved_cover_sources(release_id, scope, root=None):
+    if not _valid_release_id(release_id):
+        raise ValueError("作品编号无效")
+    root_path = _saved_cover_root(root)
+    if os.name == "posix":
+        try:
+            root_fd = _open_saved_cover_directory(root_path)
+        except FileNotFoundError:
+            return False, []
+        try:
+            try:
+                release_fd = _open_saved_cover_child_directory(root_fd, release_id)
+            except FileNotFoundError:
+                return True, []
+            try:
+                return True, _read_saved_cover_records(
+                    release_fd, scope, release_id, posix_fd=True,
+                )
+            finally:
+                os.close(release_fd)
+        finally:
+            os.close(root_fd)
+
+    # Windows 保留目录链检查并比较读取前后的身份快照；该路径 API 不提供 POSIX dirfd 的等价保证。
+    try:
+        checked_root = _checked_directory(root_path)
+    except FileNotFoundError:
+        return False, []
+    try:
+        release_directory = _checked_directory(checked_root / release_id)
+    except FileNotFoundError:
+        return True, []
+    directory_snapshot = _saved_directory_snapshot(release_directory)
+    return True, _read_saved_cover_records(
+        release_directory, scope, release_id, posix_fd=False,
+        directory_snapshot=directory_snapshot,
+    )
+
+
+def _saved_cover_sources(release_id, scope, root=None):
+    _delivered, records = _enumerate_saved_cover_sources(release_id, scope, root)
+    return [record for record, _data in records]
+
+
+def _read_saved_cover_image(image_id, release_id, scope, root=None):
+    if not isinstance(image_id, str) or not _IMAGE_ID_RE.fullmatch(image_id):
+        raise ValueError("图片编号无效")
+    _delivered, records = _enumerate_saved_cover_sources(release_id, scope, root)
+    for record, data in records:
+        if record["image_id"] == image_id:
+            return data
+    raise ValueError("制作素材已变更或不可用")
+
+
 def _purge_confirmations(now):
     for key, (deadline, _nonce) in list(_CONFIRMATIONS.items()):
         if deadline <= now:
@@ -878,7 +1221,10 @@ async def handle_content(args, **kwargs):
             "内容操作参数无效；未执行任何操作。stage/draft 使用 prepare 返回的完整 plan_id；"
             "收到本人确认后，publish 仅传 action，不复制 token、星号或缩略值，不重复相同错误调用。"
         )}, ensure_ascii=False)
-    owner_actions = {"cover_sources", "cover_import", "cover_library", "cover_reuse"}
+    owner_actions = {
+        "cover_sources", "cover_import", "cover_saved_sources", "cover_import_saved",
+        "cover_pair", "cover_library", "cover_reuse",
+    }
     owner_scope = _owner_qq_dm_scope() if action in owner_actions else None
     if action in owner_actions and owner_scope is None:
         return json.dumps({"ok": False, "state": "unavailable", "message": "封面库与图片来源仅可在指定 QQ 私聊中查看、导入或复用。"}, ensure_ascii=False)
@@ -892,6 +1238,31 @@ async def handle_content(args, **kwargs):
             "cover_sources": _cover_sources(owner_scope),
         }
         return json.dumps(result, ensure_ascii=False)
+    if action == "cover_saved_sources":
+        try:
+            delivered, records = _enumerate_saved_cover_sources(
+                args["release_id"], owner_scope,
+            )
+        except (OSError, ValueError):
+            return json.dumps({
+                "ok": False,
+                "state": "needs_attention",
+                "message": "固定制作目录或素材不安全、无效；请检查该作品目录中的规范图片文件。",
+                "saved_sources": [],
+            }, ensure_ascii=False)
+        saved_sources = [record for record, _data in records]
+        if not delivered:
+            message = "固定制作目录尚未交付，因此没有可列出的本地封面素材。"
+        elif saved_sources:
+            message = "已列出该作品固定制作目录中的规范图片素材；image_id 只标识当前文件内容。"
+        else:
+            message = "该作品目录中没有符合命名、尺寸和比例要求的本地封面素材。"
+        return json.dumps({
+            "ok": True,
+            "state": "ready",
+            "message": message,
+            "saved_sources": saved_sources,
+        }, ensure_ascii=False)
     request = args
     if action in {"stage", "draft"}:
         request = {"action": action, "token": args.get("plan_id", args.get("token"))}
@@ -912,6 +1283,22 @@ async def handle_content(args, **kwargs):
                 }, ensure_ascii=False)
             request = {
                 "action": "cover_import",
+                "release_id": args["release_id"],
+                "image_base64": base64.b64encode(image_data).decode("ascii"),
+            }
+        elif action == "cover_import_saved":
+            try:
+                image_data = _read_saved_cover_image(
+                    args["image_id"], args["release_id"], owner_scope,
+                )
+            except (OSError, ValueError):
+                return json.dumps({
+                    "ok": False,
+                    "state": "needs_attention",
+                    "message": "该制作素材已变更或不可用；请重新查看 cover_saved_sources。",
+                }, ensure_ascii=False)
+            request = {
+                "action": "cover_import_saved",
                 "release_id": args["release_id"],
                 "image_base64": base64.b64encode(image_data).decode("ascii"),
             }
@@ -993,9 +1380,11 @@ def register(ctx):
         schema={
             "name": "douyin_content",
             "description": (
-                "管理抖音作品。先用 list 选择服务器上的成品；用 covers 查看视频帧，或在指定 QQ 私聊中用 cover_sources 列候选图片、"
-                "再按 image_id 调用 cover_import。把候选 MEDIA 预览给用户并等待其明确选择 cover_id，禁止自行选封面。"
-                "已有封面先用 cover_library 浏览，区分用户上传、视频提帧和库中复用；可传release_id筛选、offset按next_offset翻页。"
+                "管理抖音作品。先用 list 选择服务器上的成品；后台横封面槽为4:3、竖封面槽为3:4；9:16只是可能的素材版本，不是竖槽比例。"
+                "已有封面优先用 cover_library 浏览，区分来源并检查双槽预览；可传release_id筛选、offset按next_offset翻页。"
+                "用户已在固定制作目录放好素材时，先用 cover_saved_sources 和 release_id 查看本地候选及实际比例；不要让用户重新发送或传任意路径。"
+                "分别用两张候选的 image_id 调用 cover_import_saved 入库，再用 cover_pair 传 landscape_cover_id 和 portrait_cover_id 组合；单图导入只是一个候选，不表示双槽都已适配。"
+                "把 cover_pair 返回的双槽 MEDIA 预览给用户核对；本人选择后将其新 cover_id 传给 prepare。QQ 图片也可用 cover_sources/cover_import 单图入库。"
                 "本人选择库中封面后，用cover_reuse传目标release_id、来源from_release_id及来源cover_id，取得目标的新cover_id后再prepare；不能直接把另一作品的旧ID用于目标作品，也不重新提帧替代查询图库。"
                 "用户选择后用 prepare（必须传该 cover_id）确认标题、简介、封面、可见范围和可选定时；若用户要求暂存则调用 draft。"
                 "prepare 返回 plan.plan_id，stage/draft 必须完整传入 plan_id，不缩略、不替换星号；这只是计划引用，不是API密钥。"
@@ -1012,11 +1401,13 @@ def register(ctx):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "metrics", "covers", "cover_sources", "cover_import", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"]},
+                    "action": {"type": "string", "enum": ["list", "metrics", "covers", "cover_sources", "cover_import", "cover_saved_sources", "cover_import_saved", "cover_pair", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"]},
                     "from_release_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"},
                     "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
                     "release_id": {"type": "string"},
                     "image_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+                    "landscape_cover_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "portrait_cover_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                     "times": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "number", "minimum": 0, "maximum": 1e12}},
                     "title": {"type": "string"},
                     "description": {"type": "string"},

@@ -162,6 +162,17 @@ def _cover_identity(release_id: str, video_sha256: str, cover_sha256: str) -> st
     return hashlib.sha256(payload).hexdigest()
 
 
+def _paired_cover_sha256(landscape_sha256: str, portrait_sha256: str) -> str:
+    if _HEX_DIGEST.fullmatch(landscape_sha256) is None or _HEX_DIGEST.fullmatch(portrait_sha256) is None:
+        raise CoverError("配对封面摘要无效")
+    payload = (
+        b"douyin-paired-cover-v2\0"
+        + bytes.fromhex(landscape_sha256)
+        + bytes.fromhex(portrait_sha256)
+    )
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -243,7 +254,13 @@ def _preview_jpeg(cover_jpeg: bytes, name: str) -> bytes:
 
 
 class CoverStore:
-    CATEGORIES = {"qq_image": "uploads", "video_frame": "frames", "library_image": "reused"}
+    CATEGORIES = {
+        "qq_image": "uploads",
+        "video_frame": "frames",
+        "library_image": "reused",
+        "saved_image": "saved",
+        "paired_images": "pairs",
+    }
 
     def __init__(self, data_dir: str | os.PathLike[str], release_store: Any) -> None:
         self.data_dir = Path(os.path.abspath(data_dir))
@@ -326,6 +343,8 @@ class CoverStore:
         self,
         release: dict[str, object],
         cover_id: str,
+        *,
+        allow_pair: bool = True,
     ) -> dict[str, object]:
         release_id = str(release["release_id"])
         if not isinstance(cover_id, str) or _HEX_DIGEST.fullmatch(cover_id) is None:
@@ -337,15 +356,13 @@ class CoverStore:
             names = {entry.name for entry in directory.iterdir()}
         except OSError as exc:
             raise CoverError("无法列出封面资产") from exc
-        if names != {*_ASSET_NAMES, _MANIFEST_NAME}:
-            raise CoverError("封面目录内容不完整或包含未知文件")
 
         manifest_bytes = _read_regular_file(directory / _MANIFEST_NAME, 64 * 1024, private=True)
         try:
             manifest = json.loads(manifest_bytes, object_pairs_hook=_unique_object)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise CoverError("封面清单无效") from exc
-        required = {
+        base_required = {
             "schema_version",
             "release_id",
             "cover_id",
@@ -355,57 +372,152 @@ class CoverStore:
             "source",
             "time",
         }
-        if not isinstance(manifest, dict) or set(manifest) != required:
+        if not isinstance(manifest, dict):
             raise CoverError("封面清单字段无效")
-        if type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
+        schema_version = manifest.get("schema_version")
+        if type(schema_version) is not int or schema_version not in (1, 2):
             raise CoverError("封面清单版本无效")
+        if schema_version == 2:
+            if not allow_pair:
+                raise CoverError("配对封面不能引用其他配对封面")
+            required = base_required | {"references"}
+            asset_names = ("landscape.jpg", "portrait.jpg")
+            if names != {*asset_names, _MANIFEST_NAME}:
+                raise CoverError("配对封面目录内容不完整或包含未知文件")
+        else:
+            required = base_required
+            asset_names = _ASSET_NAMES
+            if names != {*asset_names, _MANIFEST_NAME}:
+                raise CoverError("封面目录内容不完整或包含未知文件")
+        if set(manifest) != required:
+            raise CoverError("封面清单字段无效")
         if manifest["release_id"] != release_id or manifest["cover_id"] != cover_id:
             raise CoverError("封面清单身份不匹配")
+
         cover_sha256 = manifest["cover_sha256"]
         video_sha256 = manifest["video_sha256"]
+        source = manifest["source"]
         if not isinstance(cover_sha256, str) or _HEX_DIGEST.fullmatch(cover_sha256) is None:
             raise CoverError("封面摘要无效")
         if video_sha256 != release["video_sha256"]:
             raise CoverError("封面关联的原视频已变化")
+        if not isinstance(source, str) or source not in self.CATEGORIES:
+            raise CoverError("封面来源无效")
+        frame_time = manifest["time"]
+
+        references: dict[str, str] | None = None
+        expected_assets: dict[str, bytes] | None = None
+        if schema_version == 2:
+            if source != "paired_images" or frame_time is not None:
+                raise CoverError("配对封面来源或时间字段无效")
+            if directory.parent != self.covers_dir / release_id / self.CATEGORIES["paired_images"]:
+                raise CoverError("配对封面分类与记录来源不一致")
+            raw_references = manifest["references"]
+            reference_fields = {"release_id", "landscape_cover_id", "portrait_cover_id"}
+            if not isinstance(raw_references, dict) or set(raw_references) != reference_fields:
+                raise CoverError("配对封面引用字段无效")
+            try:
+                source_release_id = validate_release_id(raw_references["release_id"])
+            except (TypeError, ValueError) as exc:
+                raise CoverError("配对封面来源作品编号无效") from exc
+            landscape_cover_id = raw_references["landscape_cover_id"]
+            portrait_cover_id = raw_references["portrait_cover_id"]
+            if (
+                not isinstance(landscape_cover_id, str)
+                or _HEX_DIGEST.fullmatch(landscape_cover_id) is None
+                or not isinstance(portrait_cover_id, str)
+                or _HEX_DIGEST.fullmatch(portrait_cover_id) is None
+            ):
+                raise CoverError("配对封面引用编号无效")
+            try:
+                source_release = self._release(source_release_id)
+                landscape = self._load_asset(source_release, landscape_cover_id, allow_pair=False)
+                portrait = self._load_asset(source_release, portrait_cover_id, allow_pair=False)
+            except Exception as exc:
+                raise CoverError("配对封面引用的单图资产无效") from exc
+            landscape_source_path = landscape.get("source_path")
+            portrait_source_path = portrait.get("source_path")
+            if not isinstance(landscape_source_path, Path) or not isinstance(portrait_source_path, Path):
+                raise CoverError("配对封面引用必须是原始单图")
+            landscape_source = _decode_rgb(
+                _read_regular_file(landscape_source_path, MAX_SOURCE_BYTES, private=True),
+                max_pixels=MAX_PIXELS,
+            )
+            portrait_source = _decode_rgb(
+                _read_regular_file(portrait_source_path, MAX_SOURCE_BYTES, private=True),
+                max_pixels=MAX_PIXELS,
+            )
+            if landscape_source.width * 3 != landscape_source.height * 4:
+                raise CoverError("横版封面原图必须为严格 4:3")
+            if portrait_source.width * 4 != portrait_source.height * 3:
+                raise CoverError("竖版封面原图必须为严格 3:4")
+            references = {
+                "release_id": source_release_id,
+                "landscape_cover_id": landscape_cover_id,
+                "portrait_cover_id": portrait_cover_id,
+            }
+            expected_assets = {
+                "landscape.jpg": _read_regular_file(
+                    landscape["landscape_path"], 16 * 1024 * 1024, private=True
+                ),
+                "portrait.jpg": _read_regular_file(
+                    portrait["portrait_path"], 16 * 1024 * 1024, private=True
+                ),
+            }
+            expected_cover_sha256 = _paired_cover_sha256(
+                str(landscape["cover_sha256"]), str(portrait["cover_sha256"])
+            )
+            if cover_sha256 != expected_cover_sha256:
+                raise CoverError("配对封面身份摘要不匹配")
+        else:
+            if source == "paired_images":
+                raise CoverError("配对封面清单版本无效")
+            if directory.parent != self.covers_dir / release_id and directory.parent.name != self.CATEGORIES[source]:
+                raise CoverError("封面分类与记录来源不一致")
+            if source == "video_frame":
+                if not _finite_number(frame_time):
+                    raise CoverError("视频帧时间无效")
+                if not 0 <= frame_time < float(release["duration"]):
+                    raise CoverError("视频帧时间超出原片时长")
+            elif frame_time is not None:
+                raise CoverError("用户图片不应包含视频帧时间")
+
         if _cover_identity(release_id, str(video_sha256), cover_sha256) != cover_id:
             raise CoverError("封面身份摘要不匹配")
-        if not isinstance(manifest["source"], str) or manifest["source"] not in self.CATEGORIES:
-            raise CoverError("封面来源无效")
-        if directory.parent != self.covers_dir / release_id and directory.parent.name != self.CATEGORIES[manifest["source"]]:
-            raise CoverError("封面分类与记录来源不一致")
-        frame_time = manifest["time"]
-        if manifest["source"] == "video_frame":
-            if not _finite_number(frame_time):
-                raise CoverError("视频帧时间无效")
-            if not 0 <= frame_time < float(release["duration"]):
-                raise CoverError("视频帧时间超出原片时长")
-        elif frame_time is not None:
-            raise CoverError("用户图片不应包含视频帧时间")
 
         file_digests = manifest["files"]
-        if not isinstance(file_digests, dict) or set(file_digests) != set(_ASSET_NAMES):
+        if not isinstance(file_digests, dict) or set(file_digests) != set(asset_names):
             raise CoverError("封面资产摘要字段无效")
         asset_bytes: dict[str, bytes] = {}
-        for name in _ASSET_NAMES:
+        for name in asset_names:
             expected_digest = file_digests[name]
             if not isinstance(expected_digest, str) or _HEX_DIGEST.fullmatch(expected_digest) is None:
                 raise CoverError("封面资产摘要无效")
-            size_limit = MAX_SOURCE_BYTES if name == "source.jpg" else 16 * 1024 * 1024
-            contents = _read_regular_file(directory / name, size_limit, private=True)
+            contents = _read_regular_file(
+                directory / name,
+                MAX_SOURCE_BYTES if name == "source.jpg" else 16 * 1024 * 1024,
+                private=True,
+            )
             if _digest(contents) != expected_digest:
                 raise CoverError("封面资产与清单摘要不一致")
             asset_bytes[name] = contents
-        if _digest(asset_bytes["source.jpg"]) != cover_sha256:
-            raise CoverError("规范化原图摘要不一致")
 
-        source = _decode_rgb(asset_bytes["source.jpg"], max_pixels=MAX_PIXELS)
-        if source.size[0] * source.size[1] > MAX_PIXELS:
-            raise CoverError("规范化原图像素数超出允许范围")
-        expected_covers = _cover_jpegs(source)
-        # 以规范化原图重算封面字节，不能把清单中的摘要当作派生图真实性证明。
-        for name, expected in expected_covers.items():
-            if asset_bytes[f"{name}.jpg"] != expected:
-                raise CoverError("封面图片与规范化原图导出结果不一致")
+        if schema_version == 2:
+            assert expected_assets is not None
+            if asset_bytes != expected_assets:
+                raise CoverError("配对封面图片与其原始单图不一致")
+        else:
+            if _digest(asset_bytes["source.jpg"]) != cover_sha256:
+                raise CoverError("规范化原图摘要不一致")
+            source_image = _decode_rgb(asset_bytes["source.jpg"], max_pixels=MAX_PIXELS)
+            if source_image.size[0] * source_image.size[1] > MAX_PIXELS:
+                raise CoverError("规范化原图像素数超出允许范围")
+            expected_covers = _cover_jpegs(source_image)
+            # 以规范化原图重算封面字节，不能把清单中的摘要当作派生图真实性证明。
+            for name, expected in expected_covers.items():
+                if asset_bytes[f"{name}.jpg"] != expected:
+                    raise CoverError("封面图片与规范化原图导出结果不一致")
+
         for name, size in _COVER_SIZES.items():
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -419,17 +531,23 @@ class CoverStore:
                 except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
                     raise CoverError("封面图片数据无效") from exc
 
-        return {
+        private: dict[str, object] = {
             "release_id": release_id,
             "cover_id": cover_id,
             "cover_sha256": cover_sha256,
             "video_sha256": video_sha256,
             "landscape_path": directory / "landscape.jpg",
             "portrait_path": directory / "portrait.jpg",
-            "source_path": directory / "source.jpg",
-            "source": manifest["source"],
+            "source": source,
             "time": float(frame_time) if frame_time is not None else None,
         }
+        if schema_version == 2:
+            assert references is not None
+            private["layout"] = "paired"
+            private["references"] = references
+        else:
+            private["source_path"] = directory / "source.jpg"
+        return private
 
     def load(self, release_id: str, cover_id: str) -> dict[str, object]:
         release = self._release(release_id)
@@ -465,10 +583,156 @@ class CoverStore:
                 "next_offset": next_offset if next_offset < len(ordered) else None}
 
     def reuse(self, release_id: str, from_release_id: str, cover_id: str) -> dict[str, object]:
-        """校验库中规范化原图，再绑定到目标作品，不沿用源作品身份。"""
+        """校验已入库封面，再绑定到目标作品，不沿用源作品身份。"""
         source = self.load(from_release_id, cover_id)
+        if source.get("layout") == "paired":
+            references = source.get("references")
+            if not isinstance(references, dict):
+                raise CoverError("配对封面来源引用无效")
+            return self.pair(
+                release_id,
+                str(references["landscape_cover_id"]),
+                str(references["portrait_cover_id"]),
+                from_release_id=str(references["release_id"]),
+            )
         contents = _read_regular_file(source["source_path"], MAX_SOURCE_BYTES, private=True)
         return self._install(self._release(release_id), contents, source="library_image", time=None)
+
+    def pair(
+        self,
+        release_id: str,
+        landscape_cover_id: str,
+        portrait_cover_id: str,
+        from_release_id: str | None = None,
+    ) -> dict[str, object]:
+        """将已校验的原始 4:3、3:4 单图组合成一个配对封面。"""
+        release = self._release(release_id)
+        source_release_id = (
+            validate_release_id(from_release_id)
+            if from_release_id is not None
+            else str(release["release_id"])
+        )
+        source_release = self._release(source_release_id)
+        landscape = self._load_asset(source_release, landscape_cover_id, allow_pair=False)
+        portrait = self._load_asset(source_release, portrait_cover_id, allow_pair=False)
+        landscape_source_path = landscape.get("source_path")
+        portrait_source_path = portrait.get("source_path")
+        if not isinstance(landscape_source_path, Path) or not isinstance(portrait_source_path, Path):
+            raise CoverError("配对封面只能使用已入库的原始单图")
+        landscape_source = _decode_rgb(
+            _read_regular_file(landscape_source_path, MAX_SOURCE_BYTES, private=True),
+            max_pixels=MAX_PIXELS,
+        )
+        portrait_source = _decode_rgb(
+            _read_regular_file(portrait_source_path, MAX_SOURCE_BYTES, private=True),
+            max_pixels=MAX_PIXELS,
+        )
+        if landscape_source.width * 3 != landscape_source.height * 4:
+            raise CoverError("横版封面原图必须为严格 4:3")
+        if portrait_source.width * 4 != portrait_source.height * 3:
+            raise CoverError("竖版封面原图必须为严格 3:4")
+        landscape_jpeg = _read_regular_file(
+            landscape["landscape_path"], 16 * 1024 * 1024, private=True
+        )
+        portrait_jpeg = _read_regular_file(
+            portrait["portrait_path"], 16 * 1024 * 1024, private=True
+        )
+        references = {
+            "release_id": source_release_id,
+            "landscape_cover_id": str(landscape["cover_id"]),
+            "portrait_cover_id": str(portrait["cover_id"]),
+        }
+        cover_sha256 = _paired_cover_sha256(
+            str(landscape["cover_sha256"]), str(portrait["cover_sha256"])
+        )
+        return self._install_pair(
+            release,
+            landscape_jpeg,
+            portrait_jpeg,
+            references=references,
+            cover_sha256=cover_sha256,
+        )
+
+
+    def _install_pair(
+        self,
+        release: dict[str, object],
+        landscape_jpeg: bytes,
+        portrait_jpeg: bytes,
+        *,
+        references: dict[str, str],
+        cover_sha256: str,
+    ) -> dict[str, object]:
+        release_id = str(release["release_id"])
+        video_sha256 = str(release["video_sha256"])
+        if _HEX_DIGEST.fullmatch(cover_sha256) is None:
+            raise CoverError("配对封面摘要无效")
+        cover_id = _cover_identity(release_id, video_sha256, cover_sha256)
+        release_dir = self._ensure_layout(release_id)
+        existing_dir = self._asset_directory(release_id, cover_id)
+        if existing_dir is not None:
+            existing = self._load_asset(release, cover_id)
+            if existing.get("layout") != "paired" or existing["cover_sha256"] != cover_sha256:
+                raise CoverError("拒绝覆盖同一身份下的不同封面资产")
+            return self._public_dict(existing, source="paired_images", time=None)
+
+        category_dir = release_dir / self.CATEGORIES["paired_images"]
+        _ensure_private_directory(category_dir)
+        destination = category_dir / cover_id
+        try:
+            os.lstat(destination)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise CoverError("无法检查配对封面资产目录") from exc
+        else:
+            existing = self._load_asset(release, cover_id)
+            if existing.get("layout") != "paired" or existing["cover_sha256"] != cover_sha256:
+                raise CoverError("拒绝覆盖同一身份下的不同封面资产")
+            return self._public_dict(existing, source="paired_images", time=None)
+
+        assets = {
+            "landscape.jpg": landscape_jpeg,
+            "portrait.jpg": portrait_jpeg,
+        }
+        manifest = {
+            "schema_version": 2,
+            "release_id": release_id,
+            "cover_id": cover_id,
+            "cover_sha256": cover_sha256,
+            "video_sha256": video_sha256,
+            "files": {name: _digest(contents) for name, contents in assets.items()},
+            "source": "paired_images",
+            "time": None,
+            "references": dict(references),
+        }
+        manifest_bytes = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        temporary = Path(tempfile.mkdtemp(prefix=".tmp-cover-", dir=category_dir))
+        if os.name == "posix":
+            os.chmod(temporary, 0o700)
+        try:
+            for name, contents in assets.items():
+                _write_private_file(temporary, name, contents)
+            _write_private_file(temporary, _MANIFEST_NAME, manifest_bytes)
+            if os.name == "posix":
+                for path in temporary.iterdir():
+                    os.chmod(path, 0o600, follow_symlinks=False)
+            try:
+                os.rename(temporary, destination)
+            except OSError as exc:
+                try:
+                    existing = self._load_asset(release, cover_id)
+                except (FileNotFoundError, CoverError):
+                    raise CoverError("无法原子安装配对封面资产") from exc
+                if existing.get("layout") != "paired" or existing["cover_sha256"] != cover_sha256:
+                    raise CoverError("拒绝覆盖同一身份下的不同封面资产") from exc
+                return self._public_dict(existing, source="paired_images", time=None)
+            private = self._load_asset(release, cover_id)
+            return self._public_dict(private, source="paired_images", time=None)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+
 
     def _install(
         self,
@@ -486,10 +750,10 @@ class CoverStore:
         existing_dir = self._asset_directory(release_id, cover_id)
         if existing_dir is not None:
             existing = self._load_asset(release, cover_id)
-            # 提帧响应保留本次请求时刻；库中复用命中旧资产时保留其原始来源。
+            # 提帧响应保留本次请求时刻；其他重复导入沿用已持久化来源。
             return self._public_dict(existing,
-                                     source=str(existing["source"]) if source == "library_image" else source,
-                                     time=existing["time"] if source == "library_image" else time)
+                                     source=source if source == "video_frame" else str(existing["source"]),
+                                     time=time if source == "video_frame" else existing["time"])
         category_dir = release_dir / self.CATEGORIES[source]
         _ensure_private_directory(category_dir)
         destination = category_dir / cover_id
@@ -504,7 +768,11 @@ class CoverStore:
             existing = self._load_asset(release, cover_id)
             if existing["cover_sha256"] != cover_sha256 or existing["video_sha256"] != video_sha256:
                 raise CoverError("拒绝覆盖同一身份下的不同封面资产")
-            return self._public_dict(existing, source=source, time=time)
+            return self._public_dict(
+                existing,
+                source=source if source == "video_frame" else str(existing["source"]),
+                time=time if source == "video_frame" else existing["time"],
+            )
 
         source_image = _decode_rgb(source_jpeg, max_pixels=MAX_PIXELS)
         covers = _cover_jpegs(source_image)
@@ -542,17 +810,29 @@ class CoverStore:
                     raise CoverError("无法原子安装封面资产") from exc
                 if existing["cover_sha256"] != cover_sha256 or existing["video_sha256"] != video_sha256:
                     raise CoverError("拒绝覆盖同一身份下的不同封面资产") from exc
-                return self._public_dict(existing, source=source, time=time)
+                return self._public_dict(
+                    existing,
+                    source=source if source == "video_frame" else str(existing["source"]),
+                    time=time if source == "video_frame" else existing["time"],
+                )
             private = self._load_asset(release, cover_id)
             return self._public_dict(private, source=source, time=time)
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
 
-    def import_image(self, release_id: str, image_bytes: bytes) -> dict[str, object]:
+    def import_image(
+        self,
+        release_id: str,
+        image_bytes: bytes,
+        *,
+        source: str = "qq_image",
+    ) -> dict[str, object]:
+        if not isinstance(source, str) or source not in {"qq_image", "saved_image"}:
+            raise CoverError("导入封面来源无效")
         release = self._release(release_id)
         source_jpeg = _normalize_image(image_bytes, max_bytes=MAX_IMAGE_BYTES)
-        return self._install(release, source_jpeg, source="qq_image", time=None)
+        return self._install(release, source_jpeg, source=source, time=None)
 
     def frames(
         self,

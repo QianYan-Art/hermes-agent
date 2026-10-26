@@ -89,6 +89,23 @@ def test_parse_request_enforces_size_limit():
         douyin_login.parse_request(b" " * (douyin_login.MAX_REQUEST_BYTES + 1))
 
 
+@pytest.mark.parametrize("action", ["cover_import", "cover_import_saved"])
+def test_cover_imports_share_large_internal_wire_allowance(action, monkeypatch):
+    monkeypatch.syspath_prepend(str(SERVICE_PATH.parent))
+    request = {"action": action, "release_id": "ep00", "image_base64": "A" * 5000}
+    payload = json.dumps({"action": "content", "request": request}).encode()
+    assert douyin_login.parse_request(payload) == request
+    with pytest.raises(douyin_login.ProtocolError):
+        douyin_login.parse_request(json.dumps({"action": "content", "request": {**request, "path": "/tmp/image"}}).encode())
+
+
+def test_other_content_actions_keep_small_wire_limit(monkeypatch):
+    monkeypatch.syspath_prepend(str(SERVICE_PATH.parent))
+    payload = json.dumps({"action": "content", "request": {"action": "list", "padding": "A" * 5000}}).encode()
+    with pytest.raises(douyin_login.ProtocolError, match="4096"):
+        douyin_login.parse_request(payload)
+
+
 def test_login_overlay_overrides_stale_authenticated_background():
     snapshot = {"has_creator_navigation": True, "expected_account_visible": True, "qr_visible": True}
     assert douyin_login.classify_page(snapshot, "creator-id") == "login_required"

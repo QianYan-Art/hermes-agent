@@ -202,6 +202,14 @@ def _success_response(state="published"):
     {"action": "stage", "token": TOKEN, "confirmed": True},
     {"action": "stage", "token": TOKEN, "cover_id": "f" * 64},
     {"action": "cover_import", "release_id": "release-1", "image_id": "0" * 32, "image_base64": "AAAA"},
+    {"action": "cover_saved_sources"},
+    {"action": "cover_saved_sources", "release_id": "../release"},
+    {"action": "cover_import_saved", "release_id": "release-1", "image_id": "0" * 32, "image_base64": "AAAA"},
+    {"action": "cover_pair", "release_id": "release-1", "landscape_cover_id": "a" * 64},
+    {"action": "cover_pair", "release_id": "release-1", "landscape_cover_id": "a" * 64,
+     "portrait_cover_id": "b" * 64, "unexpected": True},
+    {"action": "cover_pair", "release_id": "release-1", "landscape_cover_id": "a" * 64,
+     "portrait_cover_id": "b" * 64, "from_release_id": "../release"},
     {"action": "covers", "release_id": "release-1", "times": [float("inf")]},
     {"action": "covers", "release_id": "release-1", "times": [0, 1, 2, 3, 4, 5]},
     {"action": "prepare", "release_id": "release-1", "visibility": []},
@@ -230,6 +238,17 @@ def test_content_payload_accepts_only_documented_action_shapes():
     assert plugin._content_payload({"action": "covers", "release_id": "release-1", "times": [0, 1.25]}) == "covers"
     assert plugin._content_payload({"action": "cover_sources"}) == "cover_sources"
     assert plugin._content_payload({"action": "cover_import", "release_id": "release-1", "image_id": "0" * 32}) == "cover_import"
+    assert plugin._content_payload({"action": "cover_saved_sources", "release_id": "release-1"}) == "cover_saved_sources"
+    assert plugin._content_payload({"action": "cover_import_saved", "release_id": "release-1", "image_id": "0" * 32}) == "cover_import_saved"
+    assert plugin._content_payload({
+        "action": "cover_pair", "release_id": "release-1",
+        "landscape_cover_id": "a" * 64, "portrait_cover_id": "b" * 64,
+    }) == "cover_pair"
+    assert plugin._content_payload({
+        "action": "cover_pair", "release_id": "release-1",
+        "landscape_cover_id": "a" * 64, "portrait_cover_id": "b" * 64,
+        "from_release_id": "release-2",
+    }) == "cover_pair"
     assert plugin._content_payload({
         "action": "prepare",
         "release_id": "release-1",
@@ -358,8 +377,13 @@ def test_registration_preserves_login_and_registers_content_hook():
     assert "confirmed" not in ctx.tools["douyin_content"]["schema"]["parameters"]["properties"]
     content_schema = ctx.tools["douyin_content"]["schema"]
     assert content_schema["parameters"]["properties"]["action"]["enum"] == [
-        "list", "metrics", "covers", "cover_sources", "cover_import", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"
+        "list", "metrics", "covers", "cover_sources", "cover_import", "cover_saved_sources", "cover_import_saved",
+        "cover_pair", "cover_library", "cover_reuse", "prepare", "stage", "draft", "job", "publish"
     ]
+    description = content_schema["description"]
+    assert "横封面槽为4:3、竖封面槽为3:4" in description
+    assert "9:16只是可能的素材版本" in description
+    assert "cover_saved_sources" in description and "cover_import_saved" in description and "cover_pair" in description
     assert "15 分钟" in content_schema["description"]
     assert "job 查询不会导航" in content_schema["description"]
     assert "另一次 prepare" in content_schema["description"]
@@ -694,6 +718,19 @@ def _jpeg_bytes(payload=b"test", size=(320, 240)):
     return output.getvalue()
 
 
+def _saved_image_bytes(*, format_name="JPEG", size=(400, 300), color="navy", animated=False):
+    from PIL import Image
+
+    first = Image.new("RGB", size, color)
+    output = io.BytesIO()
+    if animated:
+        second = Image.new("RGB", size, "gold")
+        first.save(output, format=format_name, save_all=True, append_images=[second], duration=100, loop=0)
+    else:
+        first.save(output, format=format_name)
+    return output.getvalue()
+
+
 def _cover_response(jpeg_data=None, portrait_data=None):
     jpeg_data = jpeg_data or _jpeg_bytes()
     portrait_data = portrait_data or _jpeg_bytes(b"portrait", size=(240, 320))
@@ -714,6 +751,224 @@ def _cover_response(jpeg_data=None, portrait_data=None):
             ],
         }],
     }
+
+
+def test_saved_cover_sources_use_actual_ratio_and_ignore_unapproved_files(monkeypatch, tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    (release_dir / "release-1_9x16.jpg").write_bytes(_saved_image_bytes(size=(400, 300)))
+    (release_dir / "release-1_3x4.jpeg").write_bytes(_saved_image_bytes(size=(300, 400)))
+    (release_dir / "release-1_master.jpg").write_bytes(b"not an approved source")
+    (release_dir / "release-1_9x16.zip").write_bytes(b"not an image")
+    (release_dir / "release-2_4x3.jpg").write_bytes(b"another release")
+
+    read_files = []
+    read_posix = plugin._read_saved_cover_file_posix
+    read_windows = plugin._read_saved_cover_file_windows
+
+    def tracked_posix(directory_fd, filename, max_bytes):
+        read_files.append(filename)
+        return read_posix(directory_fd, filename, max_bytes)
+
+    def tracked_windows(path, directory_snapshot, max_bytes):
+        read_files.append(Path(path).name)
+        return read_windows(path, directory_snapshot, max_bytes)
+
+    monkeypatch.setattr(plugin, "_read_saved_cover_file_posix", tracked_posix)
+    monkeypatch.setattr(plugin, "_read_saved_cover_file_windows", tracked_windows)
+    scope = ("qqbot", "owner", "owner", "dm")
+    sources = plugin._saved_cover_sources("release-1", scope, root=root)
+
+    assert [source["filename"] for source in sources] == ["release-1_9x16.jpg", "release-1_3x4.jpeg"]
+    assert [(source["aspect"], source["expected_aspect"]) for source in sources] == [
+        ("4:3", "9:16"), ("3:4", "3:4"),
+    ]
+    assert all(len(source["image_id"]) == 32 for source in sources)
+    assert len({source["image_id"] for source in sources}) == 2
+    assert all(set(source) == {
+        "image_id", "filename", "release_id", "width", "height", "aspect", "expected_aspect",
+    } for source in sources)
+    assert len(read_files) == 16
+    assert all(plugin.re.fullmatch(r"release-1_(?:9x16|16x9|4x3|3x4)\.(?:png|jpg|jpeg|webp)", name) for name in read_files)
+    assert plugin._saved_cover_sources("release-1", scope, root=root) == sources
+
+
+def test_saved_cover_image_id_rejects_changed_source_content(tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    source_path = release_dir / "release-1_4x3.jpg"
+    source_path.write_bytes(_saved_image_bytes(size=(400, 300)))
+    scope = ("qqbot", "owner", "owner", "dm")
+    original = plugin._saved_cover_sources("release-1", scope, root=root)[0]
+
+    source_path.write_bytes(_saved_image_bytes(size=(400, 300), color="tomato"))
+    changed = plugin._saved_cover_sources("release-1", scope, root=root)[0]
+    assert changed["image_id"] != original["image_id"]
+    with pytest.raises(ValueError, match="已变更"):
+        plugin._read_saved_cover_image(original["image_id"], "release-1", scope, root=root)
+
+
+def test_saved_cover_sources_reject_symlinked_parent_and_child(tmp_path):
+    scope = ("qqbot", "owner", "owner", "dm")
+    image_data = _saved_image_bytes()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "source.jpg").write_bytes(image_data)
+
+    linked_root = tmp_path / "linked-root"
+    try:
+        linked_root.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前系统不允许创建测试 symlink")
+    with pytest.raises(ValueError):
+        plugin._saved_cover_sources("release-1", scope, root=linked_root)
+
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    try:
+        (release_dir / "release-1_4x3.jpg").symlink_to(outside / "source.jpg")
+    except (OSError, NotImplementedError):
+        pytest.skip("当前系统不允许创建测试 symlink")
+    with pytest.raises(ValueError, match="普通文件"):
+        plugin._saved_cover_sources("release-1", scope, root=root)
+
+
+def test_saved_cover_sources_reject_oversized_and_unsafe_images(tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    source_path = release_dir / "release-1_4x3.jpg"
+
+    source_path.write_bytes(b"x" * (plugin._MAX_INBOUND_IMAGE_BYTES + 1))
+    with pytest.raises(ValueError, match="大小限制"):
+        plugin._saved_cover_sources("release-1", ("qqbot", "owner"), root=root)
+
+    source_path.write_bytes(_saved_image_bytes(size=(4001, 4000)))
+    with pytest.raises(ValueError):
+        plugin._saved_cover_sources("release-1", ("qqbot", "owner"), root=root)
+
+    source_path.write_bytes(b"not a valid image")
+    with pytest.raises(ValueError, match="解码"):
+        plugin._saved_cover_sources("release-1", ("qqbot", "owner"), root=root)
+
+
+def test_saved_cover_sources_reject_animated_webp(tmp_path):
+    from PIL import Image
+
+    if "WEBP" not in Image.SAVE:
+        pytest.skip("当前 Pillow 未启用 WebP 编码")
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    (release_dir / "release-1_4x3.webp").write_bytes(
+        _saved_image_bytes(format_name="WEBP", size=(400, 300), animated=True),
+    )
+    with pytest.raises(ValueError, match="无法安全解码"):
+        plugin._saved_cover_sources("release-1", ("qqbot", "owner"), root=root)
+
+
+def test_saved_cover_response_is_closed_and_reports_real_metadata():
+    source = {
+        "image_id": "0" * 32,
+        "filename": "release-1_9x16.jpg",
+        "release_id": "release-1",
+        "width": 400,
+        "height": 300,
+        "aspect": "4:3",
+        "expected_aspect": "9:16",
+    }
+    response = {"ok": True, "state": "ready", "message": "已列出。", "saved_sources": [source]}
+    assert plugin._validate_content_response(response, action="cover_saved_sources") is response
+
+    for invalid_source in (
+        {**source, "filename": "C:\\Users\\owner\\image.jpg"},
+        {**source, "aspect": "9:16"},
+        {**source, "unexpected": "C:\\private"},
+    ):
+        with pytest.raises(ValueError):
+            plugin._validate_content_response({**response, "saved_sources": [invalid_source]}, action="cover_saved_sources")
+    with pytest.raises(ValueError):
+        plugin._validate_content_response(response, action="list")
+
+
+def test_cover_sources_are_closed_and_pair_requires_paired_images(monkeypatch, tmp_path):
+    import hermes_constants
+
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+    cover = dict(_cover_response()["covers"][0], source="paired_images")
+    cover.pop("time")
+    response = {"ok": True, "state": "ready", "message": "已配对。", "cover": cover}
+    assert plugin._validate_content_response(response, action="cover_pair")["cover"]["source"] == "paired_images"
+
+    for invalid_source in ("qq_image", "not-a-cover-source"):
+        invalid = {**response, "cover": {**cover, "source": invalid_source}}
+        with pytest.raises(ValueError):
+            plugin._validate_content_response(invalid, action="cover_pair")
+
+    allowed = _cover_response()["covers"][0]
+    for source in ("qq_image", "video_frame", "library_image", "saved_image", "paired_images"):
+        assert plugin._decode_cover_responses([{**allowed, "source": source}])[0][0]["source"] == source
+    with pytest.raises(ValueError):
+        plugin._decode_cover_responses([{**allowed, "source": "arbitrary"}])
+
+
+def test_saved_cover_windows_fallback_rejects_file_replacement(monkeypatch, tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    path = release_dir / "release-1_4x3.jpg"
+    path.write_bytes(b"original")
+    replacement = release_dir / "replacement.jpg"
+    replacement.write_bytes(b"changed!")
+    snapshot = plugin._saved_directory_snapshot(release_dir)
+    read_no_follow = plugin._read_no_follow
+
+    def replace_after_read(image_path, max_bytes):
+        data = read_no_follow(image_path, max_bytes)
+        replacement.replace(path)
+        return data
+
+    monkeypatch.setattr(plugin, "_read_no_follow", replace_after_read)
+    with pytest.raises(ValueError, match="身份或内容已变化"):
+        plugin._read_saved_cover_file_windows(path, snapshot, plugin._MAX_INBOUND_IMAGE_BYTES)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX dirfd/NOFOLLOW 链检查在 Linux CI 验证")
+def test_saved_cover_posix_file_reader_rejects_replaced_name_identity(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    (release_dir / "release-1_4x3.jpg").write_bytes(b"stable source")
+    directory_fd = plugin._open_saved_cover_directory(release_dir)
+    original_stat = plugin.os.stat
+    calls = [0]
+
+    def replaced_name_stat(path, *args, **kwargs):
+        info = original_stat(path, *args, **kwargs)
+        if kwargs.get("dir_fd") is not None:
+            calls[0] += 1
+            if calls[0] == 2:
+                fields = {
+                    name: getattr(info, name)
+                    for name in ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+                }
+                fields["st_ino"] += 1
+                return SimpleNamespace(**fields)
+        return info
+
+    try:
+        monkeypatch.setattr(plugin.os, "stat", replaced_name_stat)
+        with pytest.raises(ValueError, match="身份或内容已变化"):
+            plugin._read_saved_cover_file_posix(
+                directory_fd, "release-1_4x3.jpg", plugin._MAX_INBOUND_IMAGE_BYTES,
+            )
+    finally:
+        os.close(directory_fd)
 
 
 def test_fake_qq_hook_registers_only_owner_dm_images_without_exposing_paths(owner_context, monkeypatch, tmp_path):
@@ -891,7 +1146,93 @@ def test_cover_import_reads_only_registered_qq_image_and_sends_internal_base64(o
     assert str(image_path) not in json.dumps(requests)
 
 
-@pytest.mark.parametrize("action", ["cover_sources", "cover_import"])
+def test_cover_saved_sources_reads_fixed_directory_locally(owner_context, monkeypatch, tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    (release_dir / "release-1_4x3.jpg").write_bytes(_saved_image_bytes(size=(400, 300)))
+    monkeypatch.setattr(plugin, "_saved_cover_root", lambda root=None: root if root is not None else tmp_path / "starlibrary_covers")
+    monkeypatch.setattr(plugin, "_request_content", lambda _payload: pytest.fail("本地素材枚举不应调用 UDS"))
+
+    output = json.loads(asyncio.run(plugin.handle_content({
+        "action": "cover_saved_sources", "release_id": "release-1",
+    })))
+    assert output["state"] == "ready"
+    assert output["saved_sources"][0]["aspect"] == "4:3"
+    assert str(root) not in json.dumps(output)
+    assert "image_base64" not in json.dumps(output)
+
+
+def test_cover_saved_sources_reports_undelivered_directory_locally(owner_context, monkeypatch, tmp_path):
+    missing_root = tmp_path / "not-delivered"
+    monkeypatch.setattr(plugin, "_saved_cover_root", lambda root=None: root if root is not None else missing_root)
+    monkeypatch.setattr(plugin, "_request_content", lambda _payload: pytest.fail("本地素材枚举不应调用 UDS"))
+    output = json.loads(asyncio.run(plugin.handle_content({
+        "action": "cover_saved_sources", "release_id": "release-1",
+    })))
+    assert output["state"] == "ready"
+    assert output["saved_sources"] == []
+    assert "制作目录尚未交付" in output["message"]
+
+
+def test_cover_import_saved_rechecks_source_and_sends_only_internal_base64(owner_context, monkeypatch, tmp_path):
+    root = tmp_path / "starlibrary_covers"
+    release_dir = root / "release-1"
+    release_dir.mkdir(parents=True)
+    image_data = _saved_image_bytes(size=(400, 300), color="navy")
+    source_path = release_dir / "release-1_4x3.jpg"
+    source_path.write_bytes(image_data)
+    monkeypatch.setattr(plugin, "_saved_cover_root", lambda root=None: root if root is not None else tmp_path / "starlibrary_covers")
+    scope = plugin._owner_qq_dm_scope()
+    image_id = plugin._saved_cover_sources("release-1", scope)[0]["image_id"]
+    requests = []
+
+    async def request(payload):
+        requests.append(payload)
+        return _success_response("ready")
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    output = json.loads(asyncio.run(plugin.handle_content({
+        "action": "cover_import_saved", "release_id": "release-1", "image_id": image_id,
+    })))
+    assert output["state"] == "ready"
+    assert requests == [{
+        "action": "cover_import_saved",
+        "release_id": "release-1",
+        "image_base64": base64.b64encode(image_data).decode("ascii"),
+    }]
+    assert str(source_path) not in json.dumps(requests)
+
+    requests.clear()
+    source_path.write_bytes(_saved_image_bytes(size=(400, 300), color="gold"))
+    stale = json.loads(asyncio.run(plugin.handle_content({
+        "action": "cover_import_saved", "release_id": "release-1", "image_id": image_id,
+    })))
+    assert stale["state"] == "needs_attention"
+    assert requests == []
+
+
+def test_cover_pair_sends_only_validated_pair_identifiers(owner_context, monkeypatch):
+    requests = []
+
+    async def request(payload):
+        requests.append(payload)
+        return _success_response("ready")
+
+    monkeypatch.setattr(plugin, "_request_content", request)
+    args = {
+        "action": "cover_pair",
+        "release_id": "release-1",
+        "landscape_cover_id": "a" * 64,
+        "portrait_cover_id": "b" * 64,
+        "from_release_id": "release-2",
+    }
+    output = json.loads(asyncio.run(plugin.handle_content(args)))
+    assert output["state"] == "ready"
+    assert requests == [args]
+
+
+@pytest.mark.parametrize("action", ["cover_sources", "cover_import", "cover_saved_sources", "cover_import_saved", "cover_pair"])
 def test_cover_sources_and_import_reject_cli_without_owner_qq_scope(owner_context, monkeypatch, action):
     def no_session_value(_name, default=""):
         return default
@@ -899,8 +1240,12 @@ def test_cover_sources_and_import_reject_cli_without_owner_qq_scope(owner_contex
     monkeypatch.setattr("gateway.session_context.get_session_env", no_session_value)
     monkeypatch.setattr(plugin, "_request_content", lambda _payload: pytest.fail("不应调用 UDS"))
     args = {"action": action}
-    if action == "cover_import":
+    if action in {"cover_import", "cover_import_saved"}:
         args.update(release_id="release-1", image_id="0" * 32)
+    elif action == "cover_saved_sources":
+        args.update(release_id="release-1")
+    elif action == "cover_pair":
+        args.update(release_id="release-1", landscape_cover_id="a" * 64, portrait_cover_id="b" * 64)
     result = json.loads(asyncio.run(plugin.handle_content(args)))
     assert result["state"] == "unavailable"
 
@@ -1031,6 +1376,26 @@ def test_cover_import_response_preview_is_sanitized_only_for_cover_import(monkey
         plugin._validate_content_response(import_response, action="list")
     with pytest.raises(ValueError):
         plugin._validate_content_response(response, action="cover_import")
+
+
+@pytest.mark.parametrize(("action", "source_name"), [
+    ("cover_import_saved", "saved_image"),
+    ("cover_pair", "paired_images"),
+])
+def test_saved_image_and_pair_responses_use_standard_safe_preview_pipeline(monkeypatch, tmp_path, action, source_name):
+    import hermes_constants
+
+    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+    cover = dict(_cover_response()["covers"][0], source=source_name)
+    cover.pop("time")
+    response = {"ok": True, "state": "ready", "message": "已生成。", "cover": cover}
+
+    sanitized = plugin._validate_content_response(response, action=action)
+    assert sanitized["cover"]["source"] == source_name
+    assert "jpeg_base64" not in json.dumps(sanitized)
+    assert len(sanitized["media_tags"]) == 2
+    with pytest.raises(ValueError):
+        plugin._validate_content_response(response, action="list")
 
 
 @pytest.mark.parametrize("jpeg_data,action", [

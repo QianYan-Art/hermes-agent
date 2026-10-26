@@ -214,7 +214,7 @@ def parse_request(payload: bytes) -> str | dict:
         raise ProtocolError("请求 JSON 无效") from exc
     if isinstance(value, dict) and value.get("action") == "content" and set(value) == {"action", "request"}:
         request = value["request"]
-        is_cover = isinstance(request, dict) and request.get("action") == "cover_import"
+        is_cover = isinstance(request, dict) and request.get("action") in {"cover_import", "cover_import_saved"}
         if not is_cover and len(payload) > MAX_REQUEST_BYTES:
             raise ProtocolError("请求超过 4096 字节限制")
         from content import validate_request
