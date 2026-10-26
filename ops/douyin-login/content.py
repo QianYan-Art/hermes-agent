@@ -69,6 +69,14 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _sms_verification_visible(snapshot):
+    """只识别平台短信验证提示，不读取、返回手机号或验证码。"""
+    text = snapshot.get("text_tail", "") if isinstance(snapshot, dict) else ""
+    return isinstance(text, str) and all(part in text for part in (
+        "接收短信验证码", "为确保是本人操作抖音账号", "获取验证码",
+    ))
+
+
 def response(state, message, **fields):
     return {"ok": state not in {"unavailable", "page_error", "needs_attention", "account_mismatch", "verification_required", "login_required", "unknown"},
             "state": state, "message": message, **fields}
@@ -240,7 +248,11 @@ class ContentManager:
             if "recovery" in job:
                 extra["recovery"] = job["recovery"]
             state = job.get("error_state", state)
-        return response(state, job["message"], job=public, **extra)
+        message = job["message"]
+        if state == "needs_attention" and _sms_verification_visible(job.get("ui")):
+            message = "当次发布遇到本人短信验证，未确认发布成功；请先人工核查，不要重复提交。验证码只用于抖音验证页面。"
+            public.update(phase="发布时遇到本人短信验证，结果待核实", message=message)
+        return response(state, message, job=public, **extra)
 
     def _plan(self, token):
         plan = _read_json(self.plan_dir / (token + ".json"))
@@ -756,7 +768,17 @@ class ContentManager:
         self._phase(job, "正式发布，结果待确认")
         self._staged.pop(plan["token"], None)
         await publish.click()
-        await page.get_by_text(re.compile(r"^(发布成功|作品发布成功|发布成功，正在审核)$")).first.wait_for(state="visible", timeout=30000)
+        success = page.get_by_text(re.compile(r"^(发布成功|作品发布成功|发布成功，正在审核)$")).first
+        try:
+            await success.wait_for(state="visible", timeout=30000)
+        except Exception:
+            if not _sms_verification_visible(await self._ui(page)):
+                raise
+            job["verification_required"] = "sms"
+            self._phase(job, "发布需本人短信验证；请在当前页面完成，尚未确认发布")
+            # 仍受外层十分钟任务上限和浏览器锁约束；不重复点击、不自动发短信或填写验证码。
+            await success.wait_for(state="visible", timeout=JOB_TIMEOUT * 1000)
+        job.pop("verification_required", None)
         job.update(state="published", phase="已提交发布", message="页面已确认提交发布；后续审核状态以平台为准。")
         self._save_job(job)
 

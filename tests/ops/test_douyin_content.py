@@ -114,6 +114,37 @@ def test_unknown_job_response_survives_plugin_security_validation(manager):
         plugin._validate_content_response({**response, "ui": job["ui"]}, action="job")
 
 
+def test_sms_challenge_reason_is_reported_without_private_phone_or_raw_ui(manager):
+    job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00",
+           "state": "needs_attention", "phase": "结果待核实", "updated_at": "2026-10-26T04:17:17Z",
+           "message": "超时", "commit_attempted": True, "recovery": {"action": "inspect_result"},
+           "ui": {"text_tail": "接收短信验证码 为确保是本人操作抖音账号 测试手机号177***50 获取验证码"}}
+    result = manager._job_response(job)
+    assert "短信验证" in result["message"]
+    assert result["state"] == "needs_attention" and result["recovery"] == {"action": "inspect_result"}
+    assert "177" not in json.dumps(result) and "ui" not in result
+    assert job["message"] == "超时" and job["commit_attempted"] is True
+
+
+@pytest.mark.asyncio
+async def test_publish_keeps_same_page_waiting_for_user_sms_without_second_click(manager, monkeypatch):
+    success = SimpleNamespace(wait_for=AsyncMock(side_effect=[TimeoutError(), None]))
+    page = SimpleNamespace(get_by_text=lambda *_a, **_kw: SimpleNamespace(first=success))
+    button = SimpleNamespace(is_enabled=AsyncMock(return_value=True), click=AsyncMock())
+    monkeypatch.setattr(manager, "_verified_stage", AsyncMock(return_value=page))
+    monkeypatch.setattr(manager, "_dismiss_preview_tip", AsyncMock())
+    monkeypatch.setattr(manager, "_button", AsyncMock(return_value=button))
+    monkeypatch.setattr(manager, "_ui", AsyncMock(return_value={
+        "text_tail": "接收短信验证码 为确保是本人操作抖音账号 获取验证码"}))
+    job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00", "state": "in_progress"}
+    await manager._publish(page, job, {"token": "a" * 32})
+    assert job["state"] == "published" and job["commit_attempted"] is True
+    assert "verification_required" not in job
+    button.click.assert_awaited_once()
+    assert success.wait_for.await_args_list[0].kwargs["timeout"] == 30000
+    assert success.wait_for.await_args_list[1].kwargs["timeout"] == 600000
+
+
 @pytest.mark.asyncio
 async def test_library_routes_do_not_open_browser_or_create_publish_job(manager):
     from unittest.mock import Mock
