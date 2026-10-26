@@ -126,6 +126,11 @@ def test_sms_challenge_reason_is_reported_without_private_phone_or_raw_ui(manage
     assert job["message"] == "超时" and job["commit_attempted"] is True
 
 
+def test_sms_challenge_still_matches_during_resend_countdown(content):
+    assert content._sms_verification_visible({"text_tail": "接收短信验证码 为确保是本人操作抖音账号 59秒后重新发送 验证"})
+    assert not content._sms_verification_visible({"text_tail": "作品简介中提到了短信验证码"})
+
+
 @pytest.mark.asyncio
 async def test_publish_keeps_same_page_waiting_for_user_sms_without_second_click(manager, monkeypatch):
     success = SimpleNamespace(wait_for=AsyncMock(side_effect=[TimeoutError(), None]))

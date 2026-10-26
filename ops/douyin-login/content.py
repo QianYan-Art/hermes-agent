@@ -73,7 +73,7 @@ def _sms_verification_visible(snapshot):
     """只识别平台短信验证提示，不读取、返回手机号或验证码。"""
     text = snapshot.get("text_tail", "") if isinstance(snapshot, dict) else ""
     return isinstance(text, str) and all(part in text for part in (
-        "接收短信验证码", "为确保是本人操作抖音账号", "获取验证码",
+        "接收短信验证码", "为确保是本人操作抖音账号",
     ))
 
 
