@@ -675,6 +675,18 @@ def disable_session_yolo(session_key: str) -> None:
         _session_yolo.discard(session_key)
 
 
+def cancel_pending_approvals(session_key: str) -> None:
+    """取消当前等待项并唤醒工具线程，保留已有授权和会话模式。"""
+    if not session_key:
+        return
+    with _lock:
+        _pending.pop(session_key, None)
+        entries = _gateway_queues.pop(session_key, [])
+    for entry in entries:
+        entry.result = "deny"
+        entry.event.set()
+
+
 def clear_session(session_key: str) -> None:
     """Remove all approval and yolo state for a given session."""
     if not session_key:
