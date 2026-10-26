@@ -18,6 +18,7 @@ def content(monkeypatch):
     monkeypatch.syspath_prepend(str(directory))
     spec = importlib.util.spec_from_file_location("dy_content_test", directory / "content.py")
     module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -38,6 +39,35 @@ def content(monkeypatch):
 def test_rejects_expanded_or_invalid_content_protocol(content, payload):
     with pytest.raises(ValueError):
         content.validate_request(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"action": "verification_request_sms", "job_id": "a" * 32, "code": "123456"},
+        {"action": "verification_submit", "job_id": "a" * 32},
+        {"action": "verification_submit", "job_id": "a" * 32, "code": "１２３４５６"},
+        {"action": "verification_submit", "job_id": "a" * 32, "code": "12345x"},
+        {"action": "verification_submit", "job_id": "a" * 32, "code": "1234567"},
+    ],
+)
+def test_verification_protocol_rejects_extra_fields_and_non_ascii_codes(content, payload):
+    with pytest.raises(ValueError):
+        content.validate_request(payload)
+
+
+def test_verification_protocol_accepts_only_private_sms_actions(content):
+    request_sms = {"action": "verification_request_sms", "job_id": "a" * 32}
+    submit = {"action": "verification_submit", "job_id": "a" * 32, "code": "012345"}
+    assert content.validate_request(request_sms) == request_sms
+    assert content.validate_request(submit) == submit
+
+
+def test_verification_action_repr_does_not_expose_code(content):
+    event = content._VerificationAction(
+        action="verification_submit", future=None, code="123456",
+    )
+    assert "123456" not in repr(event)
 
 
 @pytest.mark.parametrize("payload", [
@@ -377,7 +407,19 @@ async def test_sms_wait_uses_publish_budget_and_does_not_block_other_coroutines(
         await answer.wait()
 
     success = SimpleNamespace(wait_for=success_wait)
-    page = SimpleNamespace(get_by_text=lambda *_a, **_k: SimpleNamespace(first=success))
+    proof = {}
+
+    async def evaluate(_script, *args):
+        if args:
+            proof["marker"] = args[0]
+        return proof.get("marker")
+
+    page = SimpleNamespace(
+        get_by_text=lambda *_a, **_k: SimpleNamespace(first=success),
+        evaluate=evaluate,
+        url="https://creator.douyin.com/creator-micro/content/post/video",
+    )
+    manager.browser._context = SimpleNamespace(pages=[page])
     button = SimpleNamespace(is_enabled=AsyncMock(return_value=True), click=AsyncMock())
     monkeypatch.setattr(manager, "_verified_stage", AsyncMock(return_value=page))
     monkeypatch.setattr(manager, "_dismiss_preview_tip", AsyncMock())
@@ -392,6 +434,7 @@ async def test_sms_wait_uses_publish_budget_and_does_not_block_other_coroutines(
 
     monkeypatch.setattr(manager, "_execute", execute)
     task = asyncio.create_task(manager._run(job, {"token": "a" * 32}, {}))
+    manager.tasks[job["job_id"]] = task
     await asyncio.wait_for(entered.wait(), 1)
     await asyncio.sleep(.01)
     assert manager.browser_lock.locked() and job["state"] == "in_progress"
@@ -401,6 +444,447 @@ async def test_sms_wait_uses_publish_budget_and_does_not_block_other_coroutines(
     assert not manager.browser_lock.locked() and job["state"] == "published"
     button.click.assert_awaited_once()
     assert calls == [30000, 1800000]
+
+
+class _SmsFakeLocator:
+    def __init__(self, page, text):
+        self.page = page
+        self.text = text
+
+    @property
+    def first(self):
+        return self
+
+    def and_(self, _visible):
+        return self
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        return True
+
+    async def is_enabled(self):
+        return True
+
+    async def get_attribute(self, _name):
+        return None
+
+    async def click(self):
+        if self.text == "获取验证码" and self.page.sms_click_release is not None:
+            self.page.sms_click_entered.set()
+            await self.page.sms_click_release.wait()
+        self.page.text_clicks.append(self.text)
+
+
+class _SmsFakeInput:
+    def __init__(self):
+        self.values = []
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        return True
+
+    async def is_enabled(self):
+        return True
+
+    async def fill(self, value):
+        self.values.append(value)
+
+
+class _SmsFakeSuccess:
+    def __init__(self, page):
+        self.page = page
+        self.calls = []
+
+    @property
+    def first(self):
+        return self
+
+    async def wait_for(self, *, state, timeout):
+        self.calls.append((state, timeout))
+        if len(self.calls) == 1:
+            raise TimeoutError()
+        await asyncio.wait_for(self.page.success_signal.wait(), timeout=timeout / 1000)
+
+
+class _SmsFakePage:
+    def __init__(self):
+        self.url = "https://creator.douyin.com/creator-micro/content/post/video"
+        self.success_signal = asyncio.Event()
+        self.success = _SmsFakeSuccess(self)
+        self.text_clicks = []
+        self.code_input = _SmsFakeInput()
+        self.verification_proof = None
+        self.verification_proof_writes = 0
+        self.sms_click_entered = None
+        self.sms_click_release = None
+        self.is_closed = lambda: False
+
+    async def evaluate(self, script, *args):
+        if "__hermesVerificationProof = marker" in script:
+            self.verification_proof = args[0]
+            self.verification_proof_writes += 1
+            return None
+        if "__hermesVerificationProof" in script:
+            return self.verification_proof
+        raise AssertionError("短信假页收到未预期的evaluate脚本")
+
+    def get_by_text(self, text, **_kwargs):
+        if hasattr(text, "pattern"):
+            return self.success
+        return _SmsFakeLocator(self, text)
+
+    def locator(self, selector):
+        if selector.startswith("input["):
+            return self.code_input
+        return SimpleNamespace()
+
+
+async def _start_sms_publish(manager, monkeypatch):
+    page = _SmsFakePage()
+    context = SimpleNamespace(pages=[page])
+    manager.browser._context = context
+    publish_button = SimpleNamespace(
+        is_enabled=AsyncMock(return_value=True), click=AsyncMock(),
+    )
+    monkeypatch.setattr(manager, "_verified_stage", AsyncMock(return_value=page))
+    monkeypatch.setattr(manager, "_dismiss_preview_tip", AsyncMock())
+    monkeypatch.setattr(manager, "_button", AsyncMock(return_value=publish_button))
+    monkeypatch.setattr(
+        manager,
+        "_ui",
+        AsyncMock(return_value={"text_tail": "接收短信验证码 为确保是本人操作抖音账号"}),
+    )
+
+    async def execute(job, plan, _release):
+        await manager._publish(page, job, plan)
+
+    monkeypatch.setattr(manager, "_execute", execute)
+    job = {
+        "job_id": "f" * 32,
+        "action": "publish",
+        "release_id": "ep00",
+        "state": "in_progress",
+        "phase": "正式发布",
+        "message": "等待发布回执",
+        "token": "a" * 32,
+    }
+    manager._save_job(job)
+    task = asyncio.create_task(manager._run(job, {"token": "a" * 32}, {}))
+    manager.tasks[job["job_id"]] = task
+    task.add_done_callback(lambda _task: manager.tasks.pop(job["job_id"], None))
+    for _ in range(100):
+        if job["job_id"] in manager._verification_waiters:
+            break
+        if task.done():
+            await task
+        await asyncio.sleep(0)
+    assert job["job_id"] in manager._verification_waiters
+    return SimpleNamespace(
+        page=page, context=context, job=job, task=task, publish_button=publish_button,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sms_queue_sends_once_submits_once_and_never_persists_code(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    code = "012345"
+
+    wrong_job = await manager.process({
+        "action": "verification_request_sms", "job_id": "e" * 32,
+    })
+    assert wrong_job["state"] == "needs_attention"
+    assert harness.page.text_clicks == []
+
+    requested = await manager.process({
+        "action": "verification_request_sms", "job_id": job_id,
+    })
+    assert requested["state"] == "ready"
+    assert requested["job"]["job_id"] == job_id
+    assert requested["job"]["state"] == "in_progress"
+    assert harness.page.text_clicks == ["获取验证码"]
+
+    throttled = await manager.process({
+        "action": "verification_request_sms", "job_id": job_id,
+    })
+    assert throttled["state"] == "in_progress"
+    assert harness.page.text_clicks == ["获取验证码"]
+
+    submitted = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": code,
+    })
+    assert submitted["state"] == "in_progress"
+    assert submitted["job"]["job_id"] == job_id
+    assert submitted["verification_submitted"] is True
+    assert code not in json.dumps(submitted)
+    assert harness.page.code_input.values == [code]
+    assert harness.page.text_clicks == ["获取验证码", "验证"]
+    assert "code" not in harness.job
+    assert code not in json.dumps(harness.job)
+    job_file = manager.job_dir / (job_id + ".json")
+    assert code not in job_file.read_text(encoding="utf-8")
+
+    harness.page.success_signal.set()
+    await harness.task
+    assert harness.job["state"] == "published"
+    harness.publish_button.click.assert_awaited_once()
+    assert harness.page.text_clicks.count("验证") == 1
+    assert manager._verification_waiters == {}
+
+
+@pytest.mark.asyncio
+async def test_sms_submit_concurrency_never_fills_or_clicks_twice(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    await manager.process({"action": "verification_request_sms", "job_id": job_id})
+
+    first = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "123456",
+    })
+    duplicate = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "654321",
+    })
+
+    assert first["state"] == "in_progress"
+    assert first["verification_submitted"] is True
+    assert duplicate["state"] == "needs_attention"
+    assert "verification_submitted" not in duplicate
+    assert harness.page.code_input.values == ["123456"]
+    assert harness.page.text_clicks.count("验证") == 1
+    harness.page.success_signal.set()
+    await harness.task
+    assert harness.job["state"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_submit_during_sms_request_is_not_accepted(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    harness.page.sms_click_entered = asyncio.Event()
+    harness.page.sms_click_release = asyncio.Event()
+    request_task = asyncio.create_task(manager.process({
+        "action": "verification_request_sms", "job_id": job_id,
+    }))
+    await asyncio.wait_for(harness.page.sms_click_entered.wait(), timeout=1)
+
+    busy = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "112233",
+    })
+    assert busy["state"] == "needs_attention"
+    assert "verification_submitted" not in busy
+    assert "未被接收" in busy["message"]
+    assert harness.page.code_input.values == []
+
+    harness.page.sms_click_release.set()
+    requested = await request_task
+    assert requested["state"] == "ready"
+    accepted = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "112233",
+    })
+    assert accepted["state"] == "in_progress"
+    assert accepted["verification_submitted"] is True
+    assert harness.page.code_input.values == ["112233"]
+    harness.page.success_signal.set()
+    await harness.task
+
+
+@pytest.mark.asyncio
+async def test_sms_action_rejects_page_outside_original_browser_context(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    manager.browser._context = SimpleNamespace(pages=[])
+
+    result = await manager.process({
+        "action": "verification_request_sms", "job_id": harness.job["job_id"],
+    })
+
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    assert harness.page.text_clicks == []
+    job_response = await manager.process({"action": "job", "job_id": harness.job["job_id"]})
+    assert job_response["state"] == "needs_attention"
+    assert job_response["recovery"] == {"action": "inspect_result"}
+    assert job_response["job"]["phase"] == "验证页已变化，发布结果待核实"
+    harness.page.success_signal.set()
+    await harness.task
+    assert harness.job["state"] == "needs_attention"
+    harness.publish_button.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["closed", "url"])
+async def test_sms_action_invalidates_closed_or_navigated_page(manager, monkeypatch, change):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    if change == "closed":
+        harness.page.is_closed = lambda: True
+    else:
+        harness.page.url = "https://creator.douyin.com/creator-micro/content/manage"
+
+    result = await manager.process({
+        "action": "verification_request_sms", "job_id": harness.job["job_id"],
+    })
+
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    job_response = await manager.process({"action": "job", "job_id": harness.job["job_id"]})
+    assert job_response["state"] == "needs_attention"
+    assert job_response["recovery"] == {"action": "inspect_result"}
+    assert job_response["job"]["phase"] == "验证页已变化，发布结果待核实"
+    assert harness.page.text_clicks == []
+    harness.page.success_signal.set()
+    await harness.task
+    assert harness.job["state"] == "needs_attention"
+    harness.publish_button.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replacement", [None, "replaced-document-marker"])
+async def test_sms_action_rejects_changed_document_marker_without_filling_or_clicking(
+    manager, monkeypatch, replacement,
+):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    await manager.process({"action": "verification_request_sms", "job_id": job_id})
+    assert harness.page.verification_proof is not None
+    assert harness.page.verification_proof_writes == 1
+
+    harness.page.verification_proof = replacement
+    result = await manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "987654",
+    })
+
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    assert harness.page.code_input.values == []
+    assert "验证" not in harness.page.text_clicks
+    assert harness.page.verification_proof_writes == 1
+    job_response = await manager.process({"action": "job", "job_id": job_id})
+    assert job_response["state"] == "needs_attention"
+    assert job_response["recovery"] == {"action": "inspect_result"}
+    assert job_response["job"]["phase"] == "验证页已变化，发布结果待核实"
+    harness.page.success_signal.set()
+    await harness.task
+    assert harness.job["state"] == "needs_attention"
+    harness.publish_button.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_sms_invalidation_wins_when_success_task_finishes_in_same_turn(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    waiter = manager._verification_waiters[harness.job["job_id"]]
+
+    manager._invalidate_verification_waiter(waiter)
+    harness.page.success_signal.set()
+    await harness.task
+
+    result = await manager.process({"action": "job", "job_id": harness.job["job_id"]})
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    assert result["job"]["phase"] == "验证页已变化，发布结果待核实"
+    assert harness.job["state"] == "needs_attention"
+    assert manager._verification_waiters == {}
+    harness.publish_button.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_silent_document_change_before_success_toast_is_not_published(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    harness.page.verification_proof = None
+
+    # No UDS action occurs to discover the lost document marker.
+    harness.page.success_signal.set()
+    await harness.task
+
+    result = await manager.process({"action": "job", "job_id": harness.job["job_id"]})
+    assert result["state"] == "needs_attention"
+    assert result["recovery"] == {"action": "inspect_result"}
+    assert result["job"]["phase"] == "验证页已变化，发布结果待核实"
+    assert harness.job["state"] == "needs_attention"
+    assert manager._verification_waiters == {}
+    harness.publish_button.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_sms_submit_drops_code_before_page_fill(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    await manager.process({"action": "verification_request_sms", "job_id": job_id})
+    entered_ui = asyncio.Event()
+    release_ui = asyncio.Event()
+
+    async def delayed_ui(_page):
+        entered_ui.set()
+        await release_ui.wait()
+        return {"text_tail": "接收短信验证码 为确保是本人操作抖音账号"}
+
+    monkeypatch.setattr(manager, "_ui", delayed_ui)
+    submit_task = asyncio.create_task(manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "987654",
+    }))
+    await asyncio.wait_for(entered_ui.wait(), timeout=1)
+    submit_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await submit_task
+    release_ui.set()
+    for _ in range(100):
+        waiter = manager._verification_waiters[job_id]
+        if not waiter.submit_pending:
+            break
+        await asyncio.sleep(0)
+
+    assert harness.page.code_input.values == []
+    assert "验证" not in harness.page.text_clicks
+    assert manager._verification_waiters[job_id].pending_submit is None
+    harness.page.success_signal.set()
+    await harness.task
+
+
+@pytest.mark.asyncio
+async def test_cancelled_publish_clears_inflight_sms_event_and_resolves_caller(manager, monkeypatch):
+    harness = await _start_sms_publish(manager, monkeypatch)
+    job_id = harness.job["job_id"]
+    await manager.process({"action": "verification_request_sms", "job_id": job_id})
+    entered_ui = asyncio.Event()
+    release_ui = asyncio.Event()
+
+    async def delayed_ui(_page):
+        entered_ui.set()
+        await release_ui.wait()
+        return {"text_tail": "接收短信验证码 为确保是本人操作抖音账号"}
+
+    monkeypatch.setattr(manager, "_ui", delayed_ui)
+    submit_task = asyncio.create_task(manager.process({
+        "action": "verification_submit", "job_id": job_id, "code": "987654",
+    }))
+    await asyncio.wait_for(entered_ui.wait(), timeout=1)
+    harness.task.cancel()
+    result = await asyncio.wait_for(submit_task, timeout=1)
+    assert result["state"] == "needs_attention"
+    with pytest.raises(asyncio.CancelledError):
+        await harness.task
+
+    assert harness.page.code_input.values == []
+    assert "验证" not in harness.page.text_clicks
+    assert manager._verification_waiters == {}
+    assert "987654" not in json.dumps(harness.job)
+    assert "987654" not in (manager.job_dir / (job_id + ".json")).read_text(encoding="utf-8")
+    assert not manager.browser_lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_sms_publish_timeout_releases_waiter_and_browser_lock(manager, content, monkeypatch):
+    monkeypatch.setattr(content, "SMS_VERIFICATION_TIMEOUT", 0.02)
+    monkeypatch.setattr(content, "PUBLISH_TIMEOUT", 0.2)
+    harness = await _start_sms_publish(manager, monkeypatch)
+
+    await asyncio.wait_for(harness.task, timeout=0.5)
+
+    assert harness.job["state"] == "needs_attention"
+    assert manager._verification_waiters == {}
+    assert not manager.browser_lock.locked()
 
 
 def _operator_resolution(content, job):
@@ -480,6 +964,48 @@ def test_job_response_keeps_private_diagnostics_without_hiding_unknown_commit(ma
     assert job["commit_attempted"] is True and "ui" in job
 
 
+def test_in_progress_job_response_explains_acceptance_without_claiming_success(manager):
+    job = {
+        "job_id": "a" * 32,
+        "action": "draft",
+        "release_id": "ep00",
+        "state": "in_progress",
+        "phase": "排队",
+        "updated_at": "2026-10-26T04:17:17Z",
+        "message": "任务已接收。",
+    }
+
+    result = manager._job_response(job)
+
+    assert result["state"] == "in_progress"
+    assert result["message"] == result["job"]["message"]
+    assert "当前阶段：排队" in result["message"]
+    assert "已受理" in result["message"] and "尚无本任务成功回执" in result["message"]
+    assert "计划参数不代表网页状态已核验" in result["message"]
+    assert "不循环轮询" in result["message"] and "不要承诺任务完成后会自动推送" in result["message"]
+
+
+def test_in_progress_sms_job_response_says_page_is_waiting_for_owner(manager):
+    job = {
+        "job_id": "b" * 32,
+        "action": "publish",
+        "release_id": "ep00",
+        "state": "in_progress",
+        "phase": "发布需本人短信验证",
+        "updated_at": "2026-10-26T04:17:17Z",
+        "message": "处理中",
+        "verification_required": "sms",
+    }
+
+    result = manager._job_response(job)
+
+    assert result["state"] == "in_progress"
+    assert result["message"] == result["job"]["message"]
+    assert "等待本人短信验证" in result["message"]
+    assert "尚未确认发布成功" in result["message"]
+    assert "保持原验证页面" in result["message"] and "不要重复点击发布" in result["message"]
+
+
 def test_unknown_job_response_survives_plugin_security_validation(manager):
     path = Path(__file__).resolve().parents[2] / "ops/douyin-plugin/__init__.py"
     spec = importlib.util.spec_from_file_location("job_response_plugin_contract", path)
@@ -515,7 +1041,19 @@ def test_sms_challenge_still_matches_during_resend_countdown(content):
 @pytest.mark.asyncio
 async def test_publish_keeps_same_page_waiting_for_user_sms_without_second_click(manager, monkeypatch):
     success = SimpleNamespace(wait_for=AsyncMock(side_effect=[TimeoutError(), None]))
-    page = SimpleNamespace(get_by_text=lambda *_a, **_kw: SimpleNamespace(first=success))
+    proof = {}
+
+    async def evaluate(_script, *args):
+        if args:
+            proof["marker"] = args[0]
+        return proof.get("marker")
+
+    page = SimpleNamespace(
+        get_by_text=lambda *_a, **_kw: SimpleNamespace(first=success),
+        evaluate=evaluate,
+        url="https://creator.douyin.com/creator-micro/content/post/video",
+    )
+    manager.browser._context = SimpleNamespace(pages=[page])
     button = SimpleNamespace(is_enabled=AsyncMock(return_value=True), click=AsyncMock())
     monkeypatch.setattr(manager, "_verified_stage", AsyncMock(return_value=page))
     monkeypatch.setattr(manager, "_dismiss_preview_tip", AsyncMock())
@@ -523,6 +1061,8 @@ async def test_publish_keeps_same_page_waiting_for_user_sms_without_second_click
     monkeypatch.setattr(manager, "_ui", AsyncMock(return_value={
         "text_tail": "接收短信验证码 为确保是本人操作抖音账号 获取验证码"}))
     job = {"job_id": "a" * 32, "action": "publish", "release_id": "ep00", "state": "in_progress"}
+    manager.jobs[job["job_id"]] = job
+    manager.tasks[job["job_id"]] = asyncio.current_task()
     await manager._publish(page, job, {"token": "a" * 32})
     assert job["state"] == "published" and job["commit_attempted"] is True
     assert "verification_required" not in job

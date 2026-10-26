@@ -390,6 +390,75 @@ async def test_socket_publish_from_gateway_main_pid_reaches_service(monkeypatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content_request",
+    [
+        {"action": "verification_request_sms", "job_id": "a" * 32},
+        {"action": "verification_submit", "job_id": "a" * 32, "code": "123456"},
+    ],
+)
+async def test_socket_verification_actions_require_gateway_main_pid_and_reach_service(
+    monkeypatch, content_request,
+):
+    monkeypatch.setattr(douyin_login.socket, "SO_PEERCRED", 17, raising=False)
+    monkeypatch.syspath_prepend(str(SERVICE_PATH.parent))
+    process = FakeSystemdProcess(b"4321\n")
+
+    async def create_subprocess_exec(*_args, **_kwargs):
+        return process
+
+    monkeypatch.setattr(
+        douyin_login.asyncio, "create_subprocess_exec", create_subprocess_exec
+    )
+    request = {"action": "content", "request": content_request}
+    writer = FakeStreamWriter(FakePeerSocket(uid=1001, pid=4321))
+    service = RecordingService()
+    await douyin_login._handle_connection(
+        FakeStreamReader(json.dumps(request).encode() + b"\n"),
+        writer,
+        service,
+        allowed_uid=1001,
+    )
+
+    assert service.actions == [content_request]
+    assert json.loads(writer.response)["state"] == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content_request",
+    [
+        {"action": "verification_request_sms", "job_id": "a" * 32},
+        {"action": "verification_submit", "job_id": "a" * 32, "code": "123456"},
+    ],
+)
+async def test_socket_verification_actions_from_shell_pid_are_rejected(
+    monkeypatch, content_request,
+):
+    monkeypatch.setattr(douyin_login.socket, "SO_PEERCRED", 17, raising=False)
+    monkeypatch.syspath_prepend(str(SERVICE_PATH.parent))
+
+    async def create_subprocess_exec(*_args, **_kwargs):
+        return FakeSystemdProcess(b"4321\n")
+
+    monkeypatch.setattr(
+        douyin_login.asyncio, "create_subprocess_exec", create_subprocess_exec
+    )
+    request = {"action": "content", "request": content_request}
+    writer = FakeStreamWriter(FakePeerSocket(uid=1001, pid=9876))
+    service = RecordingService()
+    await douyin_login._handle_connection(
+        FakeStreamReader(json.dumps(request).encode() + b"\n"),
+        writer,
+        service,
+        allowed_uid=1001,
+    )
+
+    assert service.actions == []
+    assert json.loads(writer.response)["state"] == "unavailable"
+
+
+@pytest.mark.asyncio
 async def test_socket_publish_from_shell_pid_is_rejected_before_service_process(
     monkeypatch,
 ):
@@ -417,7 +486,7 @@ async def test_socket_publish_from_shell_pid_is_rejected_before_service_process(
     assert service.actions == []
     response = json.loads(writer.response)
     assert response["state"] == "unavailable"
-    assert response["message"] == "发布请求仅允许由 gateway 主进程发起。"
+    assert response["message"] == "发布及短信验证操作仅允许由 gateway 主进程发起。"
 
 
 @pytest.mark.asyncio

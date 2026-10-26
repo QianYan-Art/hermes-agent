@@ -7,6 +7,7 @@ import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -369,7 +370,8 @@ def test_registration_preserves_login_and_registers_content_hook():
     ctx = RegisteredContextStub()
     plugin.register(ctx)
 
-    assert set(ctx.tools) == {"douyin_login", "douyin_content"}
+    assert {"douyin_login", "douyin_content", "douyin_verification"} <= set(ctx.tools)
+    assert ctx.tools["douyin_verification"]["schema"]["parameters"]["properties"].keys() == {"job_id"}
     assert ctx.tools["douyin_login"]["toolset"] == "douyin"
     assert ctx.tools["douyin_login"]["schema"]["parameters"]["properties"]["action"]["enum"] == ["status", "login"]
     assert ctx.tools["douyin_content"]["toolset"] == "douyin"
@@ -387,7 +389,8 @@ def test_registration_preserves_login_and_registers_content_hook():
     assert "15 分钟" in content_schema["description"]
     assert "job 查询不会导航" in content_schema["description"]
     assert "另一次 prepare" in content_schema["description"]
-    assert ctx.hooks == [("pre_gateway_dispatch", plugin._observe_publish_confirmation)]
+    assert ("pre_gateway_dispatch", plugin._observe_publish_confirmation) in ctx.hooks
+    assert ("pre_gateway_enqueue", plugin._consume_verification_message) in ctx.hooks
 
 
 @pytest.mark.parametrize("origin", [
@@ -546,6 +549,7 @@ def test_concurrent_publish_uses_internal_service_protocol_once(owner_context, m
     monkeypatch.syspath_prepend(str(ROOT / "ops/douyin-login"))
     spec = importlib.util.spec_from_file_location("douyin_confirmation_contract", ROOT / "ops/douyin-login/content.py")
     service = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, service)
     spec.loader.exec_module(service)
     calls = []
 
@@ -664,6 +668,7 @@ def test_owner_library_actions_reach_only_the_validated_service_protocol(owner_c
     monkeypatch.syspath_prepend(str(ROOT / "ops/douyin-login"))
     spec = importlib.util.spec_from_file_location("douyin_library_contract", ROOT / "ops/douyin-login/content.py")
     service = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, service)
     spec.loader.exec_module(service)
     calls = []
 

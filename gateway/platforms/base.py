@@ -4001,6 +4001,32 @@ class BasePlatformAdapter(ABC):
         if not self._message_handler:
             return
 
+        # 敏感的私聊回复必须先由插件消费，不能先排队或进入模型消息持久化。
+        try:
+            from hermes_cli.plugins import invoke_hook
+
+            decisions = invoke_hook("pre_gateway_enqueue", event=event, adapter=self)
+        except Exception as exc:
+            logger.warning("入站前置插件调用失败：%s", type(exc).__name__)
+            decisions = []
+        if any(isinstance(item, dict) and item.get("action") == "skip" for item in decisions or []):
+            return
+
+        # 即使插件未载入或回调异常，本人私聊的六位数字也不能泄入模型和会话。
+        source = event.source
+        owner = os.environ.get("DOUYIN_OWNER_QQ_USER_ID", "")
+        if (owner and not getattr(event, "internal", False)
+                and source.platform.value == "qqbot" and source.chat_type == "dm"
+                and source.user_id == owner and source.chat_id == owner
+                and isinstance(event.text, str) and re.fullmatch(r"[0-9]{6}", event.text.strip())):
+            event.text = "[私聊验证码已拦截]"
+            event.raw_message = None
+            await self._send_with_retry(
+                chat_id=owner, content="验证码接收保护未就绪，数字消息未交给模型；请先查询原发布任务，不要重复发布。",
+                reply_to=event.message_id,
+            )
+            return
+
         coerce_plaintext_gateway_command(event)
 
         # Rewrite ``event.source.thread_id`` via the installed recovery hook

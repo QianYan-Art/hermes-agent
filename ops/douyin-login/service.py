@@ -747,11 +747,15 @@ async def _handle_connection(
             return
         if (
             isinstance(action, dict)
-            and action.get("action") == "publish"
+            and action.get("action") in {
+                "publish",
+                "verification_request_sms",
+                "verification_submit",
+            }
             and not await is_peer_gateway_main_process(peer_socket)
         ):
             await _write_response(
-                writer, make_response("unavailable", "发布请求仅允许由 gateway 主进程发起。")
+                writer, make_response("unavailable", "发布及短信验证操作仅允许由 gateway 主进程发起。")
             )
             return
         await _write_response(writer, await service.process(action))

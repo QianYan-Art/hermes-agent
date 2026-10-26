@@ -145,6 +145,8 @@ VALID_HOOKS: Set[str] = {
     "on_session_reset",
     "subagent_start",
     "subagent_stop",
+    # 在适配器排队之前消费敏感输入；返回skip时不得进入模型或会话存储。
+    "pre_gateway_enqueue",
     # Gateway pre-dispatch hook. Fired once per incoming MessageEvent
     # after the internal-event guard but BEFORE auth/pairing and agent
     # dispatch. Plugins may return a dict to influence flow:

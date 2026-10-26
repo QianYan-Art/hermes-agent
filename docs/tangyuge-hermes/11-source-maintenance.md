@@ -28,6 +28,9 @@
 
 抖音流程：作品入库 → 封面选择 → `prepare` 绑定物料与账号 → `stage` 核验实时编辑页 →
 `editor_ready` → 本人私聊精确确认 → gateway MainPID 校验 → `publish`。
+若平台要求发布短信：`douyin_verification(job_id)` 请求发码 → 本人纯文本六位回复 →
+`pre_gateway_enqueue` 内存消费 → 受限 UDS 提交 → 原发布协程填码和验证 → 原 job 回执。
+验证码不进入普通忙队列、模型或会话；失效时保留待核查结果，不重传或重复发布。
 结果未知时保留 `commit_attempted`，禁止自动重提；重启会使内存预览证明失效。
 
 ## 本轮局部修复

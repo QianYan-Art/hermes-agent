@@ -57,6 +57,7 @@ TRIMMED_TEST_TARGETS = (
     "tests/tools/test_komari_traffic_daily.py",
     "tests/tools/test_douyin_plugin.py",
     "tests/tools/test_douyin_content_plugin.py",
+    "tests/tools/test_douyin_verification_plugin.py",
     "tests/tools/test_douyin_manual_window.py",
     "tests/ops/test_douyin_login.py",
     "tests/ops/test_douyin_install.py",

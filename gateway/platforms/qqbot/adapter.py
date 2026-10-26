@@ -917,7 +917,7 @@ class QQAdapter(BasePlatformAdapter):
         try:
             payload = json.loads(raw)
         except Exception:
-            logger.warning("[QQBot] Failed to parse JSON: %r", raw)
+            logger.warning("[QQBot] 收到无法解析的JSON，未记录原始消息")
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -1388,10 +1388,10 @@ class QQAdapter(BasePlatformAdapter):
         text = content
         attachments_raw = d.get("attachments")
         logger.info(
-            "[%s] C2C message: id=%s content=%r attachments=%s",
+            "[%s] C2C message: id=%s text_chars=%d attachments=%s",
             self._log_tag,
             msg_id,
-            content[:50] if content else "",
+            len(content) if content else 0,
             (
                 f"{len(attachments_raw) if isinstance(attachments_raw, list) else 0} items"
                 if attachments_raw

@@ -7,6 +7,7 @@ import errno
 import hashlib
 import io
 import json
+import logging
 import math
 import os
 import re
@@ -34,7 +35,7 @@ CONTENT_STATES = {
 }
 _CONTENT_ROOT_FIELDS = {
     "ok", "state", "message", "releases", "plan", "job", "metrics", "ui",
-    "covers", "cover_sources", "saved_sources", "cover", "recovery", "total", "next_offset",
+    "covers", "cover_sources", "saved_sources", "cover", "recovery", "total", "next_offset", "verification_submitted",
 }
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -71,6 +72,13 @@ _INBOUND_IMAGE_LOCK = threading.Lock()
 _INBOUND_IMAGES = {}
 _INBOUND_IMAGE_NONCES = {}
 _COVER_CACHE_LOCK = threading.RLock()
+_VERIFICATION_LOCK = threading.Lock()
+_VERIFICATIONS = {}
+_VERIFICATION_MESSAGES = {}
+_VERIFICATION_TASKS = set()
+_VERIFICATION_TTL = 5 * 60
+_VERIFICATION_COOLDOWN = 60
+_VERIFICATION_LOGGER = logging.getLogger("douyin_verification")
 
 
 def _authorized():
@@ -547,6 +555,11 @@ def _validate_content_response(result, *, action=None):
         or not isinstance(result.get("message"), str)
     ):
         raise ValueError("无效内容响应结构")
+    if "verification_submitted" in result and (
+        action != "verification_submit" or result["verification_submitted"] is not True
+        or result["state"] != "in_progress"
+    ):
+        raise ValueError("无效验证码提交回执")
     if "recovery" in result and (
         not isinstance(result["recovery"], dict)
         or set(result["recovery"]) != {"action"}
@@ -1373,7 +1386,184 @@ async def handle(args, **kwargs):
         return json.dumps({"ok": False, "state": "unavailable", "message": "抖音登录服务暂不可用或响应无效；未修改现有登录数据。"}, ensure_ascii=False)
 
 
+async def handle_verification(args, **kwargs):
+    """只向模型开放发码，验证码本身由入站前置hook消费。"""
+    scope = _owner_qq_dm_scope()
+    if scope is None:
+        return json.dumps({"ok": False, "state": "unavailable", "message": "发布短信验证仅可在指定本人QQ私聊中处理。"}, ensure_ascii=False)
+    if not isinstance(args, dict) or set(args) != {"job_id"} or not isinstance(args["job_id"], str) or not _JOB_ID_RE.fullmatch(args["job_id"]):
+        return json.dumps({"ok": False, "state": "needs_attention", "message": "请提供当前等待短信验证的完整发布任务编号；不要把验证码放进工具参数。"}, ensure_ascii=False)
+    job_id = args["job_id"]
+    now = time.monotonic()
+    with _VERIFICATION_LOCK:
+        pending = _VERIFICATIONS.get(scope)
+        if pending and (pending.get("requesting") or pending.get("processing")):
+            return json.dumps({"ok": False, "state": "needs_attention", "message": "当前短信验证请求仍在处理中，不要重复发送或提交。"}, ensure_ascii=False)
+        if pending and pending["job_id"] == job_id and now - pending["requested_at"] < _VERIFICATION_COOLDOWN:
+            if pending.get("sms_ready") and pending["expires_at"] > now:
+                return json.dumps({"ok": True, "state": "ready", "message": "刚刚已请求短信验证码；请本人直接回复最新六位数字，不要反复请求发送。"}, ensure_ascii=False)
+            return json.dumps({"ok": False, "state": "needs_attention", "message": "上次发码未确认或收码窗口已失效；请先查询原任务，稍后再按任务提示请求短信。"}, ensure_ascii=False)
+        binding = {"job_id": job_id, "requested_at": now, "expires_at": now + _VERIFICATION_TTL, "requesting": True, "sms_ready": False, "processing": False}
+        _VERIFICATIONS[scope] = binding
+    try:
+        result = await _request_content({"action": "verification_request_sms", "job_id": job_id})
+        if result.get("state") != "ready" or result.get("job", {}).get("job_id") != job_id:
+            with _VERIFICATION_LOCK:
+                _VERIFICATIONS.pop(scope, None)
+            return json.dumps(result, ensure_ascii=False)
+        with _VERIFICATION_LOCK:
+            if _VERIFICATIONS.get(scope) is binding:
+                binding["requesting"] = False
+                binding["sms_ready"] = True
+        result = {**result, "message": "已向当前发布验证页面请求发送短信。请本人在本次QQ私聊键入纯文本六位数字，不加前缀，不用语音或图片；程序会代填并点击验证，该纯文本验证码不会进入模型、工具参数或会话记录。尚未确认发布成功。"}
+        return json.dumps(result, ensure_ascii=False)
+    except asyncio.CancelledError:
+        with _VERIFICATION_LOCK:
+            if _VERIFICATIONS.get(scope) is binding:
+                binding.update(requesting=False, expires_at=0)
+        raise
+    except (OSError, ValueError, asyncio.TimeoutError):
+        with _VERIFICATION_LOCK:
+            _VERIFICATIONS.pop(scope, None)
+        return json.dumps({"ok": False, "state": "unavailable", "message": "短信验证服务暂不可用；未自动重试，也未重新提交作品。"}, ensure_ascii=False)
+
+
+async def _verification_notice(adapter, chat_id, message_id, text):
+    try:
+        await adapter._send_with_retry(chat_id=chat_id, content=text, reply_to=message_id)
+    except Exception as exc:
+        _VERIFICATION_LOGGER.warning("发布短信固定回执发送异常：%s", type(exc).__name__)
+
+
+async def _deliver_verification(scope, job_id, code, adapter, chat_id, message_id):
+    finished = False
+    text = "验证码处理未确认完成；请查询原发布任务，不要重复发布或重新上传。"
+    async def acknowledge():
+        try:
+            await adapter._send_with_retry(chat_id=chat_id, content="已安全接收本次发布验证码，正在处理原任务，不会重新上传或重复发布。", reply_to=message_id)
+        except Exception as exc:
+            _VERIFICATION_LOGGER.warning("发布短信接收回执发送异常：%s", type(exc).__name__)
+
+    acknowledgement = asyncio.create_task(acknowledge())
+    try:
+        # 发码工具与入站hook可能分处不同线程；只在内存中等到发码已确认。
+        deadline = time.monotonic() + 55
+        while True:
+            with _VERIFICATION_LOCK:
+                binding = _VERIFICATIONS.get(scope)
+                valid = bool(binding and binding["job_id"] == job_id and binding["expires_at"] > time.monotonic())
+                requesting = bool(valid and binding.get("requesting"))
+                ready = bool(valid and binding.get("sms_ready"))
+            if not requesting or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.05)
+        if not ready:
+            text = "发送短信尚未确认或收码窗口已失效，验证码未提交；请查询原任务，不要重复发布。"
+            return
+        result = await _request_content({"action": "verification_submit", "job_id": job_id, "code": code})
+        code = None
+        accepted = result.get("verification_submitted") is True
+        if accepted and result.get("state") == "in_progress":
+            # 仅跟进本次验证的短暂回执，不占住模型轮次或建立循环后台任务。
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                result = await _request_content({"action": "job", "job_id": job_id})
+                if result.get("state") != "in_progress":
+                    break
+                await asyncio.sleep(1)
+        if result.get("state") == "published":
+            finished = True
+            text = "验证码验证后，平台已确认提交发布。后续审核状态以抖音为准。"
+        elif result.get("state") in {"needs_attention", "unavailable", "page_error"}:
+            text = "短信验证未通过或页面已失效；未重新上传、未再次点击作品发布。请查询原任务，再按提示请求新码或人工核查。"
+        elif accepted:
+            text = "验证码已提交验证，尚未取得发布成功回执；请查询原发布任务，不要重新上传或重复发布。"
+    except Exception as exc:
+        _VERIFICATION_LOGGER.warning("发布短信处理异常：%s", type(exc).__name__)
+    finally:
+        code = None
+        await acknowledgement
+        with _VERIFICATION_LOCK:
+            pending = _VERIFICATIONS.get(scope)
+            if pending and pending["job_id"] == job_id:
+                if finished:
+                    _VERIFICATIONS.pop(scope, None)
+                else:
+                    pending["processing"] = False
+        try:
+            await adapter._send_with_retry(chat_id=chat_id, content=text, reply_to=message_id)
+        except Exception as exc:
+            _VERIFICATION_LOGGER.warning("发布短信固定回执发送异常：%s", type(exc).__name__)
+
+
+def _consume_verification_message(event=None, adapter=None, **kwargs):
+    """忙队列之前截取已绑定的本人验证码，不让原文进入消息处理器。"""
+    if event is None or adapter is None or bool(getattr(event, "internal", False)):
+        return None
+    scope = _confirmation_scope(getattr(event, "source", None))
+    text = getattr(event, "text", None)
+    nonce = getattr(event, "message_id", None)
+    if scope is None or not isinstance(text, str) or re.fullmatch(r"[0-9]{6}", text.strip()) is None:
+        return None
+    now = time.monotonic()
+    with _VERIFICATION_LOCK:
+        for key, deadline in list(_VERIFICATION_MESSAGES.items()):
+            if deadline <= now:
+                _VERIFICATION_MESSAGES.pop(key, None)
+        valid_nonce = isinstance(nonce, str) and bool(nonce) and len(nonce) <= 256
+        nonce_key = (scope, nonce) if valid_nonce else None
+        pending = _VERIFICATIONS.get(scope)
+        code = text.strip()
+        event.text = "[抖音发布验证码已由程序接收]"
+        event.raw_message = None
+        if nonce_key is None:
+            return {"action": "skip", "reason": "verification_missing_message_identity"}
+        if nonce_key in _VERIFICATION_MESSAGES:
+            return {"action": "skip", "reason": "verification_message_replay"}
+        if len(_VERIFICATION_MESSAGES) >= _MAX_INBOUND_NONCES:
+            return {"action": "skip", "reason": "verification_message_limit"}
+        _VERIFICATION_MESSAGES[nonce_key] = now + 30 * 60
+        if pending is None or pending["expires_at"] <= now or pending.get("processing"):
+            notice = "验证码正在处理中，请先不要重复发送。" if pending and pending.get("processing") else "没有可用的发布收码窗口，数字消息未交给模型；请先查询原发布任务，再按任务状态处理。"
+            try:
+                task = asyncio.get_running_loop().create_task(_verification_notice(adapter, scope[2], nonce, notice))
+                _VERIFICATION_TASKS.add(task)
+                task.add_done_callback(_VERIFICATION_TASKS.discard)
+            except RuntimeError:
+                pass
+            return {"action": "skip", "reason": "verification_not_ready"}
+        pending["processing"] = True
+        job_id = pending["job_id"]
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_deliver_verification(scope, job_id, code, adapter, scope[2], nonce))
+    except RuntimeError:
+        with _VERIFICATION_LOCK:
+            pending["processing"] = False
+        return {"action": "skip", "reason": "verification_dispatch_unavailable"}
+    _VERIFICATION_TASKS.add(task)
+    task.add_done_callback(_VERIFICATION_TASKS.discard)
+    return {"action": "skip", "reason": "verification_message_consumed"}
+
+
 def register(ctx):
+    ctx.register_tool(
+        name="douyin_verification",
+        toolset="douyin",
+        schema={
+            "name": "douyin_verification",
+            "description": (
+                "发布任务明确等待本人短信验证时，传当前job_id请求发送验证码，不重新上传或再点作品发布。"
+                "仅指定本人QQ私聊可用；成功后请本人键入纯文本六位数字，不加前缀、不用语音或图片，程序会安全接收、代填并点击验证。"
+                "不要向模型工具参数传验证码，不读写验证码文件，不让本人打开终端、服务器或人工浏览器窗口。"
+                "发码不等于发布成功；验证后须依据原任务回执判断。不要反复发码，超时或失效按原任务提示处理。"
+            ),
+            "parameters": {"type": "object", "properties": {"job_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}, "required": ["job_id"], "additionalProperties": False},
+        },
+        handler=handle_verification,
+        check_fn=lambda: os.name == "posix",
+        is_async=True,
+    )
     ctx.register_tool(
         name="douyin_content",
         toolset="douyin",
@@ -1390,6 +1580,8 @@ def register(ctx):
                 "prepare 返回 plan.plan_id，stage/draft 必须完整传入 plan_id，不缩略、不替换星号；这只是计划引用，不是API密钥。"
                 "需要发布时用 stage 上传并生成平台待确认预览。stage/job 返回 editor_ready 仅表示预览已就绪，不等于本人已授权保存或发布；用户要求保存草稿时调用 draft，同一有效 plan_id 会保存当前预览，否则按草稿流程上传。"
                 "上传是后台任务；in_progress后及时回复当前阶段并结束本轮，不用terminal sleep或循环轮询占住对话。用户追问时查询同一个job，验证码等新消息优先处理。"
+                "任务刚受理时只能说明计划已接收与当前阶段，不能把计划参数说成网页已经设置或核验完成，也不要承诺不存在的后台完成主动通知。"
+                "发布阶段明确等待本人短信时，调用同工具组的douyin_verification并传当前job_id；本人回复六位码由程序接收，不进入模型，不让本人另开服务器窗口。"
                 "用户问进度或是否需要重新上传时，先直接回答当前状态，再排查；不得先连续调用工具而搁置用户的问题。"
                 "job返回recovery.action=resume_stage时，用相同完整plan_id调用resume_stage，在同一存活编辑页继续核验，不重传视频；无此恢复指引不能自行跳过上传或修改私有账本。"
                 "recovery.action=prepare表示旧提交已由受信运维核查并记录本人重试授权，可重新准备；不继承旧发布确认，也不要求用户重复授权同一次已明确的重试意图。"
@@ -1451,4 +1643,5 @@ def register(ctx):
     )
     register_hook = getattr(ctx, "register_hook", None)
     if callable(register_hook):
+        register_hook("pre_gateway_enqueue", _consume_verification_message)
         register_hook("pre_gateway_dispatch", _observe_publish_confirmation)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -35,6 +36,11 @@ EDITOR_LEASE_SECONDS = 15 * 60
 JOB_TIMEOUT = 75 * 60
 UPLOAD_TIMEOUT = 55 * 60
 SMS_VERIFICATION_TIMEOUT = 30 * 60
+SMS_RESEND_COOLDOWN_SECONDS = 60
+SMS_MAX_SEND_REQUESTS = 5
+SMS_SUBMIT_CONFIRM_SECONDS = 5
+SMS_INVALIDATED_PHASE = "验证页已变化，发布结果待核实"
+SMS_INVALIDATED_MESSAGE = "验证页已变化，已停止短信处理；发布结果待核实。请人工核查平台结果，不要重发短信或重新发布。"
 PUBLISH_TIMEOUT = SMS_VERIFICATION_TIMEOUT + 120
 PAGE_OPERATION_TIMEOUT = 40
 ACCOUNT_WAIT_SECONDS = 30
@@ -57,6 +63,39 @@ class AccountStateError(ValueError):
 
 class UploadFailedError(ValueError):
     """平台明确报告上传失败；尚未形成可保存或发布的编辑预览。"""
+
+
+@dataclass
+class _VerificationAction:
+    """单次内存请求；code 在填入页面后立即丢弃，不进入 job。"""
+
+    action: str
+    future: asyncio.Future
+    code: str | None = field(default=None, repr=False)
+    started: bool = False
+    cancelled: bool = False
+
+
+@dataclass
+class _VerificationWaiter:
+    """只绑定正在发布的同一 job、页面和浏览器上下文。"""
+
+    job: dict
+    page: object
+    context: object
+    url: str
+    marker: str
+    deadline: float
+    queue: asyncio.Queue
+    invalidated: bool = False
+    invalidated_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    invalidated_complete: asyncio.Future | None = field(default=None, repr=False)
+    sms_request_count: int = 0
+    last_sms_request_at: float | None = None
+    request_pending: bool = False
+    submit_pending: bool = False
+    pending_submit: _VerificationAction | None = None
+    submit_timer: asyncio.Task | None = None
 
 
 def _transient_navigation_error(exc):
@@ -129,6 +168,8 @@ def validate_request(value):
         "stage": {"action", "token"},
         "resume_stage": {"action", "token"},
         "draft": {"action", "token"}, "publish": {"action", "token"},
+        "verification_request_sms": {"action", "job_id"},
+        "verification_submit": {"action", "job_id", "code"},
         "job": {"action", "job_id"},
     }
     if action not in allowed or set(value) - allowed[action]:
@@ -184,8 +225,14 @@ def validate_request(value):
             raise ValueError("简介不能包含空字符")
     if action in {"stage", "resume_stage", "draft", "publish"} and (not isinstance(value.get("token"), str) or not TOKEN_PATTERN.fullmatch(value["token"])):
         raise ValueError("准备令牌无效")
-    if action == "job" and (not isinstance(value.get("job_id"), str) or not JOB_PATTERN.fullmatch(value["job_id"])):
+    if action in {"job", "verification_request_sms", "verification_submit"} and (
+        not isinstance(value.get("job_id"), str) or not JOB_PATTERN.fullmatch(value["job_id"])
+    ):
         raise ValueError("任务编号无效")
+    if action == "verification_submit" and (
+        not isinstance(value.get("code"), str) or re.fullmatch(r"[0-9]{6}", value["code"], re.ASCII) is None
+    ):
+        raise ValueError("短信验证码必须是6位ASCII数字")
     return dict(value)
 
 
@@ -256,6 +303,7 @@ class ContentManager:
         self.state_lock = asyncio.Lock()
         self._staged = {}
         self._uploads = {}
+        self._verification_waiters = {}
         for path in sorted(self.job_dir.glob("*.json")):
             if not JOB_PATTERN.fullmatch(path.stem):
                 continue
@@ -295,9 +343,30 @@ class ContentManager:
                 extra["recovery"] = job["recovery"]
             state = job.get("error_state", state)
         message = job["message"]
+        if state == "in_progress":
+            phase = public.get("phase") or "后台任务进行中"
+            if job.get("action") == "publish" and job.get("verification_required") == "sms":
+                if phase == SMS_INVALIDATED_PHASE:
+                    message = SMS_INVALIDATED_MESSAGE
+                else:
+                    message = (
+                        f"当前阶段：{phase}。抖音仍在等待本人短信验证，尚未确认发布成功；"
+                        "请保持原验证页面，不要重复点击发布。"
+                    )
+            else:
+                message = (
+                    f"当前阶段：{phase}。后台任务已受理，尚无本任务成功回执；"
+                    "计划参数不代表网页状态已核验。请及时回复当前阶段，不循环轮询，"
+                    "也不要承诺任务完成后会自动推送。"
+                )
+            public["message"] = message
         if state == "needs_attention" and _sms_verification_visible(job.get("ui")):
-            message = "当次发布遇到本人短信验证，未确认发布成功；请先人工核查，不要重复提交。验证码只用于抖音验证页面。"
-            public.update(phase="发布时遇到本人短信验证，结果待核实", message=message)
+            if public.get("phase") == SMS_INVALIDATED_PHASE:
+                message = SMS_INVALIDATED_MESSAGE
+                public.update(message=message)
+            else:
+                message = "当次发布遇到本人短信验证，未确认发布成功；请先人工核查，不要重复提交。验证码只用于抖音验证页面。"
+                public.update(phase="发布时遇到本人短信验证，结果待核实", message=message)
         if _has_operator_retry_resolution(job):
             message = "历史提交已由运维核查当时平台未列出，并记录本人重试授权；可重新prepare/stage，正式发布仍需新预览和本人确认。"
             public.update(phase="历史提交已核查，可重新准备", message=message)
@@ -374,6 +443,11 @@ class ContentManager:
         try:
             request = validate_request(request)
             action = request["action"]
+            if action in {"verification_request_sms", "verification_submit"}:
+                # These actions enqueue work for the publish coroutine. They must
+                # bypass browser_lock because that coroutine holds it while
+                # waiting on the same page for the SMS challenge to finish.
+                return await self._verification_action(request)
             if action == "list":
                 return response("ready", "仅列出已校验并暂存到服务器的作品。", releases=self.store.list_releases())
             if action == "job":
@@ -577,13 +651,18 @@ class ContentManager:
                 await asyncio.wait_for(self._execute(job, plan, release), timeout=timeout)
         except (Exception, asyncio.CancelledError) as exc:
             checkpoint = self._uploads.get(plan.get("token"))
+            verification_waiter = self._verification_waiters.get(job.get("job_id"))
+            verification_invalidated = bool(
+                verification_waiter is not None and verification_waiter.invalidated
+            )
             self.invalidate_editor()
             frames = [frame for frame in traceback.extract_tb(exc.__traceback__) if Path(frame.filename).name in {"content.py", "editor.py", "covers.py"}]
             location = frames[-1].lineno if frames else 0
             module = Path(frames[-1].filename).name if frames else "unknown"
             LOGGER.warning("作品任务停止，异常类型：%s，执行模块：%s，行号：%s", type(exc).__name__, module, location)
-            phase = job.get("phase", "未知步骤")
-            job.update(state="needs_attention", phase=phase + "：结果待核实", message="操作未确认完成；请人工核查草稿或作品，不要自动重复提交。")
+            phase = SMS_INVALIDATED_PHASE if verification_invalidated else job.get("phase", "未知步骤") + "：结果待核实"
+            message = SMS_INVALIDATED_MESSAGE if verification_invalidated else "操作未确认完成；请人工核查草稿或作品，不要自动重复提交。"
+            job.update(state="needs_attention", phase=phase, message=message)
             job.pop("error_state", None)
             job["recovery"] = {"action": "inspect_result" if job.get("commit_attempted") else "maintenance"}
             account_error = exc if isinstance(exc, AccountStateError) else None
@@ -611,7 +690,7 @@ class ContentManager:
                     self._uploads[plan["token"]] = checkpoint
                     job.update(recovery={"action": "resume_stage"},
                                message="原视频已上传，编辑步骤未完成；可在当前页面保留期内用相同plan_id恢复核验，不重新上传。尚未保存或发布。")
-            if not isinstance(exc, asyncio.CancelledError):
+            if not isinstance(exc, asyncio.CancelledError) and not verification_invalidated:
                 if isinstance(exc, UploadFailedError):
                     job["message"] = str(exc)
                 try:
@@ -621,6 +700,8 @@ class ContentManager:
                 except Exception:
                     LOGGER.info("未能取得作品页面的受限诊断信息。")
             self._save_job(job)
+            if verification_invalidated and verification_waiter is not None:
+                await self._close_verification_waiter(verification_waiter)
             if isinstance(exc, asyncio.CancelledError):
                 raise
 
@@ -923,6 +1004,416 @@ class ContentManager:
             raise ValueError("平台AI声明发生变化，旧确认无效")
         return page
 
+    def _verification_response(self, job, state, message, **extra):
+        fields = {}
+        if isinstance(job, dict):
+            job_response = self._job_response(job)
+            public_job = job_response.get("job")
+            if isinstance(public_job, dict):
+                fields["job"] = public_job
+            if isinstance(job_response.get("recovery"), dict):
+                fields["recovery"] = job_response["recovery"]
+        fields.update(extra)
+        return response(state, message, **fields)
+
+    def _current_verification_waiter(self, job_id):
+        waiter = self._verification_waiters.get(job_id)
+        job = self.jobs.get(job_id)
+        task = self.tasks.get(job_id)
+        if (
+            waiter is None
+            or waiter.invalidated
+            or waiter.job is not job
+            or job.get("action") != "publish"
+            or job.get("state") != "in_progress"
+            or job.get("verification_required") != "sms"
+            or task is None
+            or task.done()
+        ):
+            return None
+        active = []
+        for candidate_id, job in self.jobs.items():
+            task = self.tasks.get(candidate_id)
+            if (
+                job.get("action") == "publish"
+                and job.get("state") == "in_progress"
+                and job.get("verification_required") == "sms"
+                and task is not None
+                and not task.done()
+            ):
+                active.append((candidate_id, job))
+        if len(active) != 1 or active[0][0] != job_id:
+            return None
+        if waiter.job is not active[0][1]:
+            return None
+        if (
+            time.monotonic() >= waiter.deadline
+            or waiter.context is None
+            or self.browser._context is not waiter.context
+        ):
+            self._invalidate_verification_waiter(waiter)
+            return None
+        page = waiter.page
+        try:
+            pages = waiter.context.pages
+            if not isinstance(pages, (list, tuple)) or not any(
+                candidate is page for candidate in pages
+            ):
+                self._invalidate_verification_waiter(waiter)
+                return None
+            is_closed = getattr(page, "is_closed", None)
+            if callable(is_closed) and is_closed():
+                self._invalidate_verification_waiter(waiter)
+                return None
+            if not _safe_editor_url(page.url) or page.url != waiter.url:
+                self._invalidate_verification_waiter(waiter)
+                return None
+        except Exception:
+            self._invalidate_verification_waiter(waiter)
+            return None
+        return waiter
+
+    def _invalidate_verification_waiter(self, waiter):
+        if waiter.invalidated:
+            return
+        waiter.invalidated = True
+        self._phase(waiter.job, SMS_INVALIDATED_PHASE)
+        waiter.invalidated_event.set()
+
+    async def _verification_invalidation_response(self, waiter):
+        completion = waiter.invalidated_complete
+        if completion is not None and not completion.done():
+            await asyncio.shield(completion)
+        if waiter.job.get("state") == "published":
+            return self._verification_response(
+                waiter.job, "ready", "抖音页面已确认发布成功；没有重复点击发布。",
+            )
+        return self._verification_response(
+            waiter.job, "needs_attention", SMS_INVALIDATED_MESSAGE,
+        )
+
+    async def _verification_document_is_current(self, waiter):
+        if self._current_verification_waiter(waiter.job.get("job_id")) is not waiter:
+            return False
+        try:
+            marker = await waiter.page.evaluate(
+                "() => window.__hermesVerificationProof || null"
+            )
+        except Exception:
+            self._invalidate_verification_waiter(waiter)
+            return False
+        if marker != waiter.marker:
+            self._invalidate_verification_waiter(waiter)
+            return False
+        return True
+
+    async def _verification_page_is_current(self, waiter):
+        if not await self._verification_document_is_current(waiter):
+            return False
+        try:
+            return _sms_verification_visible(await self._ui(waiter.page))
+        except Exception:
+            return False
+
+    async def _unique_visible_text(self, page, text):
+        try:
+            locator = page.get_by_text(text, exact=True).and_(page.locator(":visible"))
+            if await locator.count() != 1 or not await locator.is_visible():
+                return None
+            if not await locator.is_enabled():
+                return None
+            get_attribute = getattr(locator, "get_attribute", None)
+            if callable(get_attribute) and await get_attribute("aria-disabled") == "true":
+                return None
+            return locator
+        except Exception:
+            return None
+
+    async def _request_sms_from_page(self, waiter):
+        job = waiter.job
+        if not await self._verification_page_is_current(waiter):
+            return self._verification_response(
+                job, "needs_attention", "当前抖音短信验证页面已变化；没有请求短信，请先查询同一任务。",
+            )
+        now = time.monotonic()
+        if waiter.sms_request_count >= SMS_MAX_SEND_REQUESTS:
+            return self._verification_response(
+                job, "needs_attention", "本次验证已达到短信请求上限；请人工检查当前页面。",
+            )
+        if (
+            waiter.last_sms_request_at is not None
+            and now - waiter.last_sms_request_at < SMS_RESEND_COOLDOWN_SECONDS
+        ):
+            return self._verification_response(
+                job, "in_progress", "抖音尚未开放重新发送；请等待页面倒计时后再请求。",
+            )
+        label = "获取验证码" if waiter.sms_request_count == 0 else "重新发送"
+        locator = await self._unique_visible_text(waiter.page, label)
+        if locator is None:
+            return self._verification_response(
+                job, "needs_attention", "当前验证页面没有唯一可用的短信发送入口；没有点击任何按钮。",
+            )
+        if not await self._verification_page_is_current(waiter):
+            return self._verification_response(
+                job, "needs_attention", "当前短信验证文档标记已变化；没有请求短信，请先查询同一任务。",
+            )
+        # Count before clicking so an uncertain UI result cannot cause repeated SMS sends.
+        waiter.sms_request_count += 1
+        waiter.last_sms_request_at = now
+        try:
+            await locator.click()
+        except Exception:
+            return self._verification_response(
+                job, "needs_attention", "无法确认短信请求结果；请先查看当前页面，不要立即重复请求。",
+            )
+        return self._verification_response(
+            job, "ready", "已请求抖音发送短信验证码，请本人查看绑定手机；验证码不会被保存。",
+        )
+
+    async def _submit_sms_to_page(self, waiter, event):
+        job = waiter.job
+        if not await self._verification_page_is_current(waiter):
+            return self._verification_response(
+                job, "needs_attention", "当前抖音短信验证页面已变化；没有提交验证码，请先查询同一任务。",
+            )
+        if waiter.sms_request_count < 1:
+            return self._verification_response(
+                job, "needs_attention", "当前任务尚未请求短信验证码；没有提交验证码。",
+            )
+        try:
+            code_input = waiter.page.locator('input[placeholder="请输入验证码"]:visible')
+            if await code_input.count() != 1 or not await code_input.is_visible() or not await code_input.is_enabled():
+                return self._verification_response(
+                    job, "needs_attention", "当前验证页面没有唯一可用的验证码输入框；没有提交验证码。",
+                )
+        except Exception:
+            return self._verification_response(
+                job, "needs_attention", "当前验证页面没有唯一可用的验证码输入框；没有提交验证码。",
+            )
+
+        code = event.code
+        event.code = None
+        if not isinstance(code, str) or re.fullmatch(r"[0-9]{6}", code, re.ASCII) is None:
+            return self._verification_response(
+                job, "needs_attention", "验证码格式无效；原验证页面仍保留。",
+            )
+        if not await self._verification_page_is_current(waiter):
+            code = None
+            return self._verification_response(
+                job, "needs_attention", "当前短信验证文档标记已变化；没有提交验证码，请先查询同一任务。",
+            )
+        try:
+            await code_input.fill(code)
+        except Exception:
+            return self._verification_response(
+                job, "needs_attention", "无法确认验证码已填入；原验证页面仍保留，请查看页面后再试。",
+            )
+        finally:
+            # Drop the local reference as soon as the page has received the value.
+            code = None
+            event.code = None
+
+        verify = await self._unique_visible_text(waiter.page, "验证")
+        if verify is None:
+            try:
+                await code_input.fill("")
+            except Exception:
+                pass
+            return self._verification_response(
+                job, "needs_attention", "当前验证页面没有唯一可用的“验证”入口；没有提交短信验证码。",
+            )
+        if not await self._verification_page_is_current(waiter):
+            return self._verification_response(
+                job, "needs_attention", "当前短信验证文档标记已变化；没有点击“验证”，请先查询同一任务。",
+            )
+        try:
+            waiter.pending_submit = event
+            await verify.click()
+        except Exception:
+            waiter.pending_submit = None
+            waiter.submit_pending = False
+            return self._verification_response(
+                job, "needs_attention", "无法确认短信验证码是否已提交；原验证页面仍保留，请查询同一任务。",
+            )
+        self._phase(job, "等待抖音确认短信验证")
+        waiter.submit_timer = asyncio.create_task(asyncio.sleep(SMS_SUBMIT_CONFIRM_SECONDS))
+        return self._verification_response(
+            job,
+            "in_progress",
+            "短信验证码已提交到当前抖音验证页，正在等待页面回执；没有再次点击发布。",
+            verification_submitted=True,
+        )
+
+    def _resolve_verification_action(self, event, result):
+        event.code = None
+        if not event.future.done():
+            event.future.set_result(result)
+
+    async def _process_verification_event(self, waiter, event):
+        event.started = True
+        try:
+            if event.cancelled or event.future.cancelled():
+                if event.action == "verification_request_sms":
+                    waiter.request_pending = False
+                else:
+                    waiter.submit_pending = False
+                return
+            if event.action == "verification_request_sms":
+                result = await self._request_sms_from_page(waiter)
+                waiter.request_pending = False
+            else:
+                result = await self._submit_sms_to_page(waiter, event)
+                if result.get("state") != "in_progress":
+                    waiter.submit_pending = False
+                    if waiter.pending_submit is event:
+                        waiter.pending_submit = None
+            self._resolve_verification_action(event, result)
+        except asyncio.CancelledError:
+            if event.action == "verification_request_sms":
+                waiter.request_pending = False
+            else:
+                waiter.submit_pending = False
+                if waiter.pending_submit is event:
+                    waiter.pending_submit = None
+            self._resolve_verification_action(
+                event,
+                self._verification_response(
+                    waiter.job,
+                    "needs_attention",
+                    "短信验证操作已取消，页面状态待核实；请查询同一任务。",
+                ),
+            )
+            raise
+        finally:
+            event.code = None
+
+    async def _finish_unconfirmed_sms_submit(self, waiter):
+        if waiter.pending_submit is None:
+            return
+        if await self._verification_page_is_current(waiter):
+            self._phase(
+                waiter.job,
+                "短信验证未确认；请核对验证码后再试，当前页面仍保留",
+            )
+        else:
+            self._phase(
+                waiter.job,
+                "短信验证结果待核实；当前页面已变化，请先查询任务",
+            )
+        waiter.submit_pending = False
+        waiter.pending_submit = None
+        waiter.submit_timer = None
+
+    async def _close_verification_waiter(self, waiter):
+        job_id = waiter.job.get("job_id")
+        if self._verification_waiters.get(job_id) is waiter:
+            self._verification_waiters.pop(job_id, None)
+        timer = waiter.submit_timer
+        if timer is not None and not timer.done():
+            timer.cancel()
+            await asyncio.gather(timer, return_exceptions=True)
+        waiter.submit_timer = None
+        pending = []
+        while not waiter.queue.empty():
+            try:
+                pending.append(waiter.queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        if waiter.pending_submit is not None:
+            pending.append(waiter.pending_submit)
+        for event in pending:
+            event.code = None
+            if event.future.done():
+                continue
+            if waiter.job.get("state") == "published":
+                result = self._verification_response(
+                    waiter.job, "ready", "抖音页面已确认发布成功；没有重复点击发布。",
+                )
+            elif waiter.invalidated:
+                result = self._verification_response(
+                    waiter.job, "needs_attention", SMS_INVALIDATED_MESSAGE,
+                )
+            else:
+                result = self._verification_response(
+                    waiter.job, "in_progress", "短信验证窗口状态已变化；请查询同一任务，不要重复点击发布。",
+                )
+            self._resolve_verification_action(event, result)
+        waiter.request_pending = False
+        waiter.submit_pending = False
+        waiter.pending_submit = None
+        completion = waiter.invalidated_complete
+        if completion is not None and not completion.done():
+            completion.set_result(None)
+
+    async def _verification_action(self, request):
+        job_id = request["job_id"]
+        job = self.jobs.get(job_id)
+        waiter = self._current_verification_waiter(job_id)
+        if waiter is None:
+            invalidated_waiter = self._verification_waiters.get(job_id)
+            if invalidated_waiter is not None and invalidated_waiter.invalidated:
+                return await self._verification_invalidation_response(invalidated_waiter)
+            return self._verification_response(
+                job, "needs_attention", "没有唯一且有效的短信验证任务；没有请求短信或提交验证码。",
+            )
+        action = request["action"]
+        if action == "verification_request_sms":
+            if waiter.request_pending or waiter.submit_pending:
+                return self._verification_response(
+                    job,
+                    "needs_attention",
+                    "当前短信操作仍在处理；本次请求未被接收，请先查询同一任务状态。",
+                )
+        else:
+            if waiter.sms_request_count < 1:
+                return self._verification_response(
+                    job, "needs_attention", "当前任务尚未请求短信验证码；没有提交验证码。",
+                )
+            if waiter.submit_pending or waiter.request_pending:
+                return self._verification_response(
+                    job,
+                    "needs_attention",
+                    "当前短信操作仍在处理；本次验证码未被接收，请查询同一任务后再提交。",
+                )
+        event = _VerificationAction(
+            action=action,
+            future=asyncio.get_running_loop().create_future(),
+            code=request.get("code"),
+        )
+        if action == "verification_request_sms":
+            waiter.request_pending = True
+        else:
+            waiter.submit_pending = True
+        try:
+            waiter.queue.put_nowait(event)
+        except asyncio.QueueFull:
+            event.code = None
+            if action == "verification_request_sms":
+                waiter.request_pending = False
+            else:
+                waiter.submit_pending = False
+            return self._verification_response(
+                job,
+                "needs_attention",
+                "当前短信操作正忙；本次验证码未被接收，请查询同一任务后再提交。",
+            )
+        try:
+            result = await asyncio.shield(event.future)
+            if waiter.invalidated:
+                return await self._verification_invalidation_response(waiter)
+            return result
+        except asyncio.CancelledError:
+            event.cancelled = True
+            event.code = None
+            if not event.future.done():
+                event.future.cancel()
+            if not event.started:
+                if action == "verification_request_sms":
+                    waiter.request_pending = False
+                else:
+                    waiter.submit_pending = False
+            raise
+
     async def _publish(self, page, job, plan):
         page = await self._verified_stage(plan)
         await self._dismiss_preview_tip(page)
@@ -934,18 +1425,116 @@ class ContentManager:
         self._staged.pop(plan["token"], None)
         await publish.click()
         success = page.get_by_text(re.compile(r"^(发布成功|作品发布成功|发布成功，正在审核)$")).first
+        waiter = None
+        event_task = None
+        success_task = None
+        invalidated_task = None
         try:
             await success.wait_for(state="visible", timeout=30000)
         except Exception:
             if not _sms_verification_visible(await self._ui(page)):
                 raise
+            context = self.browser._context
+            try:
+                pages = context.pages if context is not None else None
+                page_is_in_context = isinstance(pages, (list, tuple)) and any(
+                    candidate is page for candidate in pages
+                )
+            except Exception:
+                page_is_in_context = False
+            if not page_is_in_context:
+                raise ValueError("短信验证页面不属于当前浏览器上下文") from None
+            page_url = page.url
+            if not _safe_editor_url(page_url):
+                raise ValueError("短信验证页面地址已变化") from None
+            marker = secrets.token_urlsafe(32)
+            await page.evaluate(
+                "marker => { window.__hermesVerificationProof = marker; }", marker
+            )
+            if await page.evaluate(
+                "() => window.__hermesVerificationProof || null"
+            ) != marker:
+                raise ValueError("短信验证文档标记未能绑定到当前页面") from None
             job["verification_required"] = "sms"
+            waiter = _VerificationWaiter(
+                job=job,
+                page=page,
+                context=context,
+                url=page_url,
+                marker=marker,
+                deadline=time.monotonic() + SMS_VERIFICATION_TIMEOUT,
+                queue=asyncio.Queue(maxsize=1),
+                invalidated_complete=asyncio.get_running_loop().create_future(),
+            )
+            self._verification_waiters[job["job_id"]] = waiter
             self._phase(job, "发布需本人短信验证；请在当前页面完成，尚未确认发布")
-            # 人工短信验证使用独立有界窗口，不消耗上传或编辑确认预算。
-            await success.wait_for(state="visible", timeout=SMS_VERIFICATION_TIMEOUT * 1000)
+            # 只由持有 browser_lock 的本协程操作页面；UDS 请求只投递内存事件。
+            success_task = asyncio.create_task(
+                success.wait_for(state="visible", timeout=SMS_VERIFICATION_TIMEOUT * 1000)
+            )
+            invalidated_task = asyncio.create_task(waiter.invalidated_event.wait())
+            try:
+                while True:
+                    if event_task is None:
+                        event_task = asyncio.create_task(waiter.queue.get())
+                    waiters = {success_task, event_task, invalidated_task}
+                    submit_timer = waiter.submit_timer
+                    if submit_timer is not None:
+                        waiters.add(submit_timer)
+                    done, _pending = await asyncio.wait(
+                        waiters, return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if waiter.invalidated:
+                        raise ValueError(SMS_INVALIDATED_PHASE)
+                    if success_task in done:
+                        if event_task in done:
+                            # The page may have accepted a manual code at the same time;
+                            # do not fill another code after the success signal.
+                            queued = event_task.result()
+                            waiter.queue.put_nowait(queued)
+                            event_task = None
+                        await success_task
+                        break
+                    if invalidated_task in done:
+                        raise ValueError(SMS_INVALIDATED_PHASE)
+                    if event_task in done:
+                        event = event_task.result()
+                        event_task = None
+                        await self._process_verification_event(waiter, event)
+                        continue
+                    if submit_timer is not None and submit_timer in done:
+                        await submit_timer
+                        await self._finish_unconfirmed_sms_submit(waiter)
+            except BaseException:
+                if event_task is not None and not event_task.done():
+                    event_task.cancel()
+                if success_task is not None and not success_task.done():
+                    success_task.cancel()
+                if invalidated_task is not None and not invalidated_task.done():
+                    invalidated_task.cancel()
+                await asyncio.gather(
+                    *(task for task in (event_task, success_task, invalidated_task) if task is not None),
+                    return_exceptions=True,
+                )
+                if not waiter.invalidated:
+                    await self._close_verification_waiter(waiter)
+                raise
+            finally:
+                if event_task is not None and not event_task.done():
+                    event_task.cancel()
+                if invalidated_task is not None and not invalidated_task.done():
+                    invalidated_task.cancel()
+                await asyncio.gather(
+                    *(task for task in (event_task, success_task, invalidated_task) if task is not None),
+                    return_exceptions=True,
+                )
+        if waiter is not None and not await self._verification_document_is_current(waiter):
+            raise ValueError(SMS_INVALIDATED_PHASE)
         job.pop("verification_required", None)
         job.update(state="published", phase="已提交发布", message="页面已确认提交发布；后续审核状态以平台为准。")
         self._save_job(job)
+        if waiter is not None:
+            await self._close_verification_waiter(waiter)
 
     async def _video_source(self, page, *, activate=False):
         if not _safe_editor_url(page.url):
