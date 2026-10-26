@@ -30,8 +30,11 @@ TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 JOB_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
 COVER_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
-PLAN_TTL = 15 * 60
-JOB_TIMEOUT = 10 * 60
+PLAN_TTL = 60 * 60
+EDITOR_LEASE_SECONDS = 15 * 60
+JOB_TIMEOUT = 60 * 60
+UPLOAD_TIMEOUT = 55 * 60
+SMS_VERIFICATION_TIMEOUT = 10 * 60
 PAGE_OPERATION_TIMEOUT = 40
 ACCOUNT_WAIT_SECONDS = 30
 ACCOUNT_RECOVERY = {
@@ -248,7 +251,7 @@ class ContentManager:
 
     def editor_lease_remaining(self):
         remaining = max((item["deadline"] - time.monotonic() for item in self._staged.values()), default=0)
-        return max(0, min(PLAN_TTL, remaining))
+        return max(0, min(EDITOR_LEASE_SECONDS, remaining))
 
     def _job_response(self, job):
         if job.get("state") == "editor_ready" and self.editor_lease_remaining() <= 0:
@@ -715,7 +718,7 @@ class ContentManager:
         self._phase(job, "等待视频处理")
         uploading = page.get_by_text("取消上传", exact=True)
         if await uploading.count() == 1:
-            await uploading.wait_for(state="hidden", timeout=300000)
+            await uploading.wait_for(state="hidden", timeout=UPLOAD_TIMEOUT * 1000)
         await self._dismiss_preview_tip(page)
         if plan.get("cover_id"):
             self._phase(job, "应用并核对双比例封面")
@@ -736,7 +739,7 @@ class ContentManager:
             await page.evaluate("marker => { window.__hermesEditorProof = marker; }", marker)
             self._staged[plan["token"]] = {"page": page, "context": self.browser._context,
                 "marker": marker, "video_source": source, "cover": cover_evidence,
-                "deadline": time.monotonic() + min(PLAN_TTL, max(0, plan["expires_unix"] - time.time()))}
+                "deadline": time.monotonic() + min(EDITOR_LEASE_SECONDS, max(0, plan["expires_unix"] - time.time()))}
             job.update(state="editor_ready", phase="完整物料待本人确认", message="视频、双比例封面、文案、AI声明和发布设置已核对。尚未保存或发布；请在准备令牌有效期内本人私聊确认。")
             self._save_job(job)
             return
@@ -815,8 +818,8 @@ class ContentManager:
                 raise
             job["verification_required"] = "sms"
             self._phase(job, "发布需本人短信验证；请在当前页面完成，尚未确认发布")
-            # 仍受外层十分钟任务上限和浏览器锁约束；不重复点击、不自动发短信或填写验证码。
-            await success.wait_for(state="visible", timeout=JOB_TIMEOUT * 1000)
+            # 短信协助保留十分钟窗口；长视频任务总时限不扩大此验证等待。
+            await success.wait_for(state="visible", timeout=SMS_VERIFICATION_TIMEOUT * 1000)
         job.pop("verification_required", None)
         job.update(state="published", phase="已提交发布", message="页面已确认提交发布；后续审核状态以平台为准。")
         self._save_job(job)

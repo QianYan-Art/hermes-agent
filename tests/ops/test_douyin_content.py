@@ -519,6 +519,14 @@ def test_navigation_invalidates_ready_jobs_and_lease(manager):
     assert job["state"] == "needs_attention"
 
 
+def test_large_video_budget_does_not_extend_editor_confirmation(content):
+    assert content.PLAN_TTL == 3600
+    assert content.JOB_TIMEOUT == 3600
+    assert content.UPLOAD_TIMEOUT == 3300
+    assert content.EDITOR_LEASE_SECONDS == 900
+    assert content.SMS_VERIFICATION_TIMEOUT == 600
+
+
 @pytest.mark.asyncio
 async def test_stage_source_activates_video_tab_but_verification_never_recreates_it(manager):
     actions = []
