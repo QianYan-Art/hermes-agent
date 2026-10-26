@@ -309,6 +309,10 @@ def install_release(
             return release_id
         raise ReleaseError("相同 release_id 已存在不同内容，拒绝覆盖")
 
+    recorded = store.data_dir / "published-records" / release_id
+    if os.path.lexists(recorded) and not manifests_have_same_content(store.load_metadata(release_id), manifest):
+        raise ReleaseError("相同 release_id 已有不同发布清单，拒绝覆盖；请使用修订编号")
+
     temporary_dir = Path(tempfile.mkdtemp(prefix=".release-", dir=data_path))
     try:
         _copy_regular_file(source_path / "manifest.json", temporary_dir / "manifest.json", MAX_MANIFEST_BYTES, runner_uid, runner_gid)
@@ -320,6 +324,8 @@ def install_release(
             raise ReleaseError("暂存作品包与来源内容不一致")
 
         target = store.releases_dir / release_id
+        if os.path.lexists(recorded) and not manifests_have_same_content(store.load_metadata(release_id), staged_manifest):
+            raise ReleaseError("相同 release_id 已有不同发布清单，拒绝覆盖；请使用修订编号")
         if _existing_release(store, release_id) is not None:
             existing = store.load(release_id)
             if manifests_have_same_content(existing, staged_manifest):

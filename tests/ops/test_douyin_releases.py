@@ -344,3 +344,20 @@ def test_recorded_metadata_rejects_symlinked_directory(tmp_path):
     with pytest.raises(releases.ReleaseError):
         releases.ReleaseStore(data).list_metadata()
 
+
+@pytest.mark.parametrize("same_content", [True, False])
+def test_reinstall_keeps_recorded_release_identity(tmp_path, same_content):
+    data = tmp_path / "state"
+    recorded = _write_package(data / "published-records", "ep00", b"original")
+    (recorded / "video.mp4").unlink()
+    before = (recorded / "manifest.json").read_bytes()
+    incoming = _write_package(tmp_path / "incoming", "ep00", b"original" if same_content else b"changed")
+    if same_content:
+        assert stage_release.install_release(incoming, data) == "ep00"
+        assert releases.ReleaseStore(data).load("ep00")["video_sha256"] == hashlib.sha256(b"original").hexdigest()
+    else:
+        with pytest.raises(releases.ReleaseError, match="发布清单"):
+            stage_release.install_release(incoming, data)
+        assert not (data / "releases" / "ep00").exists()
+    assert (recorded / "manifest.json").read_bytes() == before
+

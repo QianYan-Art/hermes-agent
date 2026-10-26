@@ -297,6 +297,32 @@ async def test_resume_cannot_bypass_unknown_publish_or_restart(manager, content,
 
 
 @pytest.mark.asyncio
+async def test_stage_restores_video_preview_after_cover_editor_switches_tab(manager, content, monkeypatch):
+    token, plan, release, page, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
+    selected = {"tab": "video"}
+
+    async def apply_cover(*args):
+        selected["tab"] = "cover"
+        return {"verified": True}
+
+    async def video_source(_page, *, activate=False):
+        if activate:
+            selected["tab"] = "video"
+        if selected["tab"] != "video":
+            raise ValueError("封面页签没有可见视频")
+        return "blob:original-video"
+
+    transfer = AsyncMock(return_value=page)
+    monkeypatch.setattr(manager, "_upload_video", transfer)
+    monkeypatch.setattr(content, "apply_cover", apply_cover)
+    monkeypatch.setattr(manager, "_video_source", video_source)
+    await manager._execute(job, plan, release)
+    assert job["state"] == "editor_ready" and selected["tab"] == "video"
+    assert manager._staged[token]["video_source"] == "blob:original-video"
+    transfer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_cancelled_stage_drops_checkpoint_and_does_not_offer_resume(manager, content, monkeypatch):
     token, plan, release, _, job, _ = await _checkpoint_editor(manager, content, monkeypatch)
     monkeypatch.setattr(manager, "_execute", AsyncMock(side_effect=asyncio.CancelledError()))

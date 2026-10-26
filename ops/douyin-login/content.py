@@ -862,7 +862,9 @@ class ContentManager:
             raise ValueError("已上传视频的页面、账号或计划已变化")
         if await page.evaluate("() => window.__hermesUploadProof || null") != proof["marker"]:
             raise ValueError("已上传视频的文档已变化")
-        if await self._video_source(page) != proof["video_source"] or await self._upload_failed(page):
+        # 编辑封面会切走视频预览；仅在构建或恢复stage时切回，再核对同一上传源。
+        # 正式发布仍由_verified_stage只读核验，不借此重建发布证明。
+        if await self._video_source(page, activate=True) != proof["video_source"] or await self._upload_failed(page):
             raise ValueError("页面视频已变化或平台上传失败，不能直接恢复")
         return page
 
