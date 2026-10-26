@@ -309,11 +309,9 @@ Plugin policy:
   as a sticker-sending mechanism. The current QQBot adapter sends text,
   markdown, and native media files; it does not expose QQ native face-ID
   sending.
-- QQBot approval buttons are active for dangerous command approvals. `允许一次`
-  resolves the current pending approval only, `始终允许` persists the approval
-  through the normal permanent allowlist path, and `拒绝` denies it. If a
-  clicked button no longer has a pending approval to resolve, the bot replies
-  that the authorization request has expired or already been handled.
+- QQBot支持命令审批按钮；当前81已按阿颜要求关闭命令审批，配置见下节。
+  手动模式下，“始终允许”只持久批准当前规则，不等于关闭所有审批；Tirith动态告警
+  还可能仅保存会话授权。旧按钮对应的等待项取消后不能再次放行命令。
 - `hermes plugins list --plain` should list only `disk-cleanup`,
   `rtk-rewrite`, and `security-guidance`.
 - Retained web/browser plugin shims may remain in the repo even though they are
@@ -322,6 +320,32 @@ Plugin policy:
 - Non-retained model provider packages and non-OpenAI image provider packages
   are physically removed from the tracked source after retained-scope tests
   prove they are no longer referenced.
+
+## 命令审批与忙时消息
+
+2026-10-26，当前81使用以下持久运行配置，由官方 `hermes config set` 写入：
+
+```yaml
+approvals:
+  mode: "off"
+  destructive_slash_confirm: false
+  mcp_reload_confirm: false
+display:
+  busy_text_mode: interrupt
+```
+
+命令守卫不再等待人工“允许一次/始终允许”，跨新会话及服务重启生效；配置文件中
+未加引号的 `off` 可能被YAML读成布尔false，审批解析器同样识别为off。已有永久授权
+保留，不用继续点击旧按钮。硬性禁止的灾难性命令和操作系统权限仍按原规则处理，
+公开发布等工具自身的真实本人确认不由命令审批开关代替。
+
+普通忙时文本原本默认静默排队，当前改为中断当前模型轮次、优先处理新消息。
+正在执行且不检查中断的工具仍须等其返回；`/queue`仍是显式排队，后台抖音上传任务
+不会因QQ轮次结束或普通追问被取消。工具说明要求先直接回答用户的进度或是否重传问题，
+不以terminal sleep和长轮询占住对话。
+
+明确停止运行会取消pending审批并唤醒阻塞线程，旧按钮无法放行该命令；已有会话批准、
+永久批准及YOLO选择不因取消等待被顺带清除。新会话边界仍走原有完整安全状态清理。
 
 ## Komari 流量日报
 
