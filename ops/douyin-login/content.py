@@ -54,6 +54,10 @@ class AccountStateError(ValueError):
         self.recovery = {"action": action}
 
 
+class UploadFailedError(ValueError):
+    """平台明确报告上传失败；尚未形成可保存或发布的编辑预览。"""
+
+
 def _transient_navigation_error(exc):
     if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
@@ -533,6 +537,8 @@ class ContentManager:
                     job.update(error_state=account_error.state, recovery=account_error.recovery,
                                message=str(account_error))
             if not isinstance(exc, asyncio.CancelledError):
+                if isinstance(exc, UploadFailedError):
+                    job["message"] = str(exc)
                 try:
                     context = self.browser._context
                     if context is not None and context.pages:
@@ -546,6 +552,10 @@ class ContentManager:
     def _phase(self, job, value):
         job.update(phase=value, message=value)
         self._save_job(job)
+
+    async def _upload_failed(self, page):
+        failure = page.get_by_text(re.compile(r"^上传失败[，,]\s*重新上传$"))
+        return await failure.count() == 1 and await failure.is_visible()
 
     async def _button(self, page, names):
         for name in names:
@@ -719,6 +729,8 @@ class ContentManager:
         uploading = page.get_by_text("取消上传", exact=True)
         if await uploading.count() == 1:
             await uploading.wait_for(state="hidden", timeout=UPLOAD_TIMEOUT * 1000)
+        if await self._upload_failed(page):
+            raise UploadFailedError("平台报告视频上传失败，未形成发布预览；可按原片重新上传。")
         await self._dismiss_preview_tip(page)
         if plan.get("cover_id"):
             self._phase(job, "应用并核对双比例封面")

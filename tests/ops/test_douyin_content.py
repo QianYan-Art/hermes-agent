@@ -528,6 +528,24 @@ def test_large_video_budget_does_not_extend_editor_confirmation(content):
 
 
 @pytest.mark.asyncio
+async def test_platform_upload_failure_is_detected_and_preserved(manager, content, monkeypatch):
+    failure = SimpleNamespace(count=AsyncMock(return_value=1), is_visible=AsyncMock(return_value=True))
+    page = SimpleNamespace(get_by_text=lambda *_args, **_kwargs: failure)
+    assert await manager._upload_failed(page)
+
+    async def execute(*_args):
+        raise content.UploadFailedError("平台报告视频上传失败")
+
+    monkeypatch.setattr(manager, "_execute", execute)
+    job = {"job_id": "u" * 32, "action": "stage", "release_id": "ep00", "state": "in_progress", "phase": "等待视频处理"}
+    await manager._run(job, {}, {})
+    result = manager._job_response(job)
+    assert result["state"] == "needs_attention"
+    assert result["message"] == "平台报告视频上传失败"
+    assert not job.get("commit_attempted")
+
+
+@pytest.mark.asyncio
 async def test_stage_source_activates_video_tab_but_verification_never_recreates_it(manager):
     actions = []
 
