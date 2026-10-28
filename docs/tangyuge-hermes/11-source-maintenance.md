@@ -20,7 +20,7 @@
 | 图片、视频、附件 | QQ 入站缓存→runner 媒体缓冲→`agent/image_routing.py` 决策/编码→transport；出站由 runner 和 BaseAdapter 解析工具媒体，再由 QQ 适配器发送 | `agent/kimi_code.py` 是 Kimi 官方端点规则源；原生视觉与辅助摘要、视频与普通文件分别保留现有边界 |
 | 人格、提示、技能 | `agent/system_prompt.py` 组装基础规则；`agent/prompt_builder.py` 加载身份、上下文与技能目录；conversation loop 固定会话快照 | 角色卡定义身份，角色 skill 提供资源；没有证据要求重写人格或每轮重建提示 |
 | 插件与工具 | `tools/registry.py`→工具注册→`model_tools.py` 定义与派发→`agent/tool_executor.py` 执行；`hermes_cli/plugins.py` 管生命周期与 hook；`tools/delegate_tool.py` 约束子代理 | 保留注册入口、工具范围和内建审批；插件不得直接修改核心文件 |
-| 抖音与 OpenFilm | `ops/douyin-login/sync_openfilm.py:157` / `:322` 校验并经 SSH/SCP 交付→`ops/douyin-login/stage_release.py:288` 原子安装→`ops/douyin-plugin/__init__.py`→UDS 服务→`content.py` | 制作交付、浏览器执行、本人确认分别负责；导入、stage、暂存和公开发布不能混为一项成功 |
+| 抖音与 OpenFilm | `ops/douyin-login/sync_openfilm.py:157` / `:322` 校验并经 SSH/SCP 交付→`ops/douyin-login/stage_release.py:288` 原子安装→`ops/douyin-plugin/__init__.py`→UDS 服务→`content.py`；`cover_template.py` 仅生成服务器双比例素材 | 制作交付、封面生成、浏览器执行、本人确认分别负责；导入、stage、暂存和公开发布不能混为一项成功 |
 
 常规 QQ 调用链：`QQAdapter` → `BasePlatformAdapter.handle_message` →
 `GatewayRunner._handle_message` → `_handle_message_with_agent` → `_run_agent` →
