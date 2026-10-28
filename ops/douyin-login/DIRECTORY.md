@@ -3,7 +3,7 @@
 数据根目录为 `/var/lib/hermes-douyin`，有效数据不是临时文件。
 
 - `releases/<期号>/`：原成片和清单，同编号不覆盖不同内容。
-- `published-records/<期号>/manifest.json`：明确要求删除服务器原片后保留的原清单；只用于图库身份核对，不是可上传作品包。应在发布回执与列表核对后移入，删除原视频和空作品目录；保留封面及任务防重记录。
+- `published-records/<期号>/manifest.json`：明确要求删除服务器原片后保留的原清单；只用于图库身份核对，不是可上传作品包。应在发布回执与列表核对后移入，删除原视频和空作品目录；任务防重记录必须保留，封面默认保留，除非本人另行要求清理。
 - `covers/<期号>/uploads/<封面ID>/`：本人上传图片。
 - `covers/<期号>/frames/<封面ID>/`：视频提帧。
 - `covers/<期号>/reused/<封面ID>/`：从持久库为目标作品重新绑定的封面。
@@ -18,7 +18,9 @@
 本人选择后，`cover_reuse` 校验原图并为目标期号生成对应 ID，再预览、确认和准备。
 跨期不能直接套用源封面 ID；封面复用不触发上传或发布。
 
-已制作的多比例原件保留在 `/home/hermes/workspace/starlibrary_covers/<期号>/`。
+素材根目录 `/home/hermes/workspace/starlibrary_covers/` 的 `templates/` 保存无期号副标题的
+双比例母版；根目录内的 `cover_template.py` 使用 Maple Mono NF CN 排入期号和副标题，并将
+多比例素材按需生成到 `<期号>/`。三期旧封面已按本人要求清理，不能把历史图库记录当作当前可用素材。
 `cover_saved_sources` 只枚举规范的 `<期号>_3x4`、`_4x3`、`_9x16`、`_16x9` 图片，
 不移动、删除原件，不读取 zip/master。使用真实 4:3 与 3:4 原图各导入一次，再用
 `cover_pair` 配对，检查双槽预览后选择该 ID；9:16 不替代竖封面 3:4。
