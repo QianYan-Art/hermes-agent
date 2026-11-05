@@ -217,6 +217,9 @@ external patch files to replay:
   两个 2.5 请求返回 `gpt-image-2-codex` 时可正常缓存，若响应带模型名则在
   `upstream_model` 记录，`api_model` 仍表示请求模型。旁路已经返回错误且没有
   图片时，Hermes 不能从错误中恢复图片，仍按真实错误处理。
+  `size` / `aspect_ratio` 是请求值；可读取本地图片时，`actual_size` 和多图时的
+  `actual_sizes` 记录实际宽高，比例明显不符时返回 `aspect_ratio_warning`。
+  缺少可选 Pillow 或图片只剩远程链接时不假称已核验尺寸。
   `/auxmodel image` 将 OpenAI 的请求 `api_model` 与质量档位 `model` 分开：
   非档位名称只更新请求模型并保留质量；切回档位时清除旧 `api_model`。
   环境覆盖仍优先，并在命令回复中提醒。

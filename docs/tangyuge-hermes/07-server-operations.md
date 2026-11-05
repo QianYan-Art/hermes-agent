@@ -253,10 +253,11 @@ Plugin policy:
   `image_gen.openai.base_url`; on the 81 runtime this is
   `https://suyuan.4071253.xyz/v1`. Keep the secret in
   `OPENAI_IMAGE_API_KEY`.
-  The default API model sent to the endpoint is `gpt-image-2`. The visible
+  The provider falls back to `gpt-image-2` when no API model is configured;
+  the 81 runtime explicitly requests `gpt-image-2.5-flare`. The visible
   `gpt-image-2-low`, `gpt-image-2-medium`, and `gpt-image-2-high` names are
   Hermes quality tiers; a non-tier `/auxmodel image <model>` value is treated
-  as the actual Images API model sent to the endpoint. The `image_generate`
+  as the Images API request model. The `image_generate`
   tool can control `quality`, `num_images`, `output_format`, `background`,
   `moderation`, `output_compression`, `style`, and a non-tier `model` /
   explicit `api_model` override for text-to-image when the active provider
@@ -391,23 +392,37 @@ Komari 原有 Telegram 日报、告警和配置不变；RackNerd 上的 Uptime K
   `gpt-image2` 是同一模型的兼容别名。这不覆盖 Hermes 显式配置的 Flare 请求。
 - `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 保留同名请求；
   `gpt-image-2.5` 不是旁路接受的便利别名，与未知名称一样返回 HTTP 400。
+- `gpt-image-2.6-flare`、`gpt-image-2.6-sunburst` 尚未列入当前旁路支持范围；
+  2026-11-04 从 Hermes 入口分别请求时均被旁路拒绝，不把它们配置为可用模型，
+  也不静默切换到其他型号。这只说明当前通道，不能据此判断其他渠道的能力。
 - 2026-10-15 阿颜明确允许两个 2.5 请求接收终态 `gpt-image-2-codex`。
   原严格校验因此拒绝图片的问题由
   `ops/cliproxyapi-image-proxy/codex-image-compat.patch` 局部修复；
   应用前必须核对源码基线并执行 `git apply --check`，流程见同目录 README。
   不忽略其他型号不匹配、缺少终态、空图或上游真实错误，也不将 Codex 图宣称为
   真正执行了 2.5。Hermes 本身不根据有效响应中的不同模型名拒图。
-  本轮默认请求目标使用 `image_gen.openai.api_model=gpt-image-2.5-flare`，
-  `model` 继续保留原 `gpt-image-2-medium` 质量档位，其余参数不变。
+  81 当前使用 `image_gen.openai.api_model=gpt-image-2.5-flare`，`model` 保留
+  `gpt-image-2-medium` 质量档位。本人指定 Sunburst 时可在单次生图传入精确模型名，
+  或使用 `/auxmodel image gpt-image-2.5-sunburst` 更改后续请求目标；未指定时沿用配置。
+- 2026-11-04 的 CPA 修复只对两个 2.5 请求省略固定 `reasoning`，以避免上游
+  `complexity` 冲突；仍保留对 `gpt-image-2-codex` 终态的兼容校验，未放宽其他校验。
+  该修复在 124 的旁路源码中，原 `codex-image-compat.patch` 不包含这次修复。
 - 文生图和编辑支持 `n=1..10`；`response_format=url` 返回 data URL，不是图床链接。
   `variations` 只有入口路由与鉴权覆盖，图片旁路未实现该功能。
 - 入口先鉴权再读取大图片；缺失或错误密钥返回 401。超过 10 秒保活后，
   后续失败可能表现为 HTTP 200 加 `error` 正文；判断成功须检查正文和非空图片数据。
   Hermes 保留上游错误原因，不自动换模型重试。
-- Hermes 返回的 `quality` / `size` 是请求值，不是输出图片的实测元数据。
+- Hermes 返回的 `quality` / `size` 是请求值；有 Pillow 且图片已缓存时，
+  `actual_size` / `actual_sizes` 报告实际宽高，明显比例不符时另有
+  `aspect_ratio_warning`。无法读取尺寸或只返回远程链接时不臆测。
   2026-09-09 请求 `medium`、`1024x1024`，文生图和编辑实测均为 `1312x1199`；
   2026-10-15 两个 2.5 入口的文生图实测均为可解码的 `1254x1254` PNG。
   不能承诺旁路严格遵守尺寸/质量参数，也不能凭 `low` 档推断实际费用。
+
+2026-11-04 使用隔离配置和真实 `image_generate` 处理器复测，默认 Flare 与单次
+Sunburst 请求均返回有效 PNG；两次请求均为 `1024x1024`，实际均为 `1536x1024`。
+两次 Images API 响应未提供 `upstream_model`，不能从 Hermes 响应断言实际执行型号。
+测试图保存在隔离临时目录，结束后已清理；未发送 QQ 消息。
 
 2026-10-15 已按先提交推送、再部署的顺序发布功能提交 `facb05d`：
 124 图片旁路健康检查正常，Flare 与 Sunburst 均实际生图成功，质量请求保持 `medium`；

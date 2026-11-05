@@ -312,6 +312,23 @@ def _save_data_url_image(data_url: str, *, prefix: str) -> str:
     return str(save_b64_image(payload, prefix=prefix, extension=extension))
 
 
+def _local_image_size(image_ref: str) -> Optional[Tuple[int, int]]:
+    """读取本地图片的实际宽高；远程链接或缺少可选依赖时不推测尺寸。"""
+    if not Path(image_ref).is_absolute():
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        logger.debug("Pillow 未安装，无法检查生成图片的实际尺寸")
+        return None
+    try:
+        with Image.open(image_ref) as image:
+            return image.size
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        logger.warning("无法读取生成图片的实际尺寸：%s", type(exc).__name__)
+        return None
+
+
 def _coerce_image_inputs(kwargs: Dict[str, Any]) -> List[str]:
     values: List[str] = []
     for key in ("input_image", "image", "reference_image"):
@@ -757,6 +774,24 @@ class OpenAIImageGenProvider(ImageGenProvider):
             "num_images": len(image_refs),
             "operation": "edit" if is_edit else "generate",
         }
+        actual_sizes = [_local_image_size(ref) for ref in image_refs]
+        if actual_sizes[0] is not None:
+            extra["actual_size"] = f"{actual_sizes[0][0]}x{actual_sizes[0][1]}"
+        if len(actual_sizes) > 1 and any(item is not None for item in actual_sizes):
+            extra["actual_sizes"] = [
+                f"{item[0]}x{item[1]}" if item is not None else None
+                for item in actual_sizes
+            ]
+        requested_width, requested_height = map(int, size.split("x"))
+        if any(
+            item is not None
+            and abs(item[0] * requested_height - item[1] * requested_width) * 100
+            > max(item[0] * requested_height, item[1] * requested_width)
+            for item in actual_sizes
+        ):
+            extra["aspect_ratio_warning"] = (
+                "实际图片宽高比与请求不同，请以 actual_size 或 actual_sizes 为准。"
+            )
         upstream_model = getattr(response, "model", None)
         if isinstance(upstream_model, str) and upstream_model.strip():
             extra["upstream_model"] = upstream_model.strip()

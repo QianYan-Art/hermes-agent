@@ -486,6 +486,50 @@ class TestGenerate:
 
         assert fake_client.images.generate.call_args.kwargs["size"] == expected_size
 
+    def test_reports_actual_sizes_and_warns_when_backend_changes_ratio(self, provider):
+        import base64
+        from io import BytesIO
+
+        Image = pytest.importorskip("PIL.Image")
+
+        def image_b64(width, height):
+            buffer = BytesIO()
+            Image.new("RGB", (width, height)).save(buffer, format="PNG")
+            return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_multi_response([
+            {"b64": image_b64(120, 120)},
+            {"b64": image_b64(120, 80)},
+        ])
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", aspect_ratio="square", num_images=2)
+
+        assert result["size"] == "1024x1024"
+        assert result["actual_size"] == "120x120"
+        assert result["actual_sizes"] == ["120x120", "120x80"]
+        assert "实际图片宽高比与请求不同" in result["aspect_ratio_warning"]
+
+    def test_matching_ratio_with_different_pixel_dimensions_needs_no_warning(self, provider):
+        pytest.importorskip("PIL.Image")
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", aspect_ratio="square")
+
+        assert result["actual_size"] == "1x1"
+        assert "aspect_ratio_warning" not in result
+
+    def test_missing_optional_pillow_does_not_fabricate_dimensions(self, provider):
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+        with _patched_openai(fake_client), patch.dict("sys.modules", {"PIL": None}):
+            result = provider.generate("a cat", aspect_ratio="square")
+
+        assert result["success"] is True
+        assert "actual_size" not in result
+        assert "aspect_ratio_warning" not in result
+
     def test_revised_prompt_passed_through(self, provider):
         fake_client = MagicMock()
         fake_client.images.generate.return_value = _fake_response(
@@ -652,3 +696,4 @@ class TestGenerate:
 
         assert result["success"] is True
         assert result["image"] == "https://example.com/img.png"
+        assert "actual_size" not in result

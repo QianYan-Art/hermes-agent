@@ -953,7 +953,10 @@ IMAGE_GENERATE_SCHEMA = {
         "APIs directly. The underlying backend and model are user-configured "
         "in image_gen.provider/image_gen.model. When the backend returns a "
         "local cache path, the result includes media_tag (`MEDIA:<path>`) so "
-        "messaging gateways can send the image natively."
+        "messaging gateways can send the image natively. For compatible "
+        "backends, size and aspect_ratio describe the request; use actual_size "
+        "or actual_sizes when returned, and report any aspect_ratio_warning. "
+        "api_model is the requested model, not proof of the model that executed it."
     ),
     "parameters": {
         "type": "object",
@@ -965,7 +968,7 @@ IMAGE_GENERATE_SCHEMA = {
             "aspect_ratio": {
                 "type": "string",
                 "enum": list(VALID_ASPECT_RATIOS),
-                "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
+                "description": "Requested image orientation: landscape, portrait, or square. Exact ratios and output dimensions depend on the backend.",
                 "default": DEFAULT_ASPECT_RATIO,
             },
             "quality": {
